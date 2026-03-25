@@ -1,0 +1,19 @@
+{
+  "description": "Branching DAG: n1 → n2 → {n3, n4}. Terminal reviewer n5 waits for both branches.",
+  "dag": {
+    "nodes": [
+      { "id": "n1", "agent_type": "CLASSIFIER" },
+      { "id": "n2", "agent_type": "PLANNER" },
+      { "id": "n3", "agent_type": "WRITER" },
+      { "id": "n4", "agent_type": "QA" },
+      { "id": "n5", "agent_type": "REVIEWER" }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2" },
+      { "from": "n2", "to": "n3" },
+      { "from": "n2", "to": "n4" },
+      { "from": "n3", "to": "n5" },
+      { "from": "n4", "to": "n5" }
+    ]
+  }
+}

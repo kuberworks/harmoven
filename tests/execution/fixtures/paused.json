@@ -1,0 +1,14 @@
+{
+  "description": "Paused DAG: n1 → n2 → n3. Run is paused after n1 completes.",
+  "dag": {
+    "nodes": [
+      { "id": "n1", "agent_type": "CLASSIFIER" },
+      { "id": "n2", "agent_type": "PLANNER" },
+      { "id": "n3", "agent_type": "REVIEWER" }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2" },
+      { "from": "n2", "to": "n3" }
+    ]
+  }
+}
