@@ -1,0 +1,102 @@
+// prisma/better-auth.prisma
+// ─────────────────────────────────────────────────────────────────────────────
+// Generated equivalent of: npx @better-auth/cli generate
+// Source: better-auth 1.5.6 with plugins: admin(), twoFactor()
+// Custom additionalFields: ui_score, ui_level, expert_mode, preferences,
+//                          ui_locale (Am.86), transparency_language (Am.87)
+//
+// This file was written manually because the CLI's jiti runtime does not yet
+// support Prisma 7's mandatory driver-adapter constructor.
+// Verified by inspecting plugin schemas via Node:
+//   admin().schema   → { user: { fields: { role, banned, banReason, banExpires } },
+//                        session: { fields: {} } }
+//   twoFactor().schema → { user: {...}, twoFactor: {...} }
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id                    String    @id
+  name                  String
+  email                 String    @unique
+  emailVerified         Boolean
+  image                 String?
+  createdAt             DateTime
+  updatedAt             DateTime
+  // Admin plugin — https://www.better-auth.com/docs/plugins/admin
+  role                  String?
+  banned                Boolean?
+  banReason             String?
+  banExpires            DateTime?
+  // Application additionalFields (defined in lib/auth.ts)
+  ui_score              Int        @default(0)
+  ui_level              String     @default("GUIDED")
+  expert_mode           Boolean    @default(false)
+  preferences           String     @default("{}")
+  // Amendment 86 — UI language: 'en' | 'fr' | null (auto-detect)
+  ui_locale             String?
+  // Amendment 87 — transparency feed language; null = follows ui_locale
+  transparency_language String?
+  // Relations
+  sessions              Session[]
+  accounts              Account[]
+  runs                  Run[]
+  project_memberships   ProjectMember[]
+  user_preferences      UserPreference[]
+  installed_packs       InstalledPack[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+
+  @@map("session")
+}
+
+model Account {
+  id                       String    @id
+  userId                   String
+  user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId                String
+  providerId               String
+  accessToken              String?
+  refreshToken             String?
+  accessTokenExpiresAt     DateTime?
+  refreshTokenExpiresAt    DateTime?
+  scope                    String?
+  idToken                  String?
+  password                 String?
+  createdAt                DateTime
+  updatedAt                DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime
+  updatedAt  DateTime
+
+  @@map("verification")
+}
+
+// twoFactor plugin — https://www.better-auth.com/docs/plugins/2fa
+model TwoFactor {
+  id          String  @id
+  secret      String
+  backupCodes String
+  userId      String  @unique
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("twoFactor")
+}
