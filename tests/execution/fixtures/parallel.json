@@ -1,0 +1,17 @@
+{
+  "description": "Parallel DAG: n1 → {n2, n3} → n4. n2 and n3 run in parallel after n1.",
+  "dag": {
+    "nodes": [
+      { "id": "n1", "agent_type": "CLASSIFIER" },
+      { "id": "n2", "agent_type": "WRITER" },
+      { "id": "n3", "agent_type": "WRITER" },
+      { "id": "n4", "agent_type": "REVIEWER" }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2" },
+      { "from": "n1", "to": "n3" },
+      { "from": "n2", "to": "n4" },
+      { "from": "n3", "to": "n4" }
+    ]
+  }
+}

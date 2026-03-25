@@ -1,0 +1,14 @@
+{
+  "description": "Failed DAG: n1 succeeds, n2 throws, n3 depends on n2 and is blocked.",
+  "dag": {
+    "nodes": [
+      { "id": "n1", "agent_type": "CLASSIFIER" },
+      { "id": "n2", "agent_type": "WRITER", "config": { "shouldFail": true } },
+      { "id": "n3", "agent_type": "REVIEWER" }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2" },
+      { "from": "n2", "to": "n3" }
+    ]
+  }
+}
