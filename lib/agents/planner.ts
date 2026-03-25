@@ -5,10 +5,14 @@
 // Rules:
 // - Always uses the highest-capability LLM tier ("powerful").
 // - meta.confidence < 85 → requires_human_approval = true (UI checkpoint shown).
+// - Full ClassifierResult context passed to LLM (not just profile id).
+// - DAG validated: acyclicity, node id refs, single REVIEWER as last node.
+// - Cost estimates clamped to $0–$999.
 // - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
 
 import type { ILLMClient } from '@/lib/llm/mock-client'
 import type { ClassifierResult, ProfileId } from '@/lib/agents/classifier'
+import { withRetry } from '@/lib/utils/retry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +115,56 @@ Rules:
 - If meta.confidence < 85, the plan will require human approval before execution.
 - Max lateral delegations: 2.`
 
+// ─── DAG validation ───────────────────────────────────────────────────────────
+
+function validateDag(dag: PlannerHandoff['dag']): void {
+  const nodeIds = new Set(dag.nodes.map(n => n.node_id))
+
+  // All edge endpoints must reference known nodes
+  for (const edge of dag.edges) {
+    if (!nodeIds.has(edge.from)) throw new Error(`Planner: edge references unknown node "${edge.from}"`)
+    if (!nodeIds.has(edge.to))   throw new Error(`Planner: edge references unknown node "${edge.to}"`)
+  }
+
+  // All dependency refs must reference known nodes
+  for (const node of dag.nodes) {
+    for (const dep of node.dependencies) {
+      if (!nodeIds.has(dep)) throw new Error(`Planner: node "${node.node_id}" depends on unknown "${dep}"`)
+    }
+  }
+
+  // Cycle detection via Kahn's algorithm
+  const inDegree = new Map<string, number>()
+  const adj = new Map<string, string[]>()
+  for (const id of nodeIds) { inDegree.set(id, 0); adj.set(id, []) }
+  for (const edge of dag.edges) {
+    adj.get(edge.from)!.push(edge.to)
+    inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1)
+  }
+  const queue = [...nodeIds].filter(id => inDegree.get(id) === 0)
+  let visited = 0
+  while (queue.length > 0) {
+    const curr = queue.shift()!
+    visited++
+    for (const next of adj.get(curr) ?? []) {
+      const deg = (inDegree.get(next) ?? 0) - 1
+      inDegree.set(next, deg)
+      if (deg === 0) queue.push(next)
+    }
+  }
+  if (visited !== nodeIds.size) throw new Error('Planner: DAG contains a cycle')
+
+  // Exactly one REVIEWER node must exist and have no successors
+  const reviewerNodes = dag.nodes.filter(n => n.agent === 'REVIEWER')
+  if (reviewerNodes.length === 0) throw new Error('Planner: DAG must contain exactly one REVIEWER node')
+  if (reviewerNodes.length > 1)  throw new Error('Planner: DAG contains more than one REVIEWER node')
+  const reviewerNode = reviewerNodes[0]
+  if (!reviewerNode) throw new Error('Planner: DAG must contain exactly one REVIEWER node')
+  const reviewerId = reviewerNode.node_id
+  const hasSuccessor = dag.edges.some(e => e.from === reviewerId)
+  if (hasSuccessor) throw new Error('Planner: REVIEWER node must be the final node (no outgoing edges)')
+}
+
 // ─── Planner ─────────────────────────────────────────────────────────────────
 
 export class Planner {
@@ -120,20 +174,36 @@ export class Planner {
     task_input: string,
     profile: ClassifierResult,
     run_id: string,
+    signal?: AbortSignal,
   ): Promise<PlannerHandoff> {
-    const result = await this.llm.chat(
-      [
-        { role: 'system', content: PLANNER_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            task: task_input,
-            domain_profile: profile.detected_profile,
-            run_id,
-          }),
-        },
-      ],
-      { model: 'powerful' },
+    const result = await withRetry(
+      () => this.llm.chat(
+        [
+          { role: 'system', content: PLANNER_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              task: task_input,
+              run_id,
+              // Full classifier context — not just profile id
+              classifier: {
+                domain_profile:          profile.detected_profile,
+                domain:                  profile.domain,
+                output_type:             profile.output_type,
+                confidence:              profile.confidence,
+                input_summary:           profile.input_summary,
+                clarification_questions: profile.clarification_questions,
+              },
+            }),
+          },
+        ],
+        { model: 'powerful', signal },
+      ),
+      {
+        signal,
+        onRetry: (err, attempt) =>
+          console.warn(`[Planner] attempt ${attempt} failed:`, err),
+      },
     )
 
     let parsed: unknown
@@ -151,9 +221,22 @@ export class Planner {
       throw new Error('Planner: missing or invalid "meta.confidence" field in LLM response')
     }
 
+    const confidence = meta['confidence'] as number
+    if (confidence < 0 || confidence > 100) {
+      throw new Error('Planner: meta.confidence must be 0–100')
+    }
+
+    // Clamp cost estimate to sane range ($0–$999)
+    if (typeof meta['estimated_cost_usd'] === 'number') {
+      meta['estimated_cost_usd'] = Math.min(Math.max(0, meta['estimated_cost_usd']), 999)
+    }
+
+    const dag = raw['dag'] as PlannerHandoff['dag']
+    validateDag(dag)
+
     return {
       ...(raw as Omit<PlannerHandoff, 'requires_human_approval'>),
-      requires_human_approval: (meta['confidence'] as number) < 85,
+      requires_human_approval: confidence < 85,
     }
   }
 }

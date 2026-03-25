@@ -57,10 +57,10 @@ describe('IntentClassifier', () => {
 
     // Verify LLM was called once with correct tier and user message
     expect(llm.calls).toHaveLength(1)
-    expect(llm.calls[0].options.model).toBe('fast')
-    expect(llm.calls[0].messages[0].role).toBe('system')
-    expect(llm.calls[0].messages[1].role).toBe('user')
-    expect(llm.calls[0].messages[1].content).toContain('restaurant reservation')
+    expect(llm.calls[0]!.options.model).toBe('fast')
+    expect(llm.calls[0]!.messages[0]!.role).toBe('system')
+    expect(llm.calls[0]!.messages[1]!.role).toBe('user')
+    expect(llm.calls[0]!.messages[1]!.content).toContain('restaurant reservation')
   })
 
   it('classifies a marketing content request with high confidence', async () => {
@@ -123,7 +123,7 @@ describe('IntentClassifier', () => {
     expect(result.confidence).toBeLessThan(80)
     expect(result.requires_clarification).toBe(true)
     expect(result.clarification_questions.length).toBeGreaterThan(0)
-    expect(result.clarification_questions[0]).toContain('data')
+    expect(result.clarification_questions[0]!).toContain('data')
   })
 
   it('throws on invalid JSON from LLM', async () => {

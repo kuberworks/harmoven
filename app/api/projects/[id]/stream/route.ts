@@ -10,52 +10,26 @@
 //   - Gate events (stream:gates) suppressed unless caller has that permission.
 
 import { NextRequest } from 'next/server'
-import { auth } from '@/lib/auth'
+import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
-import type { Caller } from '@/lib/auth/rbac'
 import { projectEventBus } from '@/lib/events/project-event-bus.factory'
 import type { ProjectEvent, RunSSEEvent } from '@/lib/events/project-event-bus.interface'
 import { db } from '@/lib/db/client'
 
-const RECONNECT_BUFFER_HOURS = 24
+/** SSE heartbeat interval — spec §34.4 “30s heartbeat”. */
+const HEARTBEAT_MS = 30_000
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const projectId = params.id
+  const { id } = await params
+  const projectId = id
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
-  let caller: Caller | null = null
-  try {
-    const session = await auth.api.getSession({ headers: req.headers })
-    if (session?.user) {
-      caller = {
-        type: 'session',
-        userId: session.user.id,
-        instanceRole: (session.user as { role?: string }).role ?? null,
-      }
-    } else {
-      const bearer = req.headers.get('authorization')?.replace('Bearer ', '')
-      if (bearer) {
-        const key = await db.projectApiKey.findFirst({
-          where: {
-            key_hash: require('crypto').createHash('sha256').update(bearer).digest('hex'),
-            revoked_at: null,
-          },
-          select: { id: true },
-        })
-        if (key) caller = { type: 'api_key', keyId: key.id }
-      }
-    }
-  } catch {
-    // Auth failure → 401 below
-  }
-
-  if (!caller) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+  const caller = await resolveCaller(req)
+  if (!caller) return new Response('Unauthorized', { status: 401 })
 
   // ─── Project access + permission check ─────────────────────────────────────
   try {
@@ -67,20 +41,28 @@ export async function GET(
   }
 
   const perms = await resolvePermissions(caller, projectId)
-  if (!perms.has('stream:project')) {
-    return new Response('Forbidden', { status: 403 })
-  }
+  if (!perms.has('stream:project')) return new Response('Forbidden', { status: 403 })
 
   // ─── SSE stream ────────────────────────────────────────────────────────────
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
-    start(controller) {
+    async start(controller) {
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+
+      function sendRaw(data: string) {
+        controller.enqueue(encoder.encode(data))
+      }
+
       function send(event: RunSSEEvent | { type: string }, id?: string) {
         let data = ''
         if (id) data += `id: ${id}\n`
         data += `data: ${JSON.stringify(event)}\n\n`
-        controller.enqueue(encoder.encode(data))
+        sendRaw(data)
+      }
+
+      function sendHeartbeat() {
+        sendRaw(': heartbeat\n\n')
       }
 
       function shouldSendEvent(event: ProjectEvent['event']): boolean {
@@ -90,21 +72,21 @@ export async function GET(
         return true
       }
 
-      // Reconnect buffer replay
+      // Replay missed events when Last-Event-ID is present
       const lastEventId = req.headers.get('last-event-id')
       if (lastEventId) {
-        const since = new Date(Date.now() - RECONNECT_BUFFER_HOURS * 60 * 60 * 1000)
-        db.eventPayload.findMany({
-          where: { project_id: projectId, created_at: { gte: since } },
-          orderBy: { created_at: 'asc' },
-        }).then(rows => {
+        try {
+          const rows = await db.eventPayload.findMany({
+            where: { project_id: projectId, id: { gt: lastEventId } },
+            orderBy: { created_at: 'asc' },
+          })
           for (const row of rows) {
             try {
               const parsed = JSON.parse(row.payload) as ProjectEvent
               if (shouldSendEvent(parsed.event)) send(parsed.event as RunSSEEvent, row.id)
             } catch { /* skip malformed */ }
           }
-        }).catch(() => { /* non-fatal */ })
+        } catch { /* non-fatal */ }
       }
 
       // Subscribe to live events
@@ -112,8 +94,12 @@ export async function GET(
         if (shouldSendEvent(e.event)) send(e.event as RunSSEEvent)
       })
 
+      // 30s heartbeat to keep connection alive through proxies (§34.4)
+      heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_MS)
+
       req.signal.addEventListener('abort', () => {
         unsubscribe()
+        if (heartbeatTimer) clearInterval(heartbeatTimer)
         try { controller.close() } catch { /* already closed */ }
       })
     },

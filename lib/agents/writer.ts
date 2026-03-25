@@ -6,10 +6,17 @@
 // - LLM tier is determined by node complexity: low→fast, medium→balanced, high→powerful.
 // - Streaming: tokens forwarded via onChunk callback (SSE wired in T1.8; stub here).
 // - AbortSignal propagated through to the LLM call.
+// - Retry: Am.6.C — max 3 attempts, exponential backoff 5/15/45s ±20%.
+// - upstream_inputs sanitized (Section 24): truncated to 500K chars max.
+// - output.confidence validated to 0–100 range.
 // - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
 
 import type { ILLMClient } from '@/lib/llm/mock-client'
 import type { ProfileId } from '@/lib/agents/classifier'
+import { withRetry } from '@/lib/utils/retry'
+
+/** Max chars of upstream input content forwarded to the LLM (Section 24). */
+const MAX_UPSTREAM_INPUT_CHARS = 500_000
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +89,24 @@ Rules:
 - confidence < 80 means the output needs revision.`
 }
 
+// ─── Input sanitizer (Section 24) ────────────────────────────────────────────
+
+/**
+ * Sanitize upstream inputs before injecting into a prompt.
+ * - Truncates total JSON to MAX_UPSTREAM_INPUT_CHARS (Section 24 500K limit).
+ * - Strips null bytes and normalises unicode.
+ */
+function sanitizeUpstreamInputs(inputs: Record<string, unknown>): string {
+  let serialized = JSON.stringify(inputs)
+    .replace(/\u0000/g, '')  // strip null bytes
+    .normalize('NFC')         // unicode normalization
+
+  if (serialized.length > MAX_UPSTREAM_INPUT_CHARS) {
+    serialized = serialized.slice(0, MAX_UPSTREAM_INPUT_CHARS) + '[TRUNCATED]'
+  }
+  return serialized
+}
+
 // ─── Writer ───────────────────────────────────────────────────────────────────
 
 export class Writer {
@@ -94,6 +119,7 @@ export class Writer {
   ): Promise<WriterOutput> {
     const tier = TIER[node.complexity]
     const startMs = Date.now()
+    let retries = 0
 
     const messages = [
       { role: 'system' as const, content: buildSystemPrompt(node.domain_profile) },
@@ -102,7 +128,7 @@ export class Writer {
         content: JSON.stringify({
           task: node.description,
           expected_output_type: node.expected_output_type,
-          upstream_inputs: node.inputs,
+          upstream_inputs: sanitizeUpstreamInputs(node.inputs),
         }),
       },
     ]
@@ -113,13 +139,23 @@ export class Writer {
     let modelUsed: string
 
     if (onChunk) {
+      // Streaming does not retry (chunks already emitted to client)
       const result = await this.llm.stream(messages, { model: tier, signal }, onChunk)
       raw = result.content
       tokensIn = result.tokensIn
       tokensOut = result.tokensOut
       modelUsed = result.model
     } else {
-      const result = await this.llm.chat(messages, { model: tier, signal })
+      const result = await withRetry(
+        () => this.llm.chat(messages, { model: tier, signal }),
+        {
+          signal,
+          onRetry: (err, attempt) => {
+            retries = attempt
+            console.warn(`[Writer(${node.node_id})] attempt ${attempt} failed:`, err)
+          },
+        },
+      )
       raw = result.content
       tokensIn = result.tokensIn
       tokensOut = result.tokensOut
@@ -136,11 +172,15 @@ export class Writer {
     }
 
     const p = parsed as Record<string, unknown>
-    if (!p['output'] || typeof (p['output'] as Record<string, unknown>)['confidence'] !== 'number') {
+    const output = p['output'] as Record<string, unknown> | undefined
+    if (!output || typeof output['confidence'] !== 'number') {
       throw new Error(
         `Writer(${node.node_id}): missing or invalid "output.confidence" in LLM response`,
       )
     }
+
+    // Clamp confidence to 0–100
+    output['confidence'] = Math.min(100, Math.max(0, output['confidence'] as number))
 
     const durationSeconds = Math.round((Date.now() - startMs) / 1000)
 
@@ -150,14 +190,14 @@ export class Writer {
       source_node_id: node.node_id,
       target_agent: 'REVIEWER',
       run_id: node.run_id,
-      output: p['output'] as WriterOutput['output'],
+      output: output as WriterOutput['output'],
       assumptions_made: (p['assumptions_made'] as string[]) ?? [],
       execution_meta: {
         llm_used: modelUsed,
         tokens_input: tokensIn,
         tokens_output: tokensOut,
         duration_seconds: durationSeconds,
-        retries: 0,
+        retries,
       },
       lateral_delegation_request: null,
     }

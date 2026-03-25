@@ -38,7 +38,7 @@ describe('InMemoryEventBus', () => {
     await bus.emit(makeStateChangeEvent('proj-1', 'run-1', 'n1', 'RUNNING'))
 
     expect(received).toHaveLength(1)
-    const evt = received[0]
+    const evt = received[0]!
     expect(evt.project_id).toBe('proj-1')
     expect(evt.run_id).toBe('run-1')
     expect((evt.event as RunSSEEvent & { type: 'state_change' }).type).toBe('state_change')
@@ -58,7 +58,7 @@ describe('InMemoryEventBus', () => {
     await bus.emit(makeStateChangeEvent('proj-2', 'run-2', 'n1', 'COMPLETED'))
 
     expect(received).toHaveLength(1)
-    expect((received[0].event as { status: string }).status).toBe('RUNNING')
+    expect((received[0]!.event as { status: string }).status).toBe('RUNNING')
 
     await bus.close()
   })

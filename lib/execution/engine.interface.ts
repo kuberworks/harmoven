@@ -50,6 +50,8 @@ export interface RunRow {
   completed_at: Date | null
   paused_at: Date | null
   metadata: unknown
+  cost_actual_usd?: number | null
+  tokens_actual?: number | null
 }
 
 /** Minimal node row shape used by the executor (subset of Prisma Node model). */

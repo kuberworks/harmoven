@@ -125,16 +125,16 @@ describe('Planner', () => {
     expect(result.dag.edges).toHaveLength(2)
 
     // First node has no dependencies
-    expect(result.dag.nodes[0].node_id).toBe('n1')
-    expect(result.dag.nodes[0].dependencies).toHaveLength(0)
+    expect(result.dag.nodes[0]!.node_id).toBe('n1')
+    expect(result.dag.nodes[0]!.dependencies).toHaveLength(0)
 
     // Last node is REVIEWER
-    const lastNode = result.dag.nodes[result.dag.nodes.length - 1]
+    const lastNode = result.dag.nodes[result.dag.nodes.length - 1]!
     expect(lastNode.agent).toBe('REVIEWER')
 
     // Edge chain: n1 → n2, n2 → n3
-    expect(result.dag.edges[0]).toEqual({ from: 'n1', to: 'n2' })
-    expect(result.dag.edges[1]).toEqual({ from: 'n2', to: 'n3' })
+    expect(result.dag.edges[0]!).toEqual({ from: 'n1', to: 'n2' })
+    expect(result.dag.edges[1]!).toEqual({ from: 'n2', to: 'n3' })
 
     // High confidence → no human approval needed
     expect(result.meta.confidence).toBe(88)
@@ -142,10 +142,10 @@ describe('Planner', () => {
 
     // Planner must use the "powerful" LLM tier
     expect(llm.calls).toHaveLength(1)
-    expect(llm.calls[0].options.model).toBe('powerful')
+    expect(llm.calls[0]!.options.model).toBe('powerful')
 
     // User task passed as user message content
-    const userMsg = llm.calls[0].messages[1]
+    const userMsg = llm.calls[0]!.messages[1]!
     expect(userMsg.role).toBe('user')
     expect(userMsg.content).toContain('restaurant reservation')
     expect(userMsg.content).toContain('app_scaffolding')

@@ -11,6 +11,7 @@
 import type { ILLMClient } from '@/lib/llm/mock-client'
 import type { ProfileId } from '@/lib/agents/classifier'
 import type { WriterOutput } from '@/lib/agents/writer'
+import { withRetry } from '@/lib/utils/retry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,26 +98,33 @@ export class Reviewer {
   ): Promise<ReviewerOutput> {
     const startMs = Date.now()
 
-    const result = await this.llm.chat(
-      [
-        { role: 'system', content: buildSystemPrompt(profile) },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            run_id,
-            domain_profile: profile,
-            writer_outputs: writerOutputs.map(w => ({
-              node_id: w.source_node_id,
-              output_type: w.output.type,
-              summary: w.output.summary,
-              content: w.output.content,
-              confidence: w.output.confidence,
-              assumptions_made: w.assumptions_made,
-            })),
-          }),
-        },
-      ],
-      { model: 'powerful', signal },
+    const result = await withRetry(
+      () => this.llm.chat(
+        [
+          { role: 'system', content: buildSystemPrompt(profile) },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              run_id,
+              domain_profile: profile,
+              writer_outputs: writerOutputs.map(w => ({
+                node_id: w.source_node_id,
+                output_type: w.output.type,
+                summary: w.output.summary,
+                content: w.output.content,
+                confidence: w.output.confidence,
+                assumptions_made: w.assumptions_made,
+              })),
+            }),
+          },
+        ],
+        { model: 'powerful', signal },
+      ),
+      {
+        signal,
+        onRetry: (err, attempt) =>
+          console.warn(`[Reviewer] attempt ${attempt} failed:`, err),
+      },
     )
 
     let parsed: unknown
@@ -135,6 +143,10 @@ export class Reviewer {
       )
     }
 
+    const overallConfidence = typeof p['overall_confidence'] === 'number'
+      ? Math.min(100, Math.max(0, p['overall_confidence'] as number))
+      : 0
+
     const durationSeconds = Math.round((Date.now() - startMs) / 1000)
 
     return {
@@ -144,7 +156,7 @@ export class Reviewer {
       run_id,
       verdict: p['verdict'] as ReviewVerdict,
       findings: (p['findings'] as ReviewFinding[]) ?? [],
-      overall_confidence: p['overall_confidence'] as number,
+      overall_confidence: overallConfidence,
       overall_confidence_rationale: p['overall_confidence_rationale'] as string,
       meta: {
         llm_used: result.model,
