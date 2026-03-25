@@ -1,0 +1,70 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      # DATABASE_URL must be set in .env (env_file above) — no default here
+      # so the env_file value is never silently shadowed by a hardcoded fallback.
+      # Internal Docker DNS uses the service name "db" on port 5432.
+      # Example: DATABASE_URL=postgresql://harmoven:CHANGE_ME@db:5432/harmoven
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "${HARMOVEN_DB_PORT:-5432}:5432"  # override in .env if 5432 is already taken
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-harmoven}
+      POSTGRES_USER: ${POSTGRES_USER:-harmoven}
+      # SECURITY: set a strong POSTGRES_PASSWORD in .env — never use the default in production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-harmoven}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harmoven -d harmoven"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # LiteLLM sidecar — opt-in (set litellm.enabled: true in orchestrator.yaml)
+  # litellm:
+  #   image: ghcr.io/berriai/litellm:main
+  #   ports:
+  #     - "4000:4000"
+  #   networks:
+  #     - litellm_net  # isolated — app communicates via internal DNS only
+  #   environment:
+  #     - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+  #   restart: unless-stopped
+
+  # Docker socket proxy (Tecnativa) — used by scaffolding smoke test
+  # docker-proxy:
+  #   image: ghcr.io/tecnativa/docker-socket-proxy:latest
+  #   environment:
+  #     - CONTAINERS=1
+  #     - POST=1
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #   networks:
+  #     - proxy_net
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
