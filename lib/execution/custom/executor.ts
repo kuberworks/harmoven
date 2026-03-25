@@ -3,7 +3,7 @@
 // Spec: AGENTS-04-EXECUTION.md Section 34, Amendment 82.
 //
 // T1.4 scope: state machine, serial/parallel execution, cancel/pause/resume.
-// T1.5 scope (next): MAX_CONCURRENT_NODES, heartbeat, orphan detection, crash recovery.
+// T1.5 scope: MAX_CONCURRENT_NODES, heartbeat, orphan detection, crash recovery.
 
 import type { Dag } from '@/types/dag.types'
 import type { NodeStatus, RunStatus } from '@/types/run.types'
@@ -16,10 +16,12 @@ import type {
 import {
   assertNodeTransition,
   assertRunTransition,
+  canTransitionRun,
   isNodeDone,
   isTerminalNode,
   isTerminalRun,
 } from '@/lib/execution/custom/state-machine'
+import { HeartbeatManager, ORPHAN_THRESHOLD_MS } from '@/lib/execution/custom/heartbeat'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,21 @@ export class InMemoryRunStore implements ExecutorDb {
       if (!found) throw new Error(`Node not found: ${where.id}`)
       return found as unknown as ReturnType<ExecutorDb['node']['update']> extends Promise<infer T> ? T : never
     },
+    findOrphaned: async ({ before }: { before: Date }) => {
+      const result: Record<string, unknown>[] = []
+      for (const list of this._nodes.values()) {
+        for (const node of list) {
+          if (
+            node['status'] === 'RUNNING' &&
+            node['last_heartbeat'] != null &&
+            (node['last_heartbeat'] as Date) < before
+          ) {
+            result.push(node)
+          }
+        }
+      }
+      return result as unknown as ReturnType<ExecutorDb['node']['findOrphaned']> extends Promise<infer T> ? T : never
+    },
     updateMany: async ({ where, data }: { where: { run_id: string; status?: string }; data: Record<string, unknown> }) => {
       let count = 0
       const list = this._nodes.get(where.run_id) ?? []
@@ -125,24 +142,33 @@ export class InMemoryRunStore implements ExecutorDb {
 export class CustomExecutor implements IExecutionEngine {
   private _shuttingDown = false
   private _acceptingRuns = true
-  /**
-   * IDs of nodes currently being executed by this executor instance.
-   * Used to check `hasRunningNodes()` during graceful shutdown.
-   */
+
+  /** IDs of nodes currently being executed by this instance. */
   private _runningNodeIds = new Set<string>()
-  /**
-   * AbortControllers keyed by runId — used to cancel all in-flight nodes.
-   */
+
+  /** Maps nodeId → runId to support suspendInterruptedRuns after markShutdownNodes. */
+  private _nodeRunId = new Map<string, string>()
+
+  /** Run IDs that had nodes interrupted during shutdown — consumed by suspendInterruptedRuns. */
+  private _interruptedRunIds = new Set<string>()
+
+  /** AbortControllers keyed by runId — used to cancel all in-flight nodes. */
   private _cancelSignals = new Map<string, AbortController>()
+
   /**
    * Runs currently in a paused state (executor-level flag, not DB).
    * The DB is also updated — this flag prevents new nodes from starting.
    */
   private _pausedRunIds = new Set<string>()
 
+  /** Per-node heartbeat timers — pulse last_heartbeat every HEARTBEAT_INTERVAL_MS. */
+  private _heartbeat = new HeartbeatManager()
+
   constructor(
     private db: ExecutorDb,
     private agentRunner: AgentRunnerFn,
+    /** Max nodes that may run in parallel within a single run. Loaded from orchestrator.yaml. */
+    private _maxConcurrentNodes = 4,
   ) {}
 
   // ─── IExecutionEngine ─────────────────────────────────────────────────────
@@ -238,21 +264,87 @@ export class CustomExecutor implements IExecutionEngine {
   }
 
   async markShutdownNodes(): Promise<void> {
+    this._heartbeat.stopAll()
     for (const nodeId of this._runningNodeIds) {
+      const runId = this._nodeRunId.get(nodeId)
+      if (runId) this._interruptedRunIds.add(runId)
       await this.db.node.update({
         where: { id: nodeId },
-        data: { status: 'FAILED', error: 'Process shutdown before completion' },
+        data: {
+          status: 'INTERRUPTED',
+          interrupted_at: new Date(),
+          interrupted_by: 'graceful_shutdown',
+          error: 'Process shutdown before completion',
+        },
       })
     }
     this._runningNodeIds.clear()
+    this._nodeRunId.clear()
   }
 
   async suspendInterruptedRuns(reason: string): Promise<void> {
-    // Collect affected run IDs from still-running node context
-    // This is called after markShutdownNodes() — DB already updated
-    // The caller (server.ts) knows which run IDs had running nodes
-    // For simplicity in T1.4: a no-op (T1.5 adds full crash recovery)
-    void reason
+    for (const runId of this._interruptedRunIds) {
+      try {
+        const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+        const status = run.status as RunStatus
+        if (canTransitionRun(status, 'SUSPENDED')) {
+          await this.transitionRun(runId, status, 'SUSPENDED')
+          await this.db.run.update({
+            where: { id: runId },
+            data: { metadata: { ...(run.metadata as object), suspend_reason: reason } },
+          })
+        }
+      } catch {
+        // Run may have been deleted or already in terminal state — skip silently.
+      }
+    }
+    this._interruptedRunIds.clear()
+  }
+
+  async recoverOrphans(orphanThresholdMs = ORPHAN_THRESHOLD_MS): Promise<{ recovered: number }> {
+    const before = new Date(Date.now() - orphanThresholdMs)
+    const orphaned = await this.db.node.findOrphaned({ before })
+
+    const affectedRunIds = new Set<string>()
+    for (const node of orphaned) {
+      await this.db.node.update({
+        where: { id: node.id },
+        data: {
+          status: 'INTERRUPTED',
+          interrupted_at: new Date(),
+          interrupted_by: 'orphan_detection',
+          error: 'No heartbeat within orphan threshold — executor likely crashed',
+        },
+      })
+      await this.db.auditLog.create({
+        data: {
+          run_id: node.run_id,
+          node_id: node.node_id,
+          actor: 'system',
+          action_type: 'node_orphaned',
+          payload: { threshold_ms: orphanThresholdMs },
+        },
+      })
+      affectedRunIds.add(node.run_id)
+    }
+
+    for (const runId of affectedRunIds) {
+      try {
+        const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+        const status = run.status as RunStatus
+        if (canTransitionRun(status, 'SUSPENDED')) {
+          await this.transitionRun(runId, status, 'SUSPENDED')
+          await this.db.run.update({
+            where: { id: runId },
+            data: { metadata: { ...(run.metadata as object), suspend_reason: 'orphan_recovery' } },
+          })
+        }
+      } catch {
+        // Run not found or already terminal — skip.
+      }
+    }
+
+    return { recovered: orphaned.length }
   }
 
   // ─── Internal execution loop ──────────────────────────────────────────────
@@ -297,8 +389,10 @@ export class CustomExecutor implements IExecutionEngine {
         continue
       }
 
-      // Execute all ready nodes in parallel (T1.5 adds MAX_CONCURRENT_NODES cap)
-      await Promise.all(readyNodes.map(node => this.executeNode(runId, node, signal)))
+      // Execute ready nodes in parallel, capped at _maxConcurrentNodes per run.
+      // Remaining ready nodes are picked up on the next loop iteration.
+      const batch = readyNodes.slice(0, this._maxConcurrentNodes)
+      await Promise.all(batch.map(node => this.executeNode(runId, node, signal)))
     }
 
     // Finalize run status
@@ -336,6 +430,15 @@ export class CustomExecutor implements IExecutionEngine {
       data: { started_at: new Date(), last_heartbeat: new Date() },
     })
     this._runningNodeIds.add(node.id)
+    this._nodeRunId.set(node.id, runId)
+
+    // Start heartbeat — keeps last_heartbeat fresh so orphan detection ignores this node.
+    this._heartbeat.start(node.id, async () => {
+      await this.db.node.update({
+        where: { id: node.id },
+        data: { last_heartbeat: new Date() },
+      })
+    })
 
     try {
       const output = await this.agentRunner(node, handoffIn, signal)
@@ -395,7 +498,9 @@ export class CustomExecutor implements IExecutionEngine {
         },
       })
     } finally {
+      this._heartbeat.stop(node.id)
       this._runningNodeIds.delete(node.id)
+      this._nodeRunId.delete(node.id)
     }
   }
 
