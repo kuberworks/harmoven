@@ -70,7 +70,7 @@ describe('Writer', () => {
 
     // Correct tier passed to LLM
     expect(llm.calls).toHaveLength(1)
-    expect(llm.calls[0].options.model).toBe('powerful')
+    expect(llm.calls[0]!.options.model).toBe('powerful')
   })
 
   it('executes a low-complexity node using the fast LLM tier', async () => {
@@ -103,7 +103,7 @@ describe('Writer', () => {
     expect(result.assumptions_made).toHaveLength(0)
     expect(result.execution_meta.llm_used).toBe('fast')
 
-    expect(llm.calls[0].options.model).toBe('fast')
+    expect(llm.calls[0]!.options.model).toBe('fast')
   })
 
   it('uses balanced tier for medium-complexity node', async () => {
@@ -113,7 +113,7 @@ describe('Writer', () => {
     const writer = new Writer(llm)
     await writer.execute(makeNode({ complexity: 'medium' }))
 
-    expect(llm.calls[0].options.model).toBe('balanced')
+    expect(llm.calls[0]!.options.model).toBe('balanced')
   })
 
   it('forwards chunks via onChunk callback (streaming)', async () => {
@@ -152,7 +152,7 @@ describe('Writer', () => {
       }),
     )
 
-    const userMsg = llm.calls[0].messages[1]
+    const userMsg = llm.calls[0]!.messages[1]!
     expect(userMsg.role).toBe('user')
     expect(userMsg.content).toContain('reservation booking UI')
     expect(userMsg.content).toContain('output:n1')

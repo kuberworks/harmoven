@@ -67,7 +67,7 @@ describe('Reviewer', () => {
 
     // Reviewer must always use powerful tier
     expect(llm.calls).toHaveLength(1)
-    expect(llm.calls[0].options.model).toBe('powerful')
+    expect(llm.calls[0]!.options.model).toBe('powerful')
   })
 
   it('returns REQUEST_REVISION with error findings', async () => {
@@ -102,9 +102,9 @@ describe('Reviewer', () => {
 
     expect(result.verdict).toBe('REQUEST_REVISION')
     expect(result.findings).toHaveLength(2)
-    expect(result.findings[0].severity).toBe('error')
-    expect(result.findings[0].node_id).toBe('n1')
-    expect(result.findings[1].severity).toBe('warning')
+    expect(result.findings[0]!.severity).toBe('error')
+    expect(result.findings[0]!.node_id).toBe('n1')
+    expect(result.findings[1]!.severity).toBe('warning')
     expect(result.overall_confidence).toBe(72)
   })
 
@@ -119,7 +119,7 @@ describe('Reviewer', () => {
       'run-test-002',
     )
 
-    const userMsg = llm.calls[0].messages[1]
+    const userMsg = llm.calls[0]!.messages[1]!
     expect(userMsg.role).toBe('user')
     expect(userMsg.content).toContain('n1')
     expect(userMsg.content).toContain('n2')
