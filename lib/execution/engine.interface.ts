@@ -26,6 +26,8 @@ export interface ExecutorDb {
   }
   node: {
     findMany(args: { where: { run_id: string } }): Promise<NodeRow[]>
+    /** Return all nodes with status RUNNING and last_heartbeat before the given date. */
+    findOrphaned(args: { before: Date }): Promise<NodeRow[]>
     create(args: { data: Omit<NodeRow, 'id'> }): Promise<NodeRow>
     update(args: { where: { id: string }; data: Partial<NodeRow> }): Promise<NodeRow>
     updateMany(args: { where: { run_id: string; status?: string }; data: Partial<NodeRow> }): Promise<{ count: number }>
@@ -131,4 +133,14 @@ export interface IExecutionEngine {
 
   /** Suspend all runs that had nodes interrupted by shutdown. */
   suspendInterruptedRuns(reason: string): Promise<void>
+
+  /**
+   * Startup recovery — scan the DB for orphaned RUNNING nodes (no heartbeat
+   * within the threshold), mark them INTERRUPTED, and suspend their runs.
+   * Call once after process start, before accepting new runs.
+   *
+   * @param orphanThresholdMs  Default: 3 × HEARTBEAT_INTERVAL_MS (90 s)
+   * @returns number of nodes recovered
+   */
+  recoverOrphans(orphanThresholdMs?: number): Promise<{ recovered: number }>
 }

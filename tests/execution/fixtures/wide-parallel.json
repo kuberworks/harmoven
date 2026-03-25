@@ -1,0 +1,14 @@
+{
+  "description": "Wide parallel DAG: 6 independent nodes (no edges). All are ready at DAG start — good for testing MAX_CONCURRENT_NODES cap.",
+  "dag": {
+    "nodes": [
+      { "id": "n1", "agent_type": "WRITER" },
+      { "id": "n2", "agent_type": "WRITER" },
+      { "id": "n3", "agent_type": "WRITER" },
+      { "id": "n4", "agent_type": "WRITER" },
+      { "id": "n5", "agent_type": "WRITER" },
+      { "id": "n6", "agent_type": "WRITER" }
+    ],
+    "edges": []
+  }
+}
