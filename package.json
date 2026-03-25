@@ -17,6 +17,8 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "latest",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
@@ -29,6 +31,7 @@
     "lru-cache": "^11.0.0",
     "next": "^15.5.14",
     "node-cron": "^3.0.3",
+    "openai": "^6.33.0",
     "openapi-typescript": "^7.4.0",
     "pg": "^8.20.0",
     "react": "^18.3.0",
