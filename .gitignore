@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+.next/
+out/
+dist/
+
+# Environment files — NEVER commit these
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Prisma generated
+prisma/migrations/*.sql
+
+# Keep these tracked:
+# .env.example  ← document required vars, no real values
+# .env.test     ← CI-safe test values only
+# orchestrator.yaml ← instance config, no secrets
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# Electron build
+electron/dist/
+release/
+
+# Data directories
+data/
