@@ -2,7 +2,8 @@
 // Unit tests for CustomExecutor — 5 DAG fixture scenarios.
 // Uses InMemoryRunStore + MockAgentRunner — zero DB / network dependencies.
 
-import { CustomExecutor, InMemoryRunStore } from '@/lib/execution/custom/executor'
+import { CustomExecutor } from '@/lib/execution/custom/executor'
+import { InMemoryRunStore } from '@/tests/execution/store'
 import type { AgentRunnerFn } from '@/lib/execution/engine.interface'
 import type { Dag } from '@/types/dag.types'
 

@@ -33,7 +33,12 @@ function loadMaxConcurrentNodes(): number {
     const raw = fs.readFileSync(yamlPath, 'utf8')
     const config = yaml.load(raw) as OrchestratorYaml
     return config?.execution_engine?.max_concurrent_nodes ?? 4
-  } catch {
+  } catch (err) {
+    // ENOENT is expected when the file is intentionally absent — use the default silently.
+    // Any other error (parse failure, permission denied) should be visible.
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[harmoven] orchestrator.yaml could not be loaded — using default max_concurrent_nodes=4:', err)
+    }
     return 4
   }
 }
@@ -45,6 +50,9 @@ const SHUTDOWN_TIMEOUT_MS = 30_000
 const SHUTDOWN_POLL_MS     = 200
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+
+/** How often to run periodic orphan recovery (spec §34.3: "every 5 min"). */
+const ORPHAN_CRON_INTERVAL_MS = 5 * 60 * 1_000
 
 /**
  * Register a once-only SIGTERM handler that implements the Am.34.3b shutdown protocol:
@@ -160,9 +168,19 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
 
   const runRecovery = config.recoverOrphansOnStartup ?? !isTestContext
   if (runRecovery) {
+    // Run once on startup to recover nodes from a previous crash.
     void engine.recoverOrphans().catch((err: unknown) => {
       console.error('[harmoven] orphan recovery failed on startup:', err)
     })
+
+    // Repeat every 5 min (spec §34.3: "startup + every 5 min").
+    // Unref so the interval does not prevent process exit.
+    const cron = setInterval(() => {
+      void engine.recoverOrphans().catch((err: unknown) => {
+        console.error('[harmoven] periodic orphan recovery failed:', err)
+      })
+    }, ORPHAN_CRON_INTERVAL_MS)
+    cron.unref()
   }
 
   return engine

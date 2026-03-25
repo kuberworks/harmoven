@@ -58,6 +58,16 @@ enum HumanGateStatus {
   TIMED_OUT
 }
 
+// Amendment 60 — GitWorktree.layer must be an enum (not a free text String)
+// to get DB-level validation. Values mirror the layer hierarchy in appScaffolding.
+enum WorktreeLayer {
+  db
+  api
+  ui
+  infra
+  test
+}
+
 enum TriggerType {
   CRON
   FILE_WATCHER
@@ -588,7 +598,7 @@ model GitWorktree {
   run_id      String
   project_id  String
   project     Project   @relation(fields: [project_id], references: [id])
-  layer       String    // db | api | ui | infra | test
+  layer       WorktreeLayer  // db | api | ui | infra | test
   branch_name String    // feat/{run_id}/{layer}
   path        String    // absolute on-disk path
   status      String    @default("active") // active | merged | cleaned
