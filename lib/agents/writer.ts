@@ -1,0 +1,165 @@
+// lib/agents/writer.ts
+// Writer — executes a single leaf node and produces output via the LLM.
+// Spec: AGENTS-01-CORE.md Section 5.3.
+//
+// Rules:
+// - LLM tier is determined by node complexity: low→fast, medium→balanced, high→powerful.
+// - Streaming: tokens forwarded via onChunk callback (SSE wired in T1.8; stub here).
+// - AbortSignal propagated through to the LLM call.
+// - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
+
+import type { ILLMClient } from '@/lib/llm/mock-client'
+import type { ProfileId } from '@/lib/agents/classifier'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type Complexity = 'low' | 'medium' | 'high'
+
+export interface WriterNodeInput {
+  node_id: string
+  description: string
+  complexity: Complexity
+  expected_output_type: string
+  /** Serialised outputs from upstream nodes, keyed by "output:nX" reference. */
+  inputs: Record<string, unknown>
+  domain_profile: ProfileId
+  run_id: string
+}
+
+export interface WriterOutput {
+  handoff_version: string
+  source_agent: 'WRITER'
+  source_node_id: string
+  target_agent: 'REVIEWER'
+  run_id: string
+  output: {
+    type: string
+    summary: string
+    content: string
+    confidence: number
+    confidence_rationale: string
+  }
+  assumptions_made: string[]
+  execution_meta: {
+    llm_used: string
+    tokens_input: number
+    tokens_output: number
+    duration_seconds: number
+    retries: number
+  }
+  lateral_delegation_request: null
+}
+
+// ─── Complexity → LLM tier mapping ───────────────────────────────────────────
+
+const TIER: Record<Complexity, string> = {
+  low: 'fast',
+  medium: 'balanced',
+  high: 'powerful',
+}
+
+// ─── System prompt ────────────────────────────────────────────────────────────
+
+function buildSystemPrompt(profile: ProfileId): string {
+  return `\
+You are a Harmoven Writer agent executing a single task node for a "${profile}" project.
+Produce the requested output and respond ONLY with valid JSON matching this schema:
+
+{
+  "output": {
+    "type": "<document | code | data | media>",
+    "summary": "<one sentence plain-language summary of what was produced>",
+    "content": "<full output content as a string>",
+    "confidence": <integer 0-100>,
+    "confidence_rationale": "<brief explanation>"
+  },
+  "assumptions_made": ["<assumption 1>"]
+}
+
+Rules:
+- Output ONLY the JSON object. No markdown fence, no prose.
+- assumptions_made: list every decision you made that was not explicit in the task.
+- confidence < 80 means the output needs revision.`
+}
+
+// ─── Writer ───────────────────────────────────────────────────────────────────
+
+export class Writer {
+  constructor(private readonly llm: ILLMClient) {}
+
+  async execute(
+    node: WriterNodeInput,
+    signal?: AbortSignal,
+    onChunk?: (chunk: string) => void,
+  ): Promise<WriterOutput> {
+    const tier = TIER[node.complexity]
+    const startMs = Date.now()
+
+    const messages = [
+      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile) },
+      {
+        role: 'user' as const,
+        content: JSON.stringify({
+          task: node.description,
+          expected_output_type: node.expected_output_type,
+          upstream_inputs: node.inputs,
+        }),
+      },
+    ]
+
+    let raw: string
+    let tokensIn: number
+    let tokensOut: number
+    let modelUsed: string
+
+    if (onChunk) {
+      const result = await this.llm.stream(messages, { model: tier, signal }, onChunk)
+      raw = result.content
+      tokensIn = result.tokensIn
+      tokensOut = result.tokensOut
+      modelUsed = result.model
+    } else {
+      const result = await this.llm.chat(messages, { model: tier, signal })
+      raw = result.content
+      tokensIn = result.tokensIn
+      tokensOut = result.tokensOut
+      modelUsed = result.model
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      throw new Error(
+        `Writer(${node.node_id}): LLM returned invalid JSON — ${raw.slice(0, 200)}`,
+      )
+    }
+
+    const p = parsed as Record<string, unknown>
+    if (!p['output'] || typeof (p['output'] as Record<string, unknown>)['confidence'] !== 'number') {
+      throw new Error(
+        `Writer(${node.node_id}): missing or invalid "output.confidence" in LLM response`,
+      )
+    }
+
+    const durationSeconds = Math.round((Date.now() - startMs) / 1000)
+
+    return {
+      handoff_version: '1.0',
+      source_agent: 'WRITER',
+      source_node_id: node.node_id,
+      target_agent: 'REVIEWER',
+      run_id: node.run_id,
+      output: p['output'] as WriterOutput['output'],
+      assumptions_made: (p['assumptions_made'] as string[]) ?? [],
+      execution_meta: {
+        llm_used: modelUsed,
+        tokens_input: tokensIn,
+        tokens_output: tokensOut,
+        duration_seconds: durationSeconds,
+        retries: 0,
+      },
+      lateral_delegation_request: null,
+    }
+  }
+}
