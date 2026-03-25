@@ -160,8 +160,8 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
 
   const runRecovery = config.recoverOrphansOnStartup ?? !isTestContext
   if (runRecovery) {
-    void engine.recoverOrphans().catch(() => {
-      // Non-fatal: log but don't crash startup if DB is temporarily unavailable.
+    void engine.recoverOrphans().catch((err: unknown) => {
+      console.error('[harmoven] orphan recovery failed on startup:', err)
     })
   }
 

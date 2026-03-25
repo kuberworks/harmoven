@@ -113,5 +113,7 @@ export const auth = betterAuth({
   },
 })
 
+// auth.$Infer.Session = { session: SessionRow, user: UserRow }
 export type Session = typeof auth.$Infer.Session
-export type AuthUser = typeof auth.$Infer.User
+// AuthUser is the user object nested inside the session — not a separate $Infer key.
+export type AuthUser = typeof auth.$Infer.Session.user

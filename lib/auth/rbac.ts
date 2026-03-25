@@ -12,6 +12,7 @@ import { db } from '@/lib/db/client'
 import type { Permission } from './permissions'
 import { BUILT_IN_ROLES } from './built-in-roles'
 import type { BuiltInRoleName } from './built-in-roles'
+import { ALL_PERMISSIONS } from './permissions'
 
 export class ForbiddenError extends Error {
   readonly status = 403
@@ -98,9 +99,14 @@ export async function resolvePermissions(
     }
   }
 
-  // Add explicit permissions declared on the role (additive)
+  // Add explicit permissions declared on the role (additive).
+  // Validate each entry against the canonical permission set before adding —
+  // rejects any corrupt or injected string that is not a known permission.
+  const permissionSet = new Set<string>(ALL_PERMISSIONS)
   for (const p of permissionsList) {
-    result.add(p as Permission)
+    if (permissionSet.has(p)) {
+      result.add(p as Permission)
+    }
   }
 
   return result
@@ -109,12 +115,13 @@ export async function resolvePermissions(
 /**
  * Assert that the caller has all of the required permissions.
  * Throws ForbiddenError if any permission is missing.
+ * The error message is intentionally generic — never leaks permission names to the caller.
  */
 export function assertPermissions(
   perms: Set<Permission>,
   required: Permission[],
 ): void {
   for (const p of required) {
-    if (!perms.has(p)) throw new ForbiddenError(`Missing permission: ${p}`)
+    if (!perms.has(p)) throw new ForbiddenError()
   }
 }

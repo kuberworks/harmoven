@@ -294,8 +294,9 @@ export class CustomExecutor implements IExecutionEngine {
             data: { metadata: { ...(run.metadata as object), suspend_reason: reason } },
           })
         }
-      } catch {
-        // Run may have been deleted or already in terminal state — skip silently.
+      } catch (err) {
+        // Run may have been deleted or already in terminal state — skip.
+        console.error(`[executor] suspendInterruptedRuns failed for run ${runId}:`, err)
       }
     }
     this._interruptedRunIds.clear()
@@ -339,8 +340,9 @@ export class CustomExecutor implements IExecutionEngine {
             data: { metadata: { ...(run.metadata as object), suspend_reason: 'orphan_recovery' } },
           })
         }
-      } catch {
+      } catch (err) {
         // Run not found or already terminal — skip.
+        console.error(`[executor] recoverOrphans: failed to suspend run ${runId}:`, err)
       }
     }
 
@@ -390,8 +392,15 @@ export class CustomExecutor implements IExecutionEngine {
       }
 
       // Execute ready nodes in parallel, capped at _maxConcurrentNodes per run.
-      // Remaining ready nodes are picked up on the next loop iteration.
-      const batch = readyNodes.slice(0, this._maxConcurrentNodes)
+      // Subtract nodes already RUNNING in the DB to avoid exceeding the cap across
+      // poll cycles (e.g. 3 running + 4 ready with cap=4 → only start 1 new node).
+      const alreadyRunning = nodes.filter(n => n.status === 'RUNNING').length
+      const slots = Math.max(0, this._maxConcurrentNodes - alreadyRunning)
+      if (slots === 0) {
+        await sleep(POLL_INTERVAL_MS)
+        continue
+      }
+      const batch = readyNodes.slice(0, slots)
       await Promise.all(batch.map(node => this.executeNode(runId, node, signal)))
     }
 
@@ -434,10 +443,16 @@ export class CustomExecutor implements IExecutionEngine {
 
     // Start heartbeat — keeps last_heartbeat fresh so orphan detection ignores this node.
     this._heartbeat.start(node.id, async () => {
-      await this.db.node.update({
-        where: { id: node.id },
-        data: { last_heartbeat: new Date() },
-      })
+      try {
+        await this.db.node.update({
+          where: { id: node.id },
+          data: { last_heartbeat: new Date() },
+        })
+      } catch (err) {
+        // Log but do not rethrow — a missed pulse is not fatal; orphan detection
+        // has a 3x threshold (90 s) before marking a node stale.
+        console.error(`[executor] heartbeat failed for node ${node.id}:`, err)
+      }
     })
 
     try {
