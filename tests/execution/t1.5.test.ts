@@ -2,7 +2,8 @@
 // T1.5 unit tests: HeartbeatManager, MAX_CONCURRENT_NODES, orphan recovery, shutdown protocol.
 // All tests are zero-DB / zero-network (InMemoryRunStore + synthetic AgentRunnerFn).
 
-import { CustomExecutor, InMemoryRunStore } from '@/lib/execution/custom/executor'
+import { CustomExecutor } from '@/lib/execution/custom/executor'
+import { InMemoryRunStore } from '@/tests/execution/store'
 import { HeartbeatManager } from '@/lib/execution/custom/heartbeat'
 import type { AgentRunnerFn } from '@/lib/execution/engine.interface'
 import type { Dag } from '@/types/dag.types'
@@ -360,7 +361,7 @@ describe('recoverOrphans', () => {
 // ─── Shutdown Protocol ───────────────────────────────────────────────────────
 
 describe('shutdown protocol', () => {
-  test('markShutdownNodes marks in-flight nodes INTERRUPTED and suspendInterruptedRuns suspends the run', async () => {
+  test('markShutdownNodes marks in-flight nodes FAILED and suspendInterruptedRuns suspends the run', async () => {
     const runId = 'run-shutdown'
     const dag = linearFixture.dag as Dag
     const store = buildStore(runId, dag)
@@ -393,7 +394,9 @@ describe('shutdown protocol', () => {
 
     // Assertions BEFORE releasing the barrier (state is clean here)
     const nodes = await store.node.findMany({ where: { run_id: runId } })
-    expect(nodes.some(n => n.status === 'INTERRUPTED')).toBe(true)
+    // Spec §34.3b: shutdown marks in-flight nodes FAILED (not INTERRUPTED),
+    // so crash recovery can find and reset them to PENDING on restart.
+    expect(nodes.some(n => n.status === 'FAILED')).toBe(true)
     expect(await getRunStatus(store, runId)).toBe('SUSPENDED')
     expect(executor.hasRunningNodes()).toBe(false)
 

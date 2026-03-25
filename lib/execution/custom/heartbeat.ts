@@ -6,8 +6,12 @@
 /** How often to emit a heartbeat for each running node (30 s). */
 export const HEARTBEAT_INTERVAL_MS = 30_000
 
-/** Nodes not pulsed within this window are considered orphaned (3 × heartbeat = 90 s). */
-export const ORPHAN_THRESHOLD_MS = 3 * HEARTBEAT_INTERVAL_MS
+/**
+ * Nodes not pulsed within this window are considered orphaned.
+ * Spec §34.3: "last_heartbeat < now - 5min" → 300 s.
+ * (Previously was 3 × heartbeat = 90 s, which was too aggressive.)
+ */
+export const ORPHAN_THRESHOLD_MS = 5 * 60 * 1_000  // 5 minutes
 
 /**
  * Manages per-node setInterval timers.

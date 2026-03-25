@@ -38,12 +38,21 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   // middleware runs in the Next.js edge runtime and cannot use Node.js-specific adapters
   // (PrismaClient / @prisma/adapter-pg require Node.js APIs).
   const sessionUrl = new URL('/api/auth/get-session', request.url)
-  const sessionRes = await fetch(sessionUrl, {
-    headers: {
-      // Forward cookies so Better Auth can read the session token.
-      cookie: request.headers.get('cookie') ?? '',
-    },
-  })
+  let sessionRes: Response
+  try {
+    sessionRes = await fetch(sessionUrl, {
+      headers: {
+        // Forward cookies so Better Auth can read the session token.
+        cookie: request.headers.get('cookie') ?? '',
+      },
+    })
+  } catch {
+    // Network / cold-start failure — fail closed: redirect to login rather than
+    // silently passing the request through unauthenticated (spec §34: every action traceable).
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('callbackURL', pathname)
+    return NextResponse.redirect(loginUrl)
+  }
 
   if (sessionRes.ok) {
     const body = await sessionRes.json() as unknown

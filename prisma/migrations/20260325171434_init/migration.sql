@@ -19,6 +19,10 @@ CREATE TYPE "TriggerType" AS ENUM ('CRON', 'FILE_WATCHER', 'WEBHOOK');
 -- CreateEnum
 CREATE TYPE "CredentialType" AS ENUM ('HTTP_BEARER', 'HTTP_BASIC', 'HEADER', 'QUERY_PARAM', 'OAUTH2');
 
+-- CreateEnum
+-- Amendment 60: layer is a typed enum, not free text, for DB-level validation.
+CREATE TYPE "WorktreeLayer" AS ENUM ('db', 'api', 'ui', 'infra', 'test');
+
 -- CreateTable
 CREATE TABLE "user" (
     "id" TEXT NOT NULL,
@@ -433,7 +437,7 @@ CREATE TABLE "GitWorktree" (
     "id" TEXT NOT NULL,
     "run_id" TEXT NOT NULL,
     "project_id" TEXT NOT NULL,
-    "layer" TEXT NOT NULL,
+    "layer" "WorktreeLayer" NOT NULL,
     "branch_name" TEXT NOT NULL,
     "path" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'active',

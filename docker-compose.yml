@@ -26,13 +26,18 @@ services:
 
   db:
     image: postgres:16-alpine
+    # Enforce synchronous_commit=on (spec §34 crash safety requirement).
+    # PostgreSQL defaults to on, but we make it explicit so a future tuning
+    # pass cannot silently lower it without touching this file.
+    command: postgres -c synchronous_commit=on
     ports:
       - "${HARMOVEN_DB_PORT:-5432}:5432"  # override in .env if 5432 is already taken
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-harmoven}
       POSTGRES_USER: ${POSTGRES_USER:-harmoven}
-      # SECURITY: set a strong POSTGRES_PASSWORD in .env — never use the default in production
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-harmoven}
+      # SECURITY: POSTGRES_PASSWORD must be set in .env — no default is provided.
+      # Use: POSTGRES_PASSWORD=$(openssl rand -base64 32)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (run: openssl rand -base64 32)}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped

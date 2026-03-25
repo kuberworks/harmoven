@@ -30,113 +30,6 @@ const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 /** Poll interval while waiting for in-flight nodes to settle. */
 const POLL_INTERVAL_MS = 100
 
-// ─── InMemoryRunStore (for tests) ─────────────────────────────────────────────
-
-/** Minimal in-memory DB that satisfies ExecutorDb — used in unit tests. */
-export class InMemoryRunStore implements ExecutorDb {
-  private _runs = new Map<string, Record<string, unknown>>()
-  private _nodes = new Map<string, Array<Record<string, unknown>>>()
-  private _auditLog: unknown[] = []
-  private _handoffs: unknown[] = []
-
-  seedRun(run: Record<string, unknown>): void {
-    this._runs.set(run['id'] as string, { ...run })
-    if (!this._nodes.has(run['id'] as string)) {
-      this._nodes.set(run['id'] as string, [])
-    }
-  }
-
-  seedNode(runId: string, node: Record<string, unknown>): void {
-    const list = this._nodes.get(runId) ?? []
-    // Auto-assign a unique id if not provided — prevents update() from matching wrong rows.
-    const nodeWithId = node['id'] != null ? node : { ...node, id: crypto.randomUUID() }
-    list.push(nodeWithId)
-    this._nodes.set(runId, list)
-  }
-
-  getAuditLog(): unknown[] {
-    return this._auditLog
-  }
-
-  // ─── ExecutorDb impl ───────────────────────────────────────────────────────
-
-  run = {
-    findUniqueOrThrow: async ({ where }: { where: { id: string } }) => {
-      const r = this._runs.get(where.id)
-      if (!r) throw new Error(`Run not found: ${where.id}`)
-      return r as unknown as ReturnType<ExecutorDb['run']['findUniqueOrThrow']> extends Promise<infer T> ? T : never
-    },
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-      const r = this._runs.get(where.id)
-      if (!r) throw new Error(`Run not found: ${where.id}`)
-      Object.assign(r, data)
-      return r as unknown as ReturnType<ExecutorDb['run']['update']> extends Promise<infer T> ? T : never
-    },
-  }
-
-  node = {
-    findMany: async ({ where }: { where: { run_id: string } }) => {
-      return (this._nodes.get(where.run_id) ?? []) as unknown as ReturnType<ExecutorDb['node']['findMany']> extends Promise<infer T> ? T : never
-    },
-    create: async ({ data }: { data: Record<string, unknown> }) => {
-      const node = { id: crypto.randomUUID(), ...data }
-      const list = this._nodes.get(data['run_id'] as string) ?? []
-      list.push(node)
-      this._nodes.set(data['run_id'] as string, list)
-      return node as unknown as ReturnType<ExecutorDb['node']['create']> extends Promise<infer T> ? T : never
-    },
-    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-      let found: Record<string, unknown> | undefined
-      for (const list of this._nodes.values()) {
-        found = list.find(n => n['id'] === where.id) as Record<string, unknown> | undefined
-        if (found) { Object.assign(found, data); break }
-      }
-      if (!found) throw new Error(`Node not found: ${where.id}`)
-      return found as unknown as ReturnType<ExecutorDb['node']['update']> extends Promise<infer T> ? T : never
-    },
-    findOrphaned: async ({ before }: { before: Date }) => {
-      const result: Record<string, unknown>[] = []
-      for (const list of this._nodes.values()) {
-        for (const node of list) {
-          if (
-            node['status'] === 'RUNNING' &&
-            node['last_heartbeat'] != null &&
-            (node['last_heartbeat'] as Date) < before
-          ) {
-            result.push(node)
-          }
-        }
-      }
-      return result as unknown as ReturnType<ExecutorDb['node']['findOrphaned']> extends Promise<infer T> ? T : never
-    },
-    updateMany: async ({ where, data }: { where: { run_id: string; status?: string }; data: Record<string, unknown> }) => {
-      let count = 0
-      const list = this._nodes.get(where.run_id) ?? []
-      for (const node of list) {
-        if (!where.status || node['status'] === where.status) {
-          Object.assign(node, data)
-          count++
-        }
-      }
-      return { count } as unknown as ReturnType<ExecutorDb['node']['updateMany']> extends Promise<infer T> ? T : never
-    },
-  }
-
-  handoff = {
-    create: async ({ data }: { data: unknown }) => {
-      this._handoffs.push(data)
-      return data
-    },
-  }
-
-  auditLog = {
-    create: async ({ data }: { data: unknown }) => {
-      this._auditLog.push(data)
-      return data
-    },
-  }
-}
-
 // ─── CustomExecutor ───────────────────────────────────────────────────────────
 
 export class CustomExecutor implements IExecutionEngine {
@@ -264,6 +157,9 @@ export class CustomExecutor implements IExecutionEngine {
   }
 
   async markShutdownNodes(): Promise<void> {
+    // Spec §34.3b: mark RUNNING nodes as FAILED with a recognisable error message.
+    // Crash recovery on the next startup will find these FAILED nodes in SUSPENDED runs
+    // and reset them to PENDING for re-execution (FAILED → RUNNING is a valid transition).
     this._heartbeat.stopAll()
     for (const nodeId of this._runningNodeIds) {
       const runId = this._nodeRunId.get(nodeId)
@@ -271,12 +167,20 @@ export class CustomExecutor implements IExecutionEngine {
       await this.db.node.update({
         where: { id: nodeId },
         data: {
-          status: 'INTERRUPTED',
-          interrupted_at: new Date(),
-          interrupted_by: 'graceful_shutdown',
+          status: 'FAILED',
           error: 'Process shutdown before completion',
         },
       })
+      if (runId) {
+        await this.db.auditLog.create({
+          data: {
+            run_id: runId,
+            actor: 'system',
+            action_type: 'node_shutdown',
+            payload: { node_db_id: nodeId, reason: 'graceful_shutdown' },
+          },
+        })
+      }
     }
     this._runningNodeIds.clear()
     this._nodeRunId.clear()
@@ -401,7 +305,16 @@ export class CustomExecutor implements IExecutionEngine {
         continue
       }
       const batch = readyNodes.slice(0, slots)
-      await Promise.all(batch.map(node => this.executeNode(runId, node, signal)))
+      // Launch each ready node independently — do NOT await the whole batch.
+      // Each executeNode manages its own lifecycle (state transitions, heartbeat,
+      // audit log) and writes its final status back to the DB.
+      // The outer loop re-evaluates `alreadyRunning` from the DB every
+      // POLL_INTERVAL_MS, so a slot freed by a fast node is reused immediately
+      // rather than waiting for the entire batch to finish (real slot pool).
+      for (const node of batch) {
+        void this.executeNode(runId, node, signal)
+      }
+      await sleep(POLL_INTERVAL_MS)
     }
 
     // Finalize run status
@@ -420,9 +333,11 @@ export class CustomExecutor implements IExecutionEngine {
   private async executeNode(runId: string, node: NodeRow, signal: AbortSignal): Promise<void> {
     if (signal.aborted) return
 
-    // Abort early if shutting down (check BEFORE the expensive LLM call — Am.34.3b)
+    // Abort early if shutting down (check BEFORE the expensive LLM call — Am.34.3b).
+    // The node is still PENDING — leave it untouched so it is re-queued when the run
+    // resumes after restart. Register the runId so suspendInterruptedRuns() picks it up.
     if (this._shuttingDown) {
-      await this.db.node.update({ where: { id: node.id }, data: { status: 'FAILED', error: 'Executor shutting down' } })
+      this._interruptedRunIds.add(runId)
       return
     }
 
@@ -565,10 +480,11 @@ export class CustomExecutor implements IExecutionEngine {
   private async setRunFailed(runId: string, reason: string): Promise<void> {
     const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
     const status = run.status as RunStatus
-    if (!isTerminalRun(status)) {
+    if (!isTerminalRun(status) && canTransitionRun(status, 'FAILED')) {
+      await this.transitionRun(runId, status, 'FAILED')
       await this.db.run.update({
         where: { id: runId },
-        data: { status: 'FAILED', metadata: { ...(run.metadata as object), failure_reason: reason } },
+        data: { metadata: { ...(run.metadata as object), failure_reason: reason } },
       })
     }
   }
@@ -601,7 +517,11 @@ export class CustomExecutor implements IExecutionEngine {
 
   /** Compute final run status based on node states. */
   private computeFinalRunStatus(nodes: NodeRow[]): RunStatus {
-    const hasFailure = nodes.some(n => n.status === 'FAILED' || n.status === 'DEADLOCKED')
+    // INTERRUPTED nodes (e.g. from AbortError) mean the run did not complete successfully.
+    // BLOCKED nodes that were never unblocked also block a COMPLETED verdict.
+    const hasFailure = nodes.some(
+      n => n.status === 'FAILED' || n.status === 'DEADLOCKED' || n.status === 'INTERRUPTED' || n.status === 'BLOCKED',
+    )
     return hasFailure ? 'FAILED' : 'COMPLETED'
   }
 
