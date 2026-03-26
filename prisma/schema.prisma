@@ -653,3 +653,16 @@ model EvalResult {
 
   @@index([run_id])
 }
+
+// ─── Preview Port Allocator (Amendment 73) ────────────────────────────────────
+// Tracks which port (3100–3199) is claimed by which run during the smoke test.
+// Released when the container is torn down (Human Gate resolution or run abandonment).
+
+model PreviewPort {
+  id           String   @id @default(uuid())
+  port         Int      @unique
+  run_id       String   @unique   // only one preview per run
+  allocated_at DateTime @default(now())
+
+  @@index([run_id])
+}

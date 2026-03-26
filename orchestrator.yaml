@@ -69,3 +69,13 @@ experimental:
     enabled: false                 # Am.81 — MCP server exposure disabled by default
     transport: stdio               # stdio | sse
     gate_strategy: suspend         # suspend | auto_approve | reject
+
+app_scaffolding:
+  preview:
+    mode: auto                     # auto | subdomain | subpath | screenshots
+    # wildcard_domain: ""          # e.g. "preview.harmoven.mycompany.com"
+    #                              # Requires: *.preview.harmoven.mycompany.com DNS + TLS
+    # base_url: ""                 # auto-detected from AUTH_URL if empty
+    port_range_start: 3100         # inclusive
+    port_range_end: 3199           # inclusive (100 concurrent previews max)
+    smoke_test_timeout_s: 30       # seconds to wait for the container to be healthy
