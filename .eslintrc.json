@@ -11,6 +11,17 @@
           }
         ]
       }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.name='exec']",
+        "message": "exec() is banned — use execFileAsync() from lib/utils/exec-safe.ts with a string[] argument array. exec() with any dynamic value is a command injection risk (Amendment 92 C1)."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='child_process'][callee.property.name='exec']",
+        "message": "child_process.exec() is banned — use execFileAsync() from lib/utils/exec-safe.ts. exec() is a command injection risk when used with dynamic values (Amendment 92 C1)."
+      }
     ]
   }
 }

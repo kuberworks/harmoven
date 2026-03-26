@@ -5,6 +5,7 @@
 //   - /login, /setup         — public auth/first-run pages
 //   - /api/auth/*            — Better Auth endpoints
 //   - /api/health            — health check (unauthenticated)
+//   - /api/v1/*              — public API v1: Bearer hv1_xxx auth in route handlers
 //   - /_next/*, /favicon.*   — Next.js internals and static assets
 //
 // RBAC is NOT enforced here — middleware only checks session presence.
@@ -26,6 +27,10 @@ const PUBLIC_PATHS = [
   '/setup',
   '/api/auth',
   '/api/health',
+  // Public API v1 authenticates via Bearer hv1_xxx (not session cookies).
+  // Route handlers call resolveCaller() which validates the Bearer token.
+  // Session redirect here would make v1 unreachable for API key clients.
+  '/api/v1',
 ]
 
 /**
