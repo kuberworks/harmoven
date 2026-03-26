@@ -48,3 +48,6 @@ release/
 
 # Data directories
 data/
+
+# dev/ directory — specs and prompts, not for versioning
+dev/
