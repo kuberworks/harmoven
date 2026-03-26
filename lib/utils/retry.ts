@@ -43,6 +43,34 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     }, { once: true })
   })
 
+/**
+ * Returns true for errors that are worth retrying (transient / server-side).
+ * Client errors (4xx) or validation errors must NOT be retried — they will
+ * never succeed and just waste time and quota.
+ */
+function isRetriable(err: unknown): boolean {
+  // AbortError — never retry (intentional cancellation)
+  if (err instanceof DOMException && err.name === 'AbortError') return false
+
+  // Anthropic / OpenAI SDK errors expose a `status` field on the error object
+  const status = (err as { status?: number }).status
+  if (typeof status === 'number') {
+    // 429 = rate limit, 5xx = server error → retriable
+    // 4xx (except 429) = client error (bad request, auth, not found) → not retriable
+    return status === 429 || status >= 500
+  }
+
+  // Network-level errors (ECONNRESET, ETIMEDOUT, fetch TypeError) → retriable
+  if (err instanceof TypeError) return true
+
+  const code = (err as { code?: string }).code
+  if (typeof code === 'string' && ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND'].includes(code))
+    return true
+
+  // Unknown errors: retry conservatively
+  return true
+}
+
 export async function withRetry<T>(
   fn: () => Promise<T>,
   opts: RetryOptions = {},
@@ -63,7 +91,7 @@ export async function withRetry<T>(
     } catch (err) {
       lastErr = err
       // Never retry on abort
-      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      if (!isRetriable(err)) throw err
       if (attempt === maxAttempts) break
       const delayIdx = Math.min(attempt - 1, delaysMs.length - 1)
       const delayMs = jitteredDelay(delaysMs[delayIdx] ?? 5_000, jitter)

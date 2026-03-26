@@ -17,6 +17,8 @@ import path from 'path'
 import yaml from 'js-yaml'
 import type { AgentRunnerFn, ExecutorDb, IExecutionEngine } from '@/lib/execution/engine.interface'
 import { CustomExecutor } from '@/lib/execution/custom/executor'
+import { makeAgentRunner } from '@/lib/agents/runner'
+import { createLLMClient } from '@/lib/llm/client'
 
 // ─── Orchestrator config loader ───────────────────────────────────────────────
 
@@ -139,11 +141,12 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
     return prismaDb
   })()
 
-  const agentRunner: AgentRunnerFn = config.agentRunner ?? (async (_node, _handoffIn, _signal) => {
-    throw new Error(
-      'No agentRunner configured. Pass one via createExecutionEngine({ agentRunner }) or wire the real IAgentRunner (T1.6).',
-    )
-  })
+  const agentRunner: AgentRunnerFn = config.agentRunner ?? (() => {
+    // Production default: createLLMClient() reads orchestrator.yaml; makeAgentRunner() dispatches
+    // to the correct agent class (CLASSIFIER, PLANNER, WRITER, REVIEWER) per node.agent_type.
+    const llm = createLLMClient()
+    return makeAgentRunner(llm)
+  })()
 
   const maxConcurrentNodes = config.maxConcurrentNodes ?? (isTestContext ? 4 : loadMaxConcurrentNodes())
 

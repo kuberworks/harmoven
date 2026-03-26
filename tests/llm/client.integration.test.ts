@@ -25,7 +25,7 @@ jest.setTimeout(30_000)
 
 // Helper — create a client pre-configured with only the haiku profile
 function makeHaikuClient(): DirectLLMClient {
-  const profiles = loadActiveProfiles(['claude-haiku-4-5-20251001'])
+  const profiles = loadActiveProfiles(['claude-3-5-haiku-20241022'])
   return new DirectLLMClient(profiles)
 }
 
@@ -43,7 +43,7 @@ describe('DirectLLMClient — Anthropic integration (claude-haiku)', () => {
     expect(result.content.trim().length).toBeGreaterThan(0)
     expect(result.tokensIn).toBeGreaterThan(0)
     expect(result.tokensOut).toBeGreaterThan(0)
-    expect(result.model).toContain('haiku')
+    expect(result.model).toContain('claude-3-5-haiku')
   })
 
   runIf('chat() with system message works correctly', async () => {
@@ -116,25 +116,25 @@ describe('DirectLLMClient — Anthropic integration (claude-haiku)', () => {
 
   it('selectByTier returns haiku for "fast" tier', () => {
     const { selectByTier } = require('@/lib/llm/selector')
-    const profiles = loadActiveProfiles(['claude-haiku-4-5-20251001'])
+    const profiles = loadActiveProfiles(['claude-3-5-haiku-20241022'])
     const profile  = selectByTier('fast', profiles)
     expect(profile).not.toBeNull()
-    expect(profile!.id).toBe('claude-haiku-4-5-20251001')
+    expect(profile!.id).toBe('claude-3-5-haiku-20241022')
     expect(profile!.provider).toBe('anthropic')
     expect(profile!.tier).toBe('fast')
   })
 
   it('loadActiveProfiles returns only requested profiles', () => {
-    const profiles = loadActiveProfiles(['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'])
+    const profiles = loadActiveProfiles(['claude-3-5-haiku-20241022', 'claude-3-7-sonnet-20250219'])
     expect(profiles).toHaveLength(2)
-    expect(profiles[0]!.id).toBe('claude-haiku-4-5-20251001')
-    expect(profiles[1]!.id).toBe('claude-sonnet-4-6')
+    expect(profiles[0]!.id).toBe('claude-3-5-haiku-20241022')
+    expect(profiles[1]!.id).toBe('claude-3-7-sonnet-20250219')
   })
 
   it('loadActiveProfiles falls back to haiku when empty array given', () => {
     const profiles = loadActiveProfiles([])
     expect(profiles).toHaveLength(1)
-    expect(profiles[0]!.id).toBe('claude-haiku-4-5-20251001')
+    expect(profiles[0]!.id).toBe('claude-3-5-haiku-20241022')
   })
 
   it('loadActiveProfiles warns and skips unknown profiles', () => {

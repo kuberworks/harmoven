@@ -24,9 +24,10 @@ import {
   type Content as GeminiContent,
 } from '@google/generative-ai'
 
-import type { ILLMClient, ChatMessage, ChatOptions, ChatResult } from '@/lib/llm/mock-client'
+import type { ILLMClient, ChatMessage, ChatOptions, ChatResult } from '@/lib/llm/interface'
 import { BUILT_IN_PROFILES, loadActiveProfiles } from './profiles'
-import { selectByTier } from './selector'
+import { selectByTier, selectLlm } from './selector'
+import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
 
 // ─── Orchestrator YAML types ───────────────────────────────────────────────────
@@ -65,12 +66,23 @@ function splitMessages(messages: ChatMessage[]): {
   return { system, userMessages }
 }
 
+// ─── Per-profile SDK client cache ────────────────────────────────────────────
+// SDK clients maintain persistent HTTP/2 connections. Recreating them per call
+// defeats connection pooling. We cache by profile.id (stable key).
+
+const _anthropicCache = new Map<string, Anthropic>()
+const _openaiCache    = new Map<string, OpenAI>()
+
 // ─── Anthropic provider ────────────────────────────────────────────────────────
 
 function buildAnthropicClient(profile: LlmProfileConfig): Anthropic {
+  const cached = _anthropicCache.get(profile.id)
+  if (cached) return cached
   const apiKey = process.env[profile.api_key_env ?? 'ANTHROPIC_API_KEY']
   if (!apiKey) throw new Error(`[LLM] ${profile.api_key_env ?? 'ANTHROPIC_API_KEY'} is not set`)
-  return new Anthropic({ apiKey })
+  const client = new Anthropic({ apiKey })
+  _anthropicCache.set(profile.id, client)
+  return client
 }
 
 async function callAnthropic(
@@ -149,13 +161,17 @@ async function streamAnthropic(
 // ─── OpenAI + OpenAI-compatible providers ─────────────────────────────────────
 
 function buildOpenAIClient(profile: LlmProfileConfig): OpenAI {
+  const cached = _openaiCache.get(profile.id)
+  if (cached) return cached
   const envKey = profile.api_key_env
   const apiKey = envKey ? (process.env[envKey] ?? 'no-key') : 'no-key'
   // For Ollama the key is irrelevant — the server accepts any value.
-  return new OpenAI({
+  const client = new OpenAI({
     apiKey,
     ...(profile.base_url ? { baseURL: profile.base_url } : {}),
   })
+  _openaiCache.set(profile.id, client)
+  return client
 }
 
 function toOpenAIMessages(messages: ChatMessage[]): OpenAI.Chat.ChatCompletionMessageParam[] {
@@ -320,11 +336,32 @@ export class DirectLLMClient implements ILLMClient {
 
   // ── Profile resolution ──────────────────────────────────────────────────────
 
-  private resolveProfile(modelTierOrId: string): LlmProfileConfig {
+  private resolveProfile(
+    modelTierOrId: string,
+    ctx?: ChatOptions['selectionContext'],
+  ): LlmProfileConfig {
     const tier = modelTierOrId as 'fast' | 'balanced' | 'powerful'
 
-    // Tier alias
+    // Tier alias — use multi-criteria selectLlm() when selection context is available,
+    // so confidentiality / jurisdiction / budget constraints are enforced.
     if (['fast', 'balanced', 'powerful'].includes(tier)) {
+      if (ctx) {
+        const input: SelectLlmInput = {
+          node: {
+            task_type:        ctx.task_type,
+            complexity:       ctx.complexity,
+            estimated_tokens: ctx.estimated_tokens,
+          },
+          confidentiality:  ctx.confidentiality,
+          jurisdictionTags: ctx.jurisdictionTags ?? [],
+          preferredLlmId:   ctx.preferredLlmId,
+          budgetRemaining:  ctx.budgetRemaining,
+          candidates:       this.profiles,
+        }
+        const selected = selectLlm(input)
+        if (selected) return selected
+        // No eligible model after hard constraints → fall through to tier fallback
+      }
       const found = selectByTier(tier, this.profiles)
       if (found) return found
       throw new Error(`[DirectLLMClient] No active profile for tier "${tier}". Check orchestrator.yaml profiles_active.`)
@@ -345,7 +382,7 @@ export class DirectLLMClient implements ILLMClient {
 
   async chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    const profile = this.resolveProfile(options.model)
+    const profile = this.resolveProfile(options.model, options.selectionContext)
     return this.dispatchChat(profile, messages, options)
   }
 
@@ -355,7 +392,7 @@ export class DirectLLMClient implements ILLMClient {
     onChunk:  (chunk: string) => void,
   ): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    const profile = this.resolveProfile(options.model)
+    const profile = this.resolveProfile(options.model, options.selectionContext)
     return this.dispatchStream(profile, messages, options, onChunk)
   }
 
@@ -413,11 +450,28 @@ export function createLLMClient(yamlPath?: string): ILLMClient {
 
   const config = readOrchestratorConfig(yamlPath)
 
+  if (config.litellm?.enabled) {
+    // LiteLLM sidecar opt-in — dynamic import so the module is only required when enabled.
+    // If the litellm-client module doesn't exist yet, fail loudly rather than silently.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { LiteLLMClient } = require('@/lib/llm/litellm-client') as { LiteLLMClient: new (address: string) => ILLMClient }
+      const address = config.litellm.address ?? 'http://localhost:4000'
+      console.info(`[LLM] Using LiteLLM sidecar at ${address}`)
+      return new LiteLLMClient(address)
+    } catch (err) {
+      throw new Error(
+        `[createLLMClient] litellm.enabled=true in orchestrator.yaml but lib/llm/litellm-client module not found. ` +
+        `Either implement it or set litellm.enabled: false. Original error: ${String(err)}`,
+      )
+    }
+  }
+
   const activeIds = config.llm?.profiles_active ?? []
   const profiles  = loadActiveProfiles(activeIds)
 
   if (profiles.length === 0) {
-    console.warn('[LLM] No active profiles found in orchestrator.yaml — using built-in default (claude-haiku).')
+    console.warn('[LLM] No active profiles found in orchestrator.yaml — using built-in defaults.')
   }
 
   return new DirectLLMClient(profiles.length > 0 ? profiles : undefined)

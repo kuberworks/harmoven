@@ -14,6 +14,39 @@ import { BUILT_IN_ROLES } from './built-in-roles'
 import type { BuiltInRoleName } from './built-in-roles'
 import { ALL_PERMISSIONS } from './permissions'
 
+// ─── Permission cache ─────────────────────────────────────────────────────────
+// Short-lived cache keyed by "<callerId>:<projectId>" so repeated calls within
+// the same request (or across calls in the same 30-second window) skip the DB.
+// instance_admin is never cached — it returns early before this cache is checked.
+
+interface PermCacheEntry { perms: Set<Permission>; expiresAt: number }
+const _permCache = new Map<string, PermCacheEntry>()
+const PERM_CACHE_TTL_MS = 30_000
+
+function cacheKey(caller: Caller, projectId: string): string {
+  return caller.type === 'session'
+    ? `session:${caller.userId}:${projectId}`
+    : `apikey:${caller.keyId}:${projectId}`
+}
+
+function getCached(caller: Caller, projectId: string): Set<Permission> | null {
+  const entry = _permCache.get(cacheKey(caller, projectId))
+  if (!entry || Date.now() > entry.expiresAt) {
+    _permCache.delete(cacheKey(caller, projectId))
+    return null
+  }
+  return entry.perms
+}
+
+function setCached(caller: Caller, projectId: string, perms: Set<Permission>): void {
+  _permCache.set(cacheKey(caller, projectId), { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS })
+}
+
+/** Invalidate cached permissions for a caller / project pair (e.g. after a role change). */
+export function invalidatePermCache(caller: Caller, projectId: string): void {
+  _permCache.delete(cacheKey(caller, projectId))
+}
+
 export class ForbiddenError extends Error {
   readonly status = 403
   constructor(message = 'Forbidden') {
@@ -56,13 +89,17 @@ export async function resolvePermissions(
   caller: Caller,
   projectId: string,
 ): Promise<Set<Permission>> {
-  // instance_admin gets full permission set — no project membership check needed
+  // instance_admin gets full permission set — not cached (in-memory bypass is fast enough).
   if (
     caller.type === 'session' &&
     caller.instanceRole === 'instance_admin'
   ) {
     return new Set(BUILT_IN_ROLES.instance_admin)
   }
+
+  // Cache hit
+  const cached = getCached(caller, projectId)
+  if (cached) return cached
 
   let roleExtendsName: string | null = null
   let permissionsList: string[] = []
@@ -109,6 +146,7 @@ export async function resolvePermissions(
     }
   }
 
+  setCached(caller, projectId, result)
   return result
 }
 

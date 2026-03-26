@@ -9,7 +9,7 @@
 // - All LLM response fields validated before returning (no blind cast).
 // - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
 
-import type { ILLMClient } from '@/lib/llm/mock-client'
+import type { ILLMClient } from '@/lib/llm/interface'
 import { withRetry } from '@/lib/utils/retry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
