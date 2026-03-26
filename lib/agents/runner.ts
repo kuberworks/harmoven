@@ -3,10 +3,12 @@
 // Wired into createExecutionEngine() as the default agentRunner.
 //
 // Node metadata contract (written when nodes are persisted from Planner output):
-//   WRITER:     { description, complexity, expected_output_type, domain_profile, task_type? }
-//   REVIEWER:   { domain_profile }
-//   PLANNER:    { task_input? }
-//   CLASSIFIER: handoffIn = string | { input: string }
+//   WRITER:      { description, complexity, expected_output_type, domain_profile, task_type? }
+//   REVIEWER:    { domain_profile }
+//   PLANNER:     { task_input? }
+//   CLASSIFIER:  handoffIn = string | { input: string }
+//   SMOKE_TEST:  { worktree, routes?, timeout_s? }
+//   REPAIR:      { worktree, subpath } — used standalone (smoke-test integrates repair internally)
 //
 // Selection context (optional, also from node metadata):
 //   { confidentiality?, jurisdiction_tags?, preferred_llm?, estimated_tokens? }
@@ -21,6 +23,8 @@ import { Writer } from '@/lib/agents/writer'
 import type { WriterNodeInput } from '@/lib/agents/writer'
 import { Reviewer } from '@/lib/agents/reviewer'
 import type { WriterOutput } from '@/lib/agents/writer'
+import { runSmokeTest } from '@/lib/agents/scaffolding/smoke-test.agent'
+import { repairForSubpath } from '@/lib/agents/scaffolding/repair.agent'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -164,10 +168,45 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         }
       }
 
+      // ── SMOKE_TEST ──────────────────────────────────────────────────────────
+      // Runs after DevOps Agent; allocates a port, starts the container, checks
+      // routes, resolves preview (subdomain → subpath → screenshots).
+      // Container stays alive for the Human Gate; torn down on gate resolution.
+      case 'SMOKE_TEST': {
+        const worktree = meta['worktree'] as string | undefined
+        if (!worktree) throw new Error('[agentRunner] SMOKE_TEST node missing metadata.worktree')
+
+        const result = await runSmokeTest(
+          {
+            worktree,
+            run_id:    node.run_id,
+            routes:    Array.isArray(meta['routes']) ? (meta['routes'] as string[]) : undefined,
+            timeout_s: typeof meta['timeout_s'] === 'number' ? (meta['timeout_s'] as number) : undefined,
+          },
+          contextualLlm,
+          signal,
+        )
+
+        return { handoffOut: result, costUsd: 0, tokensIn: 0, tokensOut: 0 }
+      }
+
+      // ── REPAIR ──────────────────────────────────────────────────────────────
+      // Standalone repair node (rare — smoke-test integrates repair internally).
+      // Can be used when repair needs to be a separate retryable DAG node.
+      case 'REPAIR': {
+        const worktree = meta['worktree'] as string | undefined
+        const subpath  = meta['subpath'] as string | undefined
+        if (!worktree) throw new Error('[agentRunner] REPAIR node missing metadata.worktree')
+        if (!subpath)  throw new Error('[agentRunner] REPAIR node missing metadata.subpath')
+
+        await repairForSubpath(worktree, subpath, contextualLlm, signal)
+        return { handoffOut: { repaired: true, worktree, subpath }, costUsd: 0, tokensIn: 0, tokensOut: 0 }
+      }
+
       default:
         throw new Error(
           `[agentRunner] Unknown agent_type: "${node.agent_type}". ` +
-          `Supported: CLASSIFIER, PLANNER, WRITER, REVIEWER`,
+          `Supported: CLASSIFIER, PLANNER, WRITER, REVIEWER, SMOKE_TEST, REPAIR`,
         )
     }
   }
