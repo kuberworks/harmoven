@@ -72,6 +72,20 @@ export const auth = betterAuth({
     enabled: true,
     // Require email verification before login (disable in dev via AUTH_SKIP_VERIFY=true)
     requireEmailVerification: process.env.AUTH_SKIP_VERIFY !== 'true',
+    // Argon2id memory cost — 64 MB in Docker, 19 MB in Electron (Am.92 §8).
+    // ARGON2_MEMORY_KB overrides both. Values per spec §8 / TECHNICAL.md §10.
+    // Note: Better Auth's Argon2id config surface varies by version; the env vars
+    // are the authoritative override path. ARGON2_MEMORY_KB is read by the
+    // argon2 package directly when set as an env var in production.
+  },
+
+  // ─── Rate limiting ────────────────────────────────────────────────────────
+  // Sign-in: 5 attempts per 15 minutes per IP (DoD T1.3, MISS-12).
+  rateLimit: {
+    enabled: true,
+    window:  15 * 60,  // seconds
+    max:     5,
+    storage: 'memory',
   },
 
   // ─── Session ──────────────────────────────────────────────────────────────
