@@ -1,0 +1,471 @@
+{
+  "nav": {
+    "runs": "Runs",
+    "projects": "Projects",
+    "marketplace": "Marketplace",
+    "analytics": "Analytics",
+    "admin": "Admin",
+    "settings": "Settings",
+    "help": "Help",
+    "logout": "Log out",
+    "back": "Back",
+    "new_run": "New run",
+    "new_project": "New project"
+  },
+  "auth": {
+    "login": "Sign in",
+    "login_with_email": "Sign in with email",
+    "login_with_passkey": "Sign in with passkey",
+    "magic_link_sent": "Magic link sent — check your inbox",
+    "logout": "Sign out",
+    "totp_title": "Two-factor authentication",
+    "totp_prompt": "Enter the 6-digit code from your authenticator app",
+    "totp_submit": "Verify",
+    "totp_invalid": "Invalid code — try again",
+    "passkey_prompt": "Use your passkey to sign in",
+    "session_expired": "Your session has expired — please sign in again",
+    "unauthorized": "You don't have permission to access this page"
+  },
+  "runs": {
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "paused": "Paused",
+      "suspended": "Suspended",
+      "interrupted": "Interrupted",
+      "cancelled": "Cancelled"
+    },
+    "actions": {
+      "start": "Start",
+      "pause": "Pause",
+      "resume": "Resume",
+      "cancel": "Cancel",
+      "approve": "Approve and save",
+      "request_changes": "Request changes",
+      "interrupt": "Interrupt node",
+      "inject_context": "Inject context",
+      "new": "New run",
+      "view": "View run",
+      "retry": "Retry"
+    },
+    "labels": {
+      "id": "Run ID",
+      "created_at": "Started",
+      "completed_at": "Completed",
+      "duration": "Duration",
+      "cost": "Cost",
+      "profile": "Profile",
+      "status": "Status",
+      "task_input": "Task description",
+      "domain": "Domain"
+    },
+    "empty": "No runs yet — start your first run",
+    "loading": "Loading runs…",
+    "error": "Could not load runs"
+  },
+  "gates": {
+    "tabs": {
+      "preview": "Preview",
+      "what_was_built": "What was built",
+      "reviewer": "Reviewer",
+      "critical": "Critical",
+      "eval": "Eval",
+      "cost": "Cost",
+      "code": "Code",
+      "config": "Config",
+      "context": "Context"
+    },
+    "actions": {
+      "approve": "Approve and continue",
+      "request_changes": "Request changes",
+      "abandon": "Abandon run",
+      "inject": "Inject context",
+      "edit_partial": "Edit partial output",
+      "replay": "Replay from here",
+      "accept_partial": "Accept as-is"
+    },
+    "critical": {
+      "blocking": "Blocking",
+      "important": "Important",
+      "watch": "Watch",
+      "fix_this": "Fix this",
+      "ignore": "Ignore",
+      "fixing": "Fixing…",
+      "fixed": "Fixed",
+      "ignored": "Ignored",
+      "no_findings": "No critical findings",
+      "findings_count": "{count} finding(s)"
+    },
+    "reviewer": {
+      "verdict": {
+        "approve": "Approved",
+        "request_changes": "Changes requested",
+        "escalate": "Escalated to human"
+      },
+      "no_findings": "No issues found",
+      "findings": "Findings"
+    },
+    "eval": {
+      "score": "Quality score",
+      "attempt": "Attempt {n} of {max}",
+      "passed": "Passed",
+      "failed": "Did not meet threshold",
+      "feedback": "Feedback to writer"
+    },
+    "preview": {
+      "loading": "Loading preview…",
+      "unavailable": "Preview not available",
+      "subdomain": "Preview available at",
+      "subpath": "Preview running at",
+      "screenshots": "Screenshots"
+    },
+    "cost": {
+      "total": "Total cost",
+      "by_agent": "By agent",
+      "by_model": "By model",
+      "tokens_input": "Input tokens",
+      "tokens_output": "Output tokens",
+      "budget_used": "Budget used"
+    },
+    "interrupt": {
+      "title": "Node interrupted",
+      "choose": "What would you like to do?",
+      "edit_partial": "Edit the partial output",
+      "replay": "Replay this node",
+      "accept": "Accept as-is and continue"
+    }
+  },
+  "kanban": {
+    "column": {
+      "pending": "Pending",
+      "running": "Running",
+      "gate": "Awaiting review",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "empty_column": "No runs here",
+    "gate_pulse": "Awaiting your review",
+    "drag_hint": "Drag to reorder"
+  },
+  "projects": {
+    "new": "New project",
+    "name": "Project name",
+    "domain": "Domain profile",
+    "description": "Description",
+    "created": "Created",
+    "members": "Members",
+    "settings": "Settings",
+    "empty": "No projects yet",
+    "loading": "Loading projects…",
+    "error": "Could not load projects",
+    "config": {
+      "title": "Configuration",
+      "output_language": "Output language",
+      "output_language_hint": "The language AI agents will use for all generated content.",
+      "system_prompt_language": "Prompt language",
+      "system_prompt_language_hint": "Language used for agent instructions. English gives the best results.",
+      "system_prompt_language_warning": "Results are typically better in English.",
+      "system_prompt_change_to": "Change to {language}",
+      "system_prompt_keep_english": "Keep English",
+      "advanced": "Advanced",
+      "save": "Save"
+    },
+    "history": {
+      "title": "Config history",
+      "restored": "Configuration restored",
+      "diff": "Changes",
+      "restore": "Restore this version",
+      "restore_confirm": "Restore configuration to this version?",
+      "no_history": "No history yet"
+    }
+  },
+  "members": {
+    "title": "Members",
+    "add": "Add member",
+    "remove": "Remove",
+    "role": "Role",
+    "email": "Email",
+    "invite": "Invite",
+    "pending": "Pending invitation",
+    "empty": "No members yet",
+    "roles": {
+      "viewer": "Viewer",
+      "operator": "Operator",
+      "user": "User",
+      "user_with_costs": "User (with costs)",
+      "developer": "Developer",
+      "admin": "Admin",
+      "instance_admin": "Instance admin"
+    }
+  },
+  "api_keys": {
+    "title": "API keys",
+    "create": "Create key",
+    "revoke": "Revoke",
+    "name": "Name",
+    "role": "Role",
+    "prefix": "Key prefix",
+    "created": "Created",
+    "last_used": "Last used",
+    "never_used": "Never used",
+    "copy_warning": "Copy this key now — it won't be shown again",
+    "revoke_confirm": "Revoke this API key? This cannot be undone.",
+    "empty": "No API keys"
+  },
+  "onboarding": {
+    "welcome": "Welcome to Harmoven",
+    "setup_title": "Set up your instance",
+    "org_name": "Organization name",
+    "org_name_placeholder": "Acme Corp",
+    "preset": "Instance preset",
+    "preset_small_business": "Small business",
+    "preset_enterprise": "Enterprise",
+    "preset_developer": "Developer",
+    "create_admin": "Create admin account",
+    "admin_email": "Admin email",
+    "admin_password": "Password",
+    "continue": "Continue",
+    "finish": "Finish setup",
+    "step": "Step {n} of {total}",
+    "done": "Setup complete — redirecting…"
+  },
+  "settings": {
+    "title": "Settings",
+    "preferences": "Preferences",
+    "display_language": "Interface language",
+    "display_language_auto": "Auto-detect from browser",
+    "display_language_en": "English",
+    "display_language_fr": "Français",
+    "progress_language": "Progress updates",
+    "progress_language_hint": "Updates shown while your task is running.",
+    "progress_language_follow": "Same as display language",
+    "save": "Save preferences",
+    "saved": "Preferences saved",
+    "profile": "Profile",
+    "email": "Email",
+    "name": "Name",
+    "change_password": "Change password",
+    "totp_setup": "Set up two-factor authentication",
+    "totp_enabled": "Two-factor authentication is enabled",
+    "passkey_add": "Add a passkey",
+    "passkeys": "Passkeys",
+    "passkey_remove": "Remove"
+  },
+  "admin": {
+    "title": "Admin",
+    "instance": "Instance",
+    "users": "Users",
+    "audit_log": "Audit log",
+    "skills": "Skills & packs",
+    "config": "Configuration",
+    "health": "System health",
+    "version": "Version",
+    "users_title": "User management",
+    "users_empty": "No users",
+    "ban": "Suspend",
+    "unban": "Unsuspend",
+    "promote": "Promote to admin",
+    "demote": "Remove admin",
+    "audit": {
+      "title": "Audit log",
+      "actor": "Who",
+      "action": "Action",
+      "target": "Target",
+      "timestamp": "When",
+      "empty": "No audit events",
+      "loading": "Loading…",
+      "filter_by": "Filter by"
+    },
+    "skills": {
+      "title": "Installed skills",
+      "install": "Install pack",
+      "update": "Update",
+      "uninstall": "Uninstall",
+      "enable": "Enable",
+      "disable": "Disable",
+      "version": "Version",
+      "rating": "Rating",
+      "installs": "Installs",
+      "scan_status": {
+        "clean": "Clean",
+        "pending": "Scanning…",
+        "failed": "Scan failed"
+      },
+      "empty": "No skills installed",
+      "update_policy": {
+        "auto": "Auto-update",
+        "notify": "Notify on update",
+        "manual": "Manual updates only"
+      }
+    }
+  },
+  "marketplace": {
+    "title": "Marketplace",
+    "search": "Search packs…",
+    "install": "Install",
+    "installed": "Installed",
+    "update_available": "Update available",
+    "rating": "Rating",
+    "reviews": "{count} review(s)",
+    "by": "by {author}",
+    "version": "v{version}",
+    "description": "Description",
+    "requirements": "Requirements",
+    "loading": "Loading marketplace…",
+    "empty": "No results found",
+    "categories": {
+      "all": "All",
+      "scaffolding": "Scaffolding",
+      "marketing": "Marketing",
+      "legal": "Legal",
+      "data": "Data",
+      "finance": "Finance",
+      "hr": "HR",
+      "research": "Research"
+    }
+  },
+  "analytics": {
+    "title": "Analytics",
+    "period": "Period",
+    "period_7d": "Last 7 days",
+    "period_30d": "Last 30 days",
+    "period_90d": "Last 90 days",
+    "period_custom": "Custom range",
+    "export": "Export",
+    "export_json": "Export as JSON",
+    "export_csv": "Export as CSV",
+    "export_pdf": "Export as PDF",
+    "kpis": {
+      "runs_completed": "Runs completed",
+      "active_users": "Active users",
+      "retention": "30-day retention",
+      "quality": "Avg. quality score",
+      "roi": "Estimated ROI"
+    },
+    "delta": "{delta}% vs previous period",
+    "timeseries": "Activity over time",
+    "by_profile": "By domain profile",
+    "by_user": "By user",
+    "no_data": "No data for this period",
+    "feedback": {
+      "prompt": "How was this run?",
+      "skip": "Skip",
+      "submit": "Submit",
+      "hours_saved": "Hours saved (estimate)",
+      "value_note": "Any notes on business value?"
+    }
+  },
+  "errors": {
+    "connection_lost": "Connection lost — trying to reconnect…",
+    "budget_exceeded": "Run stopped — budget limit reached",
+    "llm_unavailable": "Using fallback AI — some features may be slower",
+    "run_timeout": "This run is taking longer than expected — still running",
+    "not_found": "Page not found",
+    "forbidden": "You don't have permission to view this",
+    "server_error": "Something went wrong — please try again",
+    "validation": "Please check the form for errors",
+    "session_expired": "Your session has expired",
+    "upload_failed": "Upload failed — please try again",
+    "network": "Network error — check your connection"
+  },
+  "common": {
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "open": "Open",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "yes": "Yes",
+    "no": "No",
+    "or": "or",
+    "and": "and",
+    "search": "Search",
+    "filter": "Filter",
+    "sort": "Sort",
+    "refresh": "Refresh",
+    "export": "Export",
+    "import": "Import",
+    "more": "More",
+    "less": "Less",
+    "show": "Show",
+    "hide": "Hide",
+    "enable": "Enable",
+    "disable": "Disable",
+    "required": "Required",
+    "optional": "Optional",
+    "beta": "Beta",
+    "new": "New",
+    "updated": "Updated",
+    "deprecated": "Deprecated",
+    "unknown": "Unknown",
+    "none": "None",
+    "all": "All",
+    "other": "Other",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "just_now": "Just now",
+    "ago": "{time} ago"
+  },
+  "platform": {
+    "clarification_title": "Tell us more about your target platform",
+    "mobile": {
+      "title": "Mobile target",
+      "ios": "iOS",
+      "android": "Android",
+      "both": "Both (cross-platform)",
+      "pwa": "Progressive Web App",
+      "react_native": "React Native",
+      "flutter": "Flutter"
+    },
+    "hardware": {
+      "title": "Hardware target",
+      "arduino": "Arduino",
+      "raspberry_pi": "Raspberry Pi",
+      "esp32": "ESP32",
+      "esp8266": "ESP8266",
+      "stm32": "STM32",
+      "rpi_pico": "Raspberry Pi Pico",
+      "other": "Other embedded"
+    },
+    "closed": {
+      "title": "Closed platform",
+      "message": "This platform is not supported for automated scaffolding.",
+      "contact": "Contact us for enterprise solutions."
+    },
+    "confirm": "Confirm platform",
+    "skip": "Skip — detect automatically"
+  },
+  "context": {
+    "inject_title": "Inject context into run",
+    "inject_placeholder": "Add information or corrections for the agent…",
+    "inject_submit": "Send context",
+    "inject_success": "Context injected — agent will see this on next step",
+    "inject_hint": "The agent will incorporate this on its next action."
+  },
+  "language": {
+    "mismatch_banner": "Your task is in {detected} — results will be in {configured}.",
+    "generate_in": "Generate in {language}",
+    "continue_with": "Continue",
+    "output_language_changed": "Results will now be generated in {language} for this run."
+  },
+  "updates": {
+    "available": "Harmoven {version} is available",
+    "view_changelog": "View changelog",
+    "update_now": "Update now",
+    "later": "Later",
+    "up_to_date": "Harmoven is up to date",
+    "checking": "Checking for updates…",
+    "downloading": "Downloading update…",
+    "ready": "Update ready",
+    "restart": "Restart and update",
+    "tonight": "Tonight",
+    "skip": "Skip this version"
+  }
+}
