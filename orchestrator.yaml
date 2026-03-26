@@ -56,8 +56,18 @@ memory:
   backend: sqlite                  # sqlite | postgres | pgvector
 
 updates:
-  auto_install: false              # true = silently install; false = notify only
+  auto_check:    true              # check for new versions on schedule
+  auto_download: true              # download Docker image layers silently
+  auto_install:  notify            # notify | auto | manual
+                                   #   notify → show banner, user decides (default)
+                                   #   auto   → auto-install MINOR+PATCH; MAJOR always requires confirmation
+                                   #   manual → never check automatically
   check_interval_hours: 24
+  update_channel: stable           # stable | edge
+  verify_digest:  true             # always verify Docker image digest (anti tag-hijacking)
+  cosign_verify:  false            # verify Cosign signature — enable with cosign_public_key
+  cosign_public_key: null          # absolute path to Cosign public key file
+  require_github_release: true     # refuse update if no matching GitHub release tag
 
 marketplace:
   registry_url: "https://registry.harmoven.com/v1"    # official Harmoven pack registry
