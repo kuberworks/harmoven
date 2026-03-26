@@ -14,8 +14,8 @@ jobs:
     name: TypeScript typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -26,8 +26,8 @@ jobs:
     name: ESLint + Prettier
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -40,14 +40,14 @@ jobs:
     env:
       HARMOVEN_LLM_TIER: mock
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
       - run: npm run test:unit
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: always()
         with:
           name: coverage
@@ -58,7 +58,7 @@ jobs:
     name: Migration down.sql guard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Check down.sql present for every migration
         run: |
           MISSING=0
@@ -102,8 +102,8 @@ jobs:
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -130,7 +130,7 @@ jobs:
     name: Translation completeness
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Check fr.json completeness
         # exits 0 gracefully when locales/ doesn't exist yet (T3.7 pending)
         run: node scripts/check-translations.js
@@ -139,8 +139,8 @@ jobs:
     name: License compatibility scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -157,8 +157,8 @@ jobs:
     name: Accessibility checks (axe)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -171,3 +171,23 @@ jobs:
         # Tests key screens: onboarding, gate, kanban
         # Checks: contrast, aria-labels, focus management
         continue-on-error: true   # non-blocking until T3.7 UI finalized
+
+  dependency-audit:
+    name: Dependency audit (supply chain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: npm audit (no high/critical)
+        # Blocks merge on high or critical severity CVEs in direct/transitive deps.
+        # Use --omit=dev to only check production dependencies.
+        run: npm audit --omit=dev --audit-level=high
+      - name: Validate pack prompt scripts
+        run: |
+          node scripts/validate-pack-tools.js || true
+          node scripts/scan-pack-prompts.js   || true
+        # Non-blocking for now — becomes blocking in T3.9 when CI packs are present

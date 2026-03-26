@@ -1,23 +1,36 @@
 // lib/marketplace/install-pack.ts
 // Pack installation, update, and uninstall logic.
-// Spec: TECHNICAL.md §39.5, Amendment 67 (install/updates/overrides).
+// Spec: TECHNICAL.md §39.5, Amendment 67 (install/updates/overrides), Amendment 91 (supply chain).
 //
-// Install flow (§39.5):
-//   fetchFromRegistry → verifyContentHash → scanPackContent → installToDb
-//   GPG signature verification is deferred to T3.8 (supply chain monitor).
+// Install flow (§39.5 + Am.91):
+//   fetchFromRegistry → verifyContentHash → verifyGPGSignature → scanPackContent → installToDb
 //
 // Security:
 //   - SHA-256 content hash verified before DB write
+//   - GPG signature verified if marketplace.security.verify_gpg_signature=true (T3.8)
 //   - Prompt injection + external URL scanned (scanPackContent)
 //   - Pack ID validated — alphanumeric + underscores only (no path traversal)
 //   - Version validated — strict semver format
 //   - Local overrides never silently overwritten on update (Am.67.4)
 
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { execFile }                    from 'node:child_process'
+import { promisify }                   from 'node:util'
+import { writeFile, unlink, mkdtemp }  from 'node:fs/promises'
+import { tmpdir }                      from 'node:os'
+import path                            from 'node:path'
+import fs                              from 'node:fs'
+import yaml                            from 'js-yaml'
 import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { scanPackContent } from '@/lib/marketplace/scan'
+import {
+  reportPackSignatureInvalid,
+  reportPackHashMismatch,
+} from '@/lib/security/supply-chain-monitor'
 import type { PackManifest } from '@/lib/marketplace/types'
+
+const execFileAsync = promisify(execFile)
 
 // ─── Input validation ─────────────────────────────────────────────────────────
 
@@ -74,6 +87,78 @@ function verifyContentHash(content: string, expectedHash: string): void {
   }
   if (!timingSafeEqual(actualBuf, expectedBuf)) {
     throw new MarketplaceError('Pack content hash mismatch — possible tampering', 'HASH_MISMATCH')
+  }
+}
+
+// ─── GPG signature verification ─────────────────────────────────────────────
+
+/**
+ * Read marketplace.security.verify_gpg_signature from orchestrator.yaml.
+ * Returns false if the file cannot be read (graceful degradation).
+ */
+function isGPGVerificationEnabled(): boolean {
+  try {
+    const filePath = process.env.HARMOVEN_CONFIG_PATH
+      ?? path.resolve(process.cwd(), 'orchestrator.yaml')
+    const raw = fs.readFileSync(filePath, 'utf8')
+    const config = yaml.load(raw) as Record<string, unknown>
+    const security = (config?.marketplace as Record<string, unknown>)?.security as Record<string, unknown> | undefined
+    return security?.verify_gpg_signature === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Verify a detached GPG signature for pack content.
+ *
+ * Security constraints:
+ *   - All file paths are resolved inside a mkdtemp directory (no path traversal)
+ *   - execFile (not exec) — no shell interpolation
+ *   - Temp files always deleted, even on failure
+ *   - signature must be present in manifest if GPG is enabled; absence = rejection
+ *
+ * @param packId   - For audit log
+ * @param version  - For audit log
+ * @param content  - The pack content bytes to verify
+ * @param signature - Armored PGP signature from manifest.signature
+ */
+async function verifyGPGSignature(
+  packId:    string,
+  version:   string,
+  content:   string,
+  signature: string,
+): Promise<void> {
+  // mkdtemp creates a directory with random suffix — all temp files are inside it
+  const tmpDir = await mkdtemp(path.join(tmpdir(), 'harmoven-gpg-'))
+  const contentFile = path.join(tmpDir, 'content.pack')
+  const sigFile     = path.join(tmpDir, 'content.pack.asc')
+
+  try {
+    await writeFile(contentFile, content, { encoding: 'utf8', mode: 0o600 })
+    await writeFile(sigFile, signature,    { encoding: 'utf8', mode: 0o600 })
+
+    // execFile — no shell; args are passed as an array, not interpolated
+    await execFileAsync('gpg', [
+      '--batch',
+      '--no-tty',
+      '--verify',
+      sigFile,
+      contentFile,
+    ])
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    await reportPackSignatureInvalid({ packId, version, reason })
+    throw new MarketplaceError(
+      `Pack "${packId}@${version}" GPG verification failed: ${reason}`,
+      'GPG_SIGNATURE_INVALID',
+    )
+  } finally {
+    // Always clean up temp files regardless of success/failure
+    await unlink(contentFile).catch(() => { /* already deleted? */ })
+    await unlink(sigFile).catch(() => { /* already deleted? */ })
+    // rmdir only — tmpDir was mkdtemp'd and only contained these two files
+    await import('node:fs/promises').then((m) => m.rmdir(tmpDir)).catch(() => { /* best-effort */ })
   }
 }
 
@@ -214,7 +299,30 @@ export async function installPack(opts: InstallPackOptions): Promise<{ id: strin
 
   // ── Hash verification (§39.5 step 3) ─────────────────────────────────────
   assertSha256(manifest.content_sha256)
-  verifyContentHash(manifest.content, manifest.content_sha256)
+  try {
+    verifyContentHash(manifest.content, manifest.content_sha256)
+  } catch (err) {
+    // Report hash mismatch as a supply chain event before re-throwing
+    const actual = createHash('sha256').update(manifest.content).digest('hex')
+    await reportPackHashMismatch({
+      packId, version,
+      expected: manifest.content_sha256,
+      actual,
+    })
+    throw err
+  }
+
+  // ── GPG signature verification (§39.5 step 2b, Amendment 91) ─────────────
+  if (isGPGVerificationEnabled()) {
+    if (!manifest.signature) {
+      await reportPackSignatureInvalid({ packId, version, reason: 'manifest.signature is absent' })
+      throw new MarketplaceError(
+        `Pack "${packId}@${version}" has no GPG signature but verify_gpg_signature=true`,
+        'MISSING_GPG_SIGNATURE',
+      )
+    }
+    await verifyGPGSignature(packId, version, manifest.content, manifest.signature)
+  }
 
   // ── Security scan (§39.5 step 4) ─────────────────────────────────────────
   const scan = scanPackContent(manifest.content)
