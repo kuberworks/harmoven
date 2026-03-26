@@ -20,7 +20,8 @@
 //   - Provider filtering: a run using only claude-haiku-4 gets zero access
 //     to OpenAI or Google credentials.
 
-import { db }         from '@/lib/db/client'
+// db is lazy-loaded inside issueRunScope() to avoid eager PrismaClient init
+// (which requires DATABASE_URL at module load time — breaks unit tests).
 import { createDecipheriv, createHash, type DecipherGCM } from 'node:crypto'
 
 /** Add `minutes` minutes to the given date — inline to avoid date-fns dependency. */
@@ -115,6 +116,9 @@ class CredentialVault {
     providers: string[],
     budgetMin  = 60,
   ): Promise<RunCredentialScope> {
+    // Lazy-load db to avoid eager PrismaClient initialization at module load time
+    const { db } = await import('@/lib/db/client')
+
     // Look up project credentials for required providers
     const tokens: Record<string, string> = {}
 
