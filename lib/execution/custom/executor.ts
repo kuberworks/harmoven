@@ -4,14 +4,18 @@
 //
 // T1.4 scope: state machine, serial/parallel execution, cancel/pause/resume.
 // T1.5 scope: MAX_CONCURRENT_NODES, heartbeat, orphan detection, crash recovery.
+// T3.2 scope: context injection (Am.64), per-node interrupt + gate (Am.65).
 
+import { randomUUID } from 'crypto'
 import type { Dag } from '@/types/dag.types'
 import type { NodeStatus, RunStatus } from '@/types/run.types'
 import type {
   AgentRunnerFn,
   ExecutorDb,
+  GateDecision,
   IExecutionEngine,
   NodeRow,
+  UserInjection,
 } from '@/lib/execution/engine.interface'
 import {
   assertNodeTransition,
@@ -54,6 +58,9 @@ export class CustomExecutor implements IExecutionEngine {
    * The DB is also updated — this flag prevents new nodes from starting.
    */
   private _pausedRunIds = new Set<string>()
+
+  /** Per-node AbortControllers (Am.65) — keyed by node DB id (not node_id). */
+  private _nodeAbortControllers = new Map<string, AbortController>()
 
   /** Per-node heartbeat timers — pulse last_heartbeat every HEARTBEAT_INTERVAL_MS. */
   private _heartbeat = new HeartbeatManager()
@@ -186,6 +193,219 @@ export class CustomExecutor implements IExecutionEngine {
     // Call executeRun again — it accepts PAUSED as a valid start status and resumes
     // from the last stable node state (COMPLETED nodes are skipped by getReadyNodes).
     await this.executeRun(runId)
+  }
+
+  // ─── Amendment 64 — Context injection ──────────────────────────────────────
+
+  async injectContext(runId: string, content: string, actorId: string): Promise<UserInjection> {
+    if (content.length > 2000) {
+      throw new Error('Injection content exceeds maximum length of 2000 characters')
+    }
+    if (content.trim().length === 0) {
+      throw new Error('Injection content must not be empty')
+    }
+
+    const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+    const currentStatus = run.status as RunStatus
+    if (currentStatus !== 'RUNNING' && currentStatus !== 'PAUSED') {
+      throw new Error(`Cannot inject context into a run with status '${currentStatus}' (must be RUNNING or PAUSED)`)
+    }
+
+    const injection: UserInjection = {
+      id: randomUUID(),
+      created_at: new Date().toISOString(),
+      created_by: actorId,
+      content: content.trim(),
+      applies_to: 'all_pending',
+    }
+
+    const existing = Array.isArray(run.user_injections) ? run.user_injections as UserInjection[] : []
+    await this.db.run.update({
+      where: { id: runId },
+      data: { user_injections: [...existing, injection] },
+    })
+
+    await this.db.auditLog.create({
+      data: {
+        run_id: runId,
+        actor: actorId,
+        action_type: 'context_injected',
+        payload: { injection_id: injection.id, length: injection.content.length },
+      },
+    })
+
+    this._emit(runId, {
+      type: 'state_change',
+      entity_type: 'run',
+      id: runId,
+      status: currentStatus,
+      // Extra metadata visible to frontend via SSE — signals new injection
+      ...({ context_injected: true, injection_id: injection.id } as object),
+    })
+
+    return injection
+  }
+
+  // ─── Amendment 65 — Per-node interruption ──────────────────────────────────
+
+  async interruptNode(runId: string, nodeId: string, actorId: string): Promise<void> {
+    // nodeId here is the node_id field ("n1", "n2", …), not the DB primary key.
+    const nodes = await this.db.node.findMany({ where: { run_id: runId } })
+    const node = nodes.find(n => n.node_id === nodeId)
+    if (!node) throw new Error(`Node '${nodeId}' not found in run '${runId}'`)
+    if (node.status !== 'RUNNING') {
+      throw new Error(`Cannot interrupt node '${nodeId}' with status '${node.status}' (must be RUNNING)`)
+    }
+
+    // Abort the per-node controller — executeNode()'s catch block will set the node INTERRUPTED.
+    const nodeController = this._nodeAbortControllers.get(node.id)
+    if (nodeController) {
+      nodeController.abort()
+    } else {
+      // Controller not found (e.g. race condition, already cleaned up) — transition directly.
+      await this.db.node.update({
+        where: { id: node.id },
+        data: { status: 'INTERRUPTED', interrupted_at: new Date(), interrupted_by: actorId },
+      })
+      this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'INTERRUPTED' })
+    }
+
+    // Suspend the run so no new nodes start while the gate is open.
+    const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+    const currentStatus = run.status as RunStatus
+    if (currentStatus === 'RUNNING') {
+      await this.transitionRun(runId, 'RUNNING', 'SUSPENDED')
+      await this.db.run.update({
+        where: { id: runId },
+        data: { suspended_reason: 'user_interrupt' },
+      })
+    }
+
+    await this.db.auditLog.create({
+      data: {
+        run_id: runId,
+        node_id: nodeId,
+        actor: actorId,
+        action_type: 'node_interrupted',
+        payload: { trigger: 'user' },
+      },
+    })
+  }
+
+  // ─── Amendment 65 — Interrupt Gate resolution ──────────────────────────────
+
+  async resolveInterruptGate(
+    runId: string,
+    nodeId: string,
+    actorId: string,
+    gate: GateDecision,
+  ): Promise<void> {
+    const nodes = await this.db.node.findMany({ where: { run_id: runId } })
+    const node = nodes.find(n => n.node_id === nodeId)
+    if (!node) throw new Error(`Node '${nodeId}' not found in run '${runId}'`)
+    if (node.status !== 'INTERRUPTED') {
+      throw new Error(`Node '${nodeId}' is not INTERRUPTED (status: '${node.status}')`)
+    }
+
+    const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+    if (run.status !== 'SUSPENDED') {
+      throw new Error(`Run '${runId}' is not SUSPENDED (status: '${run.status}')`)
+    }
+
+    switch (gate.decision) {
+      case 'resume_from_partial': {
+        // Store edited partial in node metadata as seed context for the resumed agent.
+        const meta = (node.metadata as object) ?? {}
+        await this.db.node.update({
+          where: { id: node.id },
+          data: {
+            status: 'PENDING',
+            interrupted_at: null,
+            interrupted_by: null,
+            partial_output: null,
+            partial_updated_at: null,
+            metadata: { ...meta, resume_context: gate.edited_partial, patch: gate.patch ?? null },
+          },
+        })
+        await this.db.auditLog.create({
+          data: {
+            run_id: runId, node_id: nodeId, actor: actorId,
+            action_type: 'gate_resume_from_partial',
+            payload: { partial_length: gate.edited_partial.length },
+          },
+        })
+        this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'PENDING' })
+        // Resume execution — executeRun accepts SUSPENDED and will pick up the PENDING node.
+        await this.executeRun(runId)
+        break
+      }
+
+      case 'replay_from_scratch': {
+        await this.db.node.update({
+          where: { id: node.id },
+          data: {
+            status: 'PENDING',
+            interrupted_at: null,
+            interrupted_by: null,
+            partial_output: null,
+            partial_updated_at: null,
+          },
+        })
+        await this.db.auditLog.create({
+          data: {
+            run_id: runId, node_id: nodeId, actor: actorId,
+            action_type: 'gate_replay_from_scratch',
+            payload: { patch: gate.patch ?? null },
+          },
+        })
+        this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'PENDING' })
+        await this.executeRun(runId)
+        break
+      }
+
+      case 'accept_partial': {
+        // Promote partial_output to the final handoff_out; mark node COMPLETED.
+        const partialContent = node.partial_output ?? ''
+        const allNodes = await this.db.node.findMany({ where: { run_id: runId } })
+        const sequenceNumber = allNodes.filter(n => n.handoff_out != null).length + 1
+        await this.db.handoff.create({
+          data: {
+            run_id: runId,
+            sequence_number: sequenceNumber,
+            source_agent: node.agent_type,
+            source_node_id: nodeId,
+            target_agent: 'next',
+            payload: { accepted_partial: partialContent },
+          },
+        })
+        await this.db.node.update({
+          where: { id: node.id },
+          data: {
+            status: 'COMPLETED',
+            handoff_out: { accepted_partial: partialContent },
+            completed_at: new Date(),
+            interrupted_at: null,
+            interrupted_by: null,
+          },
+        })
+        await this.db.auditLog.create({
+          data: {
+            run_id: runId, node_id: nodeId, actor: actorId,
+            action_type: 'gate_accept_partial',
+            payload: { partial_length: partialContent.length },
+          },
+        })
+        this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'COMPLETED' })
+        // Re-enter the run — remaining PENDING nodes (if any) will be executed.
+        await this.executeRun(runId)
+        break
+      }
+
+      default: {
+        const exhaustive: never = gate
+        throw new Error(`Unknown gate decision: ${(exhaustive as GateDecision).decision}`)
+      }
+    }
   }
 
   isShuttingDown(): boolean {
@@ -423,8 +643,18 @@ export class CustomExecutor implements IExecutionEngine {
       }
     })
 
+    // ─── Per-node AbortController (Am.65) ─────────────────────────────────
+    // Create a node-level controller linked to the run-level signal, so that
+    // cancelling the entire run aborts all nodes, while interruptNode() can
+    // abort a single node without cancelling the whole run.
+    const nodeController = new AbortController()
+    this._nodeAbortControllers.set(node.id, nodeController)
+    // Propagate run-level abort to the node signal.
+    signal.addEventListener('abort', () => nodeController.abort(), { once: true })
+    const nodeSignal = nodeController.signal
+
     try {
-      const output = await this.agentRunner(node, handoffIn, signal)
+      const output = await this.agentRunner(node, handoffIn, nodeSignal)
 
       // Store handoff (immutable)
       const allNodes = await this.db.node.findMany({ where: { run_id: runId } })
@@ -450,6 +680,12 @@ export class CustomExecutor implements IExecutionEngine {
           tokens_out: output.tokensOut,
           completed_at: new Date(),
         },
+      })
+
+      // Am.64 — track the most recently completed node timestamp for context injection filtering.
+      await this.db.run.update({
+        where: { id: runId },
+        data: { last_completed_node_at: new Date() },
       })
 
       // Accumulate cost to run (§34.3 updateCosts)
@@ -510,6 +746,7 @@ export class CustomExecutor implements IExecutionEngine {
       this._heartbeat.stop(node.id)
       this._runningNodeIds.delete(node.id)
       this._nodeRunId.delete(node.id)
+      this._nodeAbortControllers.delete(node.id)
     }
   }
 

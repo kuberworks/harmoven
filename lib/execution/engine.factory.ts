@@ -207,3 +207,39 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
 
   return engine
 }
+
+// ─── Process-lifetime singleton (T3.2 / Am.65) ───────────────────────────────
+//
+// API route handlers (pause/resume/inject/interrupt/gate) must call the SAME
+// executor instance that is running the nodes, so that per-node AbortControllers
+// and other in-memory state (pausedRunIds, nodeRunId …) are shared.
+//
+// In Next.js the module cache is NOT preserved across hot-reloads in dev; using
+// globalThis as the carrier ensures the singleton survives within a given process
+// without introducing circular imports.
+//
+// This is intentionally NOT exported to test files — tests call createExecutionEngine()
+// directly and inject their own mocks.
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __harmoven_execution_engine: IExecutionEngine | undefined
+}
+
+/**
+ * Returns the process-lifetime IExecutionEngine singleton.
+ * Lazily initialises it on first call using the production defaults (DEPLOYMENT_MODE,
+ * orchestrator.yaml, db singleton, LLM client, event bus).
+ *
+ * All API route handlers that need to interact with the running executor should call
+ * this function instead of createExecutionEngine().
+ *
+ * @throws if called in a test context — tests must use createExecutionEngine() with mocks.
+ */
+export async function getExecutionEngine(): Promise<IExecutionEngine> {
+  if (!globalThis.__harmoven_execution_engine) {
+    globalThis.__harmoven_execution_engine = createExecutionEngine()
+  }
+  return globalThis.__harmoven_execution_engine
+}
+

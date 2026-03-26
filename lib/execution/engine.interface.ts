@@ -2,6 +2,30 @@
 // IExecutionEngine — stable contract for all execution engine implementations.
 // Amendment 82.5: the factory always returns IExecutionEngine — never call
 // CustomExecutor, TemporalExecutor, or RestateExecutor directly.
+// Amendments 63/64/65: pause, context injection, interrupt gate.
+
+// ─── Domain types ─────────────────────────────────────────────────────────────
+
+/**
+ * A user-authored context injection (Amendment 64).
+ * Stored as a JSON array on Run.user_injections.
+ */
+export interface UserInjection {
+  id: string          // uuid
+  created_at: string  // ISO-8601
+  created_by: string  // actor id
+  content: string     // max 2000 chars
+  applies_to: 'all_pending'
+}
+
+/**
+ * Interrupt Gate decision (Amendment 65).
+ * Sent as the body of POST /api/runs/:id/nodes/:nodeId/gate.
+ */
+export type GateDecision =
+  | { decision: 'resume_from_partial'; edited_partial: string; patch?: string }
+  | { decision: 'replay_from_scratch'; patch?: string }
+  | { decision: 'accept_partial' }
 
 /** Output produced by an agent after executing a node. */
 export interface AgentOutput {
@@ -43,12 +67,19 @@ export interface ExecutorDb {
 /** Minimal run row shape used by the executor (subset of Prisma Run model). */
 export interface RunRow {
   id: string
+  project_id: string
   status: string
   dag: unknown     // Dag JSON
   run_config: unknown
+  task_input: unknown
+  domain_profile: string
   started_at: Date | null
   completed_at: Date | null
   paused_at: Date | null
+  last_completed_node_at: Date | null  // Am.64 — context injection filtering
+  user_injections: unknown             // Am.64 — UserInjection[] serialised as JSON
+  budget_usd: unknown                  // Decimal | null
+  suspended_reason: string | null
   metadata: unknown
   cost_actual_usd?: number | null
   tokens_actual?: number | null
@@ -145,4 +176,38 @@ export interface IExecutionEngine {
    * @returns number of nodes recovered
    */
   recoverOrphans(orphanThresholdMs?: number): Promise<{ recovered: number }>
+
+  // ─── Amendment 64 — Context injection ─────────────────────────────────────
+
+  /**
+   * Append a user-authored context note to a run's injection list.
+   * Content is validated (max 2000 chars). Injections are exposed to all
+   * pending-node agent contexts that execute after this call.
+   * The run may be RUNNING or PAUSED when this is called.
+   */
+  injectContext(runId: string, content: string, actorId: string): Promise<UserInjection>
+
+  // ─── Amendment 65 — Streaming interruption + gate ─────────────────────────
+
+  /**
+   * Interrupt a single in-flight node using its per-node AbortController.
+   * Sets node → INTERRUPTED, run → SUSPENDED, stores partial output.
+   * Idempotent if the node is already INTERRUPTED.
+   * Throws if the node is not currently RUNNING.
+   */
+  interruptNode(runId: string, nodeId: string, actorId: string): Promise<void>
+
+  /**
+   * Resolve an Interrupt Gate — called after a node has been INTERRUPTED.
+   * Three decisions are supported (see GateDecision):
+   *   resume_from_partial — re-queue the node with the edited partial as seed context
+   *   replay_from_scratch — re-queue the node ignoring any partial output
+   *   accept_partial      — mark the node COMPLETED using partial_output as handoff_out
+   */
+  resolveInterruptGate(
+    runId: string,
+    nodeId: string,
+    actorId: string,
+    gate: GateDecision,
+  ): Promise<void>
 }
