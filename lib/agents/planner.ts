@@ -10,7 +10,7 @@
 // - Cost estimates clamped to $0–$999.
 // - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
 
-import type { ILLMClient } from '@/lib/llm/mock-client'
+import type { ILLMClient } from '@/lib/llm/interface'
 import type { ClassifierResult, ProfileId } from '@/lib/agents/classifier'
 import { withRetry } from '@/lib/utils/retry'
 

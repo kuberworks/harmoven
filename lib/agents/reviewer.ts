@@ -8,7 +8,7 @@
 // - Receives all WriterOutput handoffs for the run.
 // - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
 
-import type { ILLMClient } from '@/lib/llm/mock-client'
+import type { ILLMClient } from '@/lib/llm/interface'
 import type { ProfileId } from '@/lib/agents/classifier'
 import type { WriterOutput } from '@/lib/agents/writer'
 import { withRetry } from '@/lib/utils/retry'

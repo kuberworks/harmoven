@@ -11,7 +11,7 @@
 // - output.confidence validated to 0–100 range.
 // - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
 
-import type { ILLMClient } from '@/lib/llm/mock-client'
+import type { ILLMClient } from '@/lib/llm/interface'
 import type { ProfileId } from '@/lib/agents/classifier'
 import { withRetry } from '@/lib/utils/retry'
 
@@ -92,14 +92,38 @@ Rules:
 // ─── Input sanitizer (Section 24) ────────────────────────────────────────────
 
 /**
- * Sanitize upstream inputs before injecting into a prompt.
- * - Truncates total JSON to MAX_UPSTREAM_INPUT_CHARS (Section 24 500K limit).
- * - Strips null bytes and normalises unicode.
+ * Suspicious content patterns that indicate a prompt injection attempt
+ * embedded in upstream node outputs (Section 24).
+ * Matches common role-override phrases injected via external data.
+ */
+const INJECTION_PATTERNS = [
+  /ignore\s+(previous|all|above)\s+instructions/i,
+  /you\s+are\s+now\s+(a\s+)?(?!a\s+Harmoven)/i,
+  /disregard\s+(your|all|previous)\s+(instructions|rules|guidelines)/i,
+  /<\|(?:im_start|im_end|system|user|assistant)\|>/i,   // ChatML injection
+  /\[\s*SYSTEM\s*\]/i,
+  /\[\s*INST\s*\]/i,
+]
+
+/**
+ * Sanitize upstream inputs before injecting into a prompt (Section 24).
+ * - Strips null bytes and C0/C1 control characters (except whitespace).
+ * - Normalises unicode to NFC.
+ * - Scans for prompt injection patterns — replaces the full string with a
+ *   safe placeholder that signals the issue to the LLM without leaking content.
+ * - Truncates to MAX_UPSTREAM_INPUT_CHARS (500K limit).
  */
 function sanitizeUpstreamInputs(inputs: Record<string, unknown>): string {
   let serialized = JSON.stringify(inputs)
-    .replace(/\u0000/g, '')  // strip null bytes
-    .normalize('NFC')         // unicode normalization
+    // Strip null bytes and non-whitespace C0/C1 control chars (\x00-\x08, \x0b-\x0c, \x0e-\x1f, \x7f-\x9f)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '')
+    .normalize('NFC')
+
+  // Detect and neutralise role-injection attempts
+  if (INJECTION_PATTERNS.some(re => re.test(serialized))) {
+    console.warn('[Writer] Suspicious content detected in upstream inputs — sanitized.')
+    serialized = JSON.stringify({ __sanitized: true, reason: 'suspicious_content_detected' })
+  }
 
   if (serialized.length > MAX_UPSTREAM_INPUT_CHARS) {
     serialized = serialized.slice(0, MAX_UPSTREAM_INPUT_CHARS) + '[TRUNCATED]'

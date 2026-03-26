@@ -53,12 +53,23 @@ export class PgNotifyEventBus implements IProjectEventBus {
   private subscriberCount = new Map<string, number>()
   private _closed = false
   private _available = false
+  /**
+   * Resolves once the initial PG connection is established.
+   * emit() awaits this so events emitted before the connection is ready are not
+   * silently dropped from the EventPayload table (cross-process replay buffer).
+   */
+  private _ready: Promise<void>
+  private _resolveReady!: () => void
 
   constructor() {
     this.emitter = new EventEmitter()
     this.emitter.setMaxListeners(200)
+    this._ready = new Promise<void>(resolve => { this._resolveReady = resolve })
     this.initListener().catch(err => {
       console.error('[PgNotifyEventBus] Failed to connect listener:', err)
+      // Resolve anyway so emit() doesn't hang forever on startup failure.
+      // The emitter_client will be null and the DB insert will be skipped.
+      this._resolveReady()
     })
   }
 
@@ -71,6 +82,7 @@ export class PgNotifyEventBus implements IProjectEventBus {
     this.listener = client
     this.emitter_client = emitClient
     this._available = true
+    this._resolveReady()
 
     // Re-subscribe to all active channels after reconnect
     for (const project_id of this.subscriberCount.keys()) {
@@ -113,6 +125,8 @@ export class PgNotifyEventBus implements IProjectEventBus {
       this.listener = null
       this.emitter_client = null
       if (!this._closed) {
+        // Reset _ready so emit() waits for the new connection before writing to DB.
+        this._ready = new Promise<void>(resolve => { this._resolveReady = resolve })
         setTimeout(() => {
           this.initListener().catch(e =>
             console.error('[PgNotifyEventBus] Reconnect failed:', e),
@@ -124,6 +138,10 @@ export class PgNotifyEventBus implements IProjectEventBus {
 
   async emit(event: ProjectEvent): Promise<void> {
     if (this._closed) return
+
+    // Wait for the PG connection before writing to EventPayload (cross-process replay buffer).
+    // In-process delivery via this.emitter.emit() is still immediate below.
+    await this._ready
 
     const fullPayload = JSON.stringify(event)
     const byteLength = Buffer.byteLength(fullPayload, 'utf8')

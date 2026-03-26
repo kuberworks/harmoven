@@ -7,34 +7,10 @@
 //   llm.setNextResponse('Custom content for n2')  // optional override
 //   const result = await llm.chat([...], { model: 'mock' })
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
-
-export interface ChatOptions {
-  model: string
-  maxTokens?: number
-  temperature?: number
-  signal?: AbortSignal
-}
-
-export interface ChatResult {
-  content: string
-  tokensIn: number
-  tokensOut: number
-  model: string
-}
-
-/** ILLMClient — minimal client interface used by agents. */
-export interface ILLMClient {
-  chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult>
-  stream(
-    messages: ChatMessage[],
-    options: ChatOptions,
-    onChunk: (chunk: string) => void,
-  ): Promise<ChatResult>
-}
+// Re-export types from the canonical interface location so existing test
+// imports (from '@/lib/llm/mock-client') continue to work without changes.
+import type { ChatMessage, ChatOptions, ChatResult, ILLMClient } from '@/lib/llm/interface'
+export type { ChatMessage, ChatOptions, ChatResult, ILLMClient } from '@/lib/llm/interface'
 
 /** Default stub response for nodes that don't have a custom override. */
 const DEFAULT_STUB = '{"status":"ok","content":"stub output"}'

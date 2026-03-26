@@ -296,9 +296,10 @@ export class CustomExecutor implements IExecutionEngine {
       }
 
       // Execute ready nodes in parallel, capped at _maxConcurrentNodes per run.
-      // Subtract nodes already RUNNING in the DB to avoid exceeding the cap across
-      // poll cycles (e.g. 3 running + 4 ready with cap=4 → only start 1 new node).
-      const alreadyRunning = nodes.filter(n => n.status === 'RUNNING').length
+      // Use the in-memory _nodeRunId map (updated synchronously in executeNode before
+      // any await) instead of stale DB status, so fire-and-forget launches are counted
+      // immediately and we never start more than _maxConcurrentNodes nodes per run.
+      const alreadyRunning = [...this._nodeRunId.values()].filter(r => r === runId).length
       const slots = Math.max(0, this._maxConcurrentNodes - alreadyRunning)
       if (slots === 0) {
         await sleep(POLL_INTERVAL_MS)

@@ -43,9 +43,10 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
 
   // ── Anthropic ──────────────────────────────────────────────────────────────
   {
-    id:                       'claude-haiku-4-5-20251001',
+    // claude-3-5-haiku-20241022: fastest + cheapest Anthropic model (Oct 2024)
+    id:                       'claude-3-5-haiku-20241022',
     provider:                 'anthropic',
-    model_string:             'claude-haiku-4-5-20251001',
+    model_string:             'claude-3-5-haiku-20241022',
     tier:                     'fast',
     context_window:           200_000,
     cost_per_1m_input_tokens:  0.80,
@@ -56,9 +57,10 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     api_key_env:              'ANTHROPIC_API_KEY',
   },
   {
-    id:                       'claude-sonnet-4-6',
+    // claude-3-7-sonnet-20250219: balanced tier (Feb 2025)
+    id:                       'claude-3-7-sonnet-20250219',
     provider:                 'anthropic',
-    model_string:             'claude-sonnet-4-6',
+    model_string:             'claude-3-7-sonnet-20250219',
     tier:                     'balanced',
     context_window:           200_000,
     cost_per_1m_input_tokens:  3.00,
@@ -69,9 +71,10 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     api_key_env:              'ANTHROPIC_API_KEY',
   },
   {
-    id:                       'claude-opus-4-6',
+    // claude-3-opus-20240229: most powerful Anthropic model available at launch
+    id:                       'claude-3-opus-20240229',
     provider:                 'anthropic',
-    model_string:             'claude-opus-4-6',
+    model_string:             'claude-3-opus-20240229',
     tier:                     'powerful',
     context_window:           200_000,
     cost_per_1m_input_tokens:  15.00,
@@ -193,7 +196,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
  */
 export function loadActiveProfiles(activeIds: string[]): LlmProfileConfig[] {
   if (activeIds.length === 0) {
-    const fallback = BUILT_IN_PROFILES.find(p => p.id === 'claude-haiku-4-5-20251001')
+    const fallback = BUILT_IN_PROFILES.find(p => p.id === 'claude-3-5-haiku-20241022')
     return fallback ? [fallback] : []
   }
   const result: LlmProfileConfig[] = []
