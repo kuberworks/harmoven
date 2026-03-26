@@ -116,6 +116,12 @@ export interface EngineConfig {
    * @default true in production modes
    */
   recoverOrphansOnStartup?: boolean
+  /**
+   * Event bus for emitting run/node SSE events.
+   * If omitted in production: the factory injects the global `projectEventBus` singleton.
+   * Pass undefined explicitly in tests to disable event emission.
+   */
+  eventBus?: IProjectEventBus | null
 }
 
 /**
@@ -150,6 +156,19 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
 
   const maxConcurrentNodes = config.maxConcurrentNodes ?? (isTestContext ? 4 : loadMaxConcurrentNodes())
 
+  // Resolve event bus: use injected value (null = explicit disable), else production singleton.
+  let eventBus: IProjectEventBus | undefined
+  if (config.eventBus === null) {
+    eventBus = undefined  // explicitly disabled (tests)
+  } else if (config.eventBus != null) {
+    eventBus = config.eventBus
+  } else if (!isTestContext) {
+    // Production default: lazy-load the singleton to avoid circular imports at module level
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { projectEventBus } = require('@/lib/events/project-event-bus.factory') as { projectEventBus: IProjectEventBus }
+    eventBus = projectEventBus
+  }
+
   let engine: IExecutionEngine
 
   switch (mode) {
@@ -157,7 +176,7 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
     case 'electron':
     case 'test':
     default:
-      engine = new CustomExecutor(db, agentRunner, maxConcurrentNodes)
+      engine = new CustomExecutor(db, agentRunner, maxConcurrentNodes, eventBus ?? undefined)
 
     // T3.x stubs — will throw until implemented
     // case 'temporal': engine = new TemporalExecutor(db, agentRunner, maxConcurrentNodes); break

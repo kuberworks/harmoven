@@ -22,6 +22,7 @@ import {
   isTerminalRun,
 } from '@/lib/execution/custom/state-machine'
 import { HeartbeatManager, ORPHAN_THRESHOLD_MS } from '@/lib/execution/custom/heartbeat'
+import type { IProjectEventBus, RunSSEEvent, ProjectLifecycleEvent } from '@/lib/events/project-event-bus.interface'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,12 +58,40 @@ export class CustomExecutor implements IExecutionEngine {
   /** Per-node heartbeat timers — pulse last_heartbeat every HEARTBEAT_INTERVAL_MS. */
   private _heartbeat = new HeartbeatManager()
 
+  /** Cache of runId → project_id, populated at executeRun() start, cleared on finish. */
+  private _runProjectIds = new Map<string, string>()
+
   constructor(
     private db: ExecutorDb,
     private agentRunner: AgentRunnerFn,
     /** Max nodes that may run in parallel within a single run. Loaded from orchestrator.yaml. */
     private _maxConcurrentNodes = 4,
+    /** Optional event bus — if omitted, event emission is a no-op. */
+    private _eventBus?: IProjectEventBus,
   ) {}
+
+  // ─── Event emission helper ────────────────────────────────────────────────
+
+  /**
+   * Emit an SSE event or project lifecycle event to the bus.
+   * Fire-and-forget (void) — a bus failure must never block execution.
+   */
+  private _emit(
+    runId: string,
+    event: RunSSEEvent | ProjectLifecycleEvent,
+  ): void {
+    if (!this._eventBus) return
+    const projectId = this._runProjectIds.get(runId)
+    if (!projectId) return
+    void this._eventBus.emit({
+      project_id: projectId,
+      run_id: runId,
+      event,
+      emitted_at: new Date(),
+    }).catch((err: unknown) => {
+      console.error(`[executor] event bus emit failed for run ${runId}:`, err)
+    })
+  }
 
   // ─── IExecutionEngine ─────────────────────────────────────────────────────
 
@@ -77,10 +106,25 @@ export class CustomExecutor implements IExecutionEngine {
       throw new Error(`Cannot execute run in status '${currentStatus}' (must be PENDING, SUSPENDED, or PAUSED)`)
     }
 
+    // Cache project_id for event emission throughout this run's lifecycle
+    this._runProjectIds.set(runId, run.project_id)
+
     await this.transitionRun(runId, currentStatus, 'RUNNING')
     if (!run.started_at) {
       await this.db.run.update({ where: { id: runId }, data: { started_at: new Date() } })
     }
+
+    // Emit run_started lifecycle event for project stream
+    const taskSummary = run.task_input == null
+      ? ''
+      : typeof run.task_input === 'string'
+        ? (run.task_input as string).slice(0, 120)
+        : JSON.stringify(run.task_input).slice(0, 120)
+    this._emit(runId, {
+      type: 'run_started',
+      profile: (run.domain_profile as string | undefined | null) ?? 'unknown',
+      task_summary: taskSummary,
+    })
 
     const controller = new AbortController()
     this._cancelSignals.set(runId, controller)
@@ -90,6 +134,7 @@ export class CustomExecutor implements IExecutionEngine {
     } finally {
       this._cancelSignals.delete(runId)
       this._pausedRunIds.delete(runId)
+      this._runProjectIds.delete(runId)
     }
   }
 
@@ -327,6 +372,13 @@ export class CustomExecutor implements IExecutionEngine {
       if (!isTerminalRun(currentStatus)) {
         await this.transitionRun(runId, currentStatus, finalStatus)
         await this.db.run.update({ where: { id: runId }, data: { completed_at: new Date() } })
+
+        // Emit terminal-state SSE events
+        if (finalStatus === 'COMPLETED') {
+          this._emit(runId, { type: 'completed', run: currentRun, handoff_note: '' })
+        }
+        // run_finished lifecycle event (always, regardless of terminal status)
+        this._emit(runId, { type: 'run_finished', status: finalStatus })
       }
     }
   }
@@ -405,12 +457,22 @@ export class CustomExecutor implements IExecutionEngine {
         const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
         const prevCost = currentRun.cost_actual_usd ?? 0
         const prevTokens = currentRun.tokens_actual ?? 0
+        const newCost   = prevCost + output.costUsd
+        const newTokens = prevTokens + output.tokensIn + output.tokensOut
         await this.db.run.update({
           where: { id: runId },
           data: {
-            cost_actual_usd: prevCost + output.costUsd,
-            tokens_actual: prevTokens + output.tokensIn + output.tokensOut,
+            cost_actual_usd: newCost,
+            tokens_actual: newTokens,
           },
+        })
+        // Emit cost_update SSE event (filtered by stream:costs permission in SSE routes)
+        const budget = (currentRun.budget_usd as number | null) ?? 0
+        this._emit(runId, {
+          type: 'cost_update',
+          cost_usd: newCost,
+          tokens: newTokens,
+          percent_of_budget: budget > 0 ? Math.round((newCost / budget) * 100) : 0,
         })
       }
 
@@ -431,6 +493,8 @@ export class CustomExecutor implements IExecutionEngine {
           where: { id: node.id },
           data: { status: 'FAILED', error: message },
         })
+        // Emit error SSE event for run and project streams
+        this._emit(runId, { type: 'error', node_id: node.node_id ?? node.id, message })
       }
 
       await this.db.auditLog.create({
@@ -463,6 +527,13 @@ export class CustomExecutor implements IExecutionEngine {
         payload: { entity: 'node', from: node.status, to },
       },
     })
+    // Emit node state_change SSE event
+    this._emit(node.run_id, {
+      type: 'state_change',
+      entity_type: 'node',
+      id: node.node_id ?? node.id,
+      status: to,
+    })
   }
 
   private async transitionRun(runId: string, from: RunStatus, to: RunStatus): Promise<void> {
@@ -475,6 +546,13 @@ export class CustomExecutor implements IExecutionEngine {
         action_type: 'state_transition',
         payload: { entity: 'run', from, to },
       },
+    })
+    // Emit run state_change SSE event
+    this._emit(runId, {
+      type: 'state_change',
+      entity_type: 'run',
+      id: runId,
+      status: to,
     })
   }
 
