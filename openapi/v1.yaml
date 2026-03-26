@@ -1,0 +1,403 @@
+openapi: 3.1.0
+info:
+  title: Harmoven Public API
+  version: "1.0"
+  description: >
+    Public REST API for Harmoven. All endpoints require a project-scoped API key
+    (`Authorization: Bearer hv1_<32hex>`) or a valid session cookie unless noted.
+  contact:
+    name: Harmoven
+servers:
+  - url: /api/v1
+    description: Current public API (v1)
+
+# ─── Security ──────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerKey:
+      type: http
+      scheme: bearer
+      bearerFormat: hv1_<32hex>
+      description: Project-scoped API key issued via POST /api/projects/:id/api-keys
+
+  # ─── Shared schemas ──────────────────────────────────────────────────────────
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    RunStatus:
+      type: string
+      enum: [PENDING, RUNNING, COMPLETED, FAILED, SUSPENDED, PAUSED]
+
+    NodeStatus:
+      type: string
+      enum: [PENDING, RUNNING, BLOCKED, FAILED, ESCALATED, SKIPPED, COMPLETED, DEADLOCKED, INTERRUPTED]
+
+    DagNode:
+      type: object
+      required: [id, agent_type]
+      properties:
+        id:         { type: string }
+        agent_type: { type: string }
+        config:
+          type: object
+          additionalProperties: true
+
+    DagEdge:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: string }
+        to:   { type: string }
+
+    Dag:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/DagNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/DagEdge' }
+
+    Run:
+      type: object
+      required: [id, project_id, status, domain_profile, created_at]
+      properties:
+        id:                    { type: string, format: uuid }
+        project_id:            { type: string, format: uuid }
+        status:                { $ref: '#/components/schemas/RunStatus' }
+        domain_profile:        { type: string }
+        task_input:            {}
+        dag:                   { $ref: '#/components/schemas/Dag' }
+        cost_actual_usd:       { type: number }
+        tokens_actual:         { type: integer }
+        budget_usd:            { type: number, nullable: true }
+        started_at:            { type: string, format: date-time, nullable: true }
+        completed_at:          { type: string, format: date-time, nullable: true }
+        created_at:            { type: string, format: date-time }
+        metadata:              { type: object, additionalProperties: true }
+
+    RunNode:
+      type: object
+      required: [id, run_id, node_id, agent_type, status]
+      properties:
+        id:           { type: string, format: uuid }
+        run_id:       { type: string, format: uuid }
+        node_id:      { type: string }
+        agent_type:   { type: string }
+        status:       { $ref: '#/components/schemas/NodeStatus' }
+        cost_usd:     { type: number, nullable: true }
+        tokens_in:    { type: integer, nullable: true }
+        tokens_out:   { type: integer, nullable: true }
+        started_at:   { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        error:        { type: string, nullable: true }
+
+    Project:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+
+    LlmProfile:
+      type: object
+      required: [id, provider, model_string]
+      properties:
+        id:           { type: string }
+        provider:     { type: string, enum: [anthropic, openai, gemini, ollama, cometapi] }
+        model_string: { type: string }
+        tier:         { type: string, enum: [fast, balanced, powerful] }
+        base_url:     { type: string, format: uri, nullable: true }
+
+    AnalyticsResult:
+      type: object
+      properties:
+        from:        { type: string, format: date-time }
+        to:          { type: string, format: date-time }
+        granularity: { type: string, enum: [hour, day, week, month] }
+        runs_total:  { type: integer }
+        runs_completed: { type: integer }
+        runs_failed:    { type: integer }
+        cost_total_usd: { type: number }
+        tokens_total:   { type: integer }
+        avg_cost_per_run: { type: number }
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              ts:    { type: string, format: date-time }
+              runs:  { type: integer }
+              cost:  { type: number }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key / session
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+security:
+  - BearerKey: []
+
+# ─── Paths ────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ──────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      security: []
+      tags: [system]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  # ── Analytics ──────────────────────────────────────────────────────────────
+  /analytics:
+    get:
+      operationId: getAnalytics
+      summary: Retrieve run analytics
+      description: >
+        Returns aggregated run metrics for the caller's project.
+        `instance_admin` session callers see all projects; API key callers must
+        supply `?project_id` and require `runs:read` permission.
+      tags: [analytics]
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string, format: uuid }
+          description: Required for non-admin callers
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: granularity
+          schema: { type: string, enum: [hour, day, week, month], default: day }
+        - in: query
+          name: format
+          schema: { type: string, enum: [json, csv, pdf], default: json }
+      responses:
+        '200':
+          description: Analytics result (JSON unless format=csv|pdf)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyticsResult' }
+            text/csv:
+              schema: { type: string }
+            text/html:
+              schema: { type: string }
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Analytics module disabled
+
+  # ── Runs ───────────────────────────────────────────────────────────────────
+  /runs:
+    post:
+      operationId: createRun
+      summary: Create and enqueue a new run
+      description: >
+        Submits a new run for the project associated with the API key.
+        Requires `runs:create` permission on the project.
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_input, domain_profile]
+              properties:
+                task_input:
+                  description: Free-form task payload (string or object)
+                domain_profile:    { type: string }
+                budget_usd:        { type: number, minimum: 0 }
+                budget_tokens:     { type: integer, minimum: 0 }
+                transparency_mode: { type: boolean, default: false }
+                confidentiality:   { type: string, nullable: true }
+      responses:
+        '201':
+          description: Run created and enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run: { $ref: '#/components/schemas/Run' }
+        '400':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /runs/{runId}:
+    get:
+      operationId: getRun
+      summary: Get a run by ID
+      tags: [runs]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Run object with current status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:   { $ref: '#/components/schemas/Run' }
+                  nodes:
+                    type: array
+                    items: { $ref: '#/components/schemas/RunNode' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /runs/{runId}/stream:
+    get:
+      operationId: streamRun
+      summary: Subscribe to run SSE events
+      description: >
+        Server-Sent Events stream for a run. Supports `Last-Event-ID` header for
+        reconnect (24h buffer). Cost events require `stream:costs` permission;
+        human gate events require `stream:gates`.
+      tags: [runs, sse]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: Last-Event-ID
+          schema: { type: string }
+      responses:
+        '200':
+          description: SSE stream — see types/events.ts for event shapes
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Projects ───────────────────────────────────────────────────────────────
+  /projects:
+    get:
+      operationId: listProjects
+      summary: List projects accessible to the caller
+      description: >
+        `instance_admin` sees all projects; API key caller sees only the project
+        the key is scoped to.
+      tags: [projects]
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items: { $ref: '#/components/schemas/Project' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: Get project details
+      tags: [projects]
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: { $ref: '#/components/schemas/Project' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── LLM Profiles ───────────────────────────────────────────────────────────
+  /profiles:
+    get:
+      operationId: listProfiles
+      summary: List active LLM profiles
+      description: Returns the LLM profiles currently active in orchestrator.yaml (no API keys returned).
+      tags: [profiles]
+      responses:
+        '200':
+          description: Active profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items: { $ref: '#/components/schemas/LlmProfile' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
