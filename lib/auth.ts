@@ -29,8 +29,22 @@ export const auth = betterAuth({
   }),
 
   // Secret used to sign session tokens and cookies.
-  // Falls back to a dev placeholder — NEVER ship to production without AUTH_SECRET set.
-  secret: process.env.AUTH_SECRET ?? 'dev-secret-change-me-in-production',
+  // In production: AUTH_SECRET MUST be set (≥32 bytes from `openssl rand -base64 32`).
+  // In non-production: generate a random secret per-process so that session tokens
+  // cannot be forged by anyone who knows the default value. Sessions are ephemeral
+  // in dev anyway (in-memory, no persistence across restarts).
+  secret: process.env.AUTH_SECRET ?? (() => {
+    // crypto.randomUUID() is available in Node 19+ and all modern edge runtimes.
+    const fallback = `dev-${Math.random().toString(36).slice(2)}-${Date.now()}`
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(
+        '[harmoven] AUTH_SECRET is not set — using a random ephemeral secret.'
+        + ' Sessions will be invalidated on every process restart.'
+        + ' Set AUTH_SECRET in .env for stable dev sessions.',
+      )
+    }
+    return fallback
+  })(),
 
   // baseURL is required for CSRF token binding and redirect validation.
   baseURL: process.env.AUTH_URL ?? 'http://localhost:3000',

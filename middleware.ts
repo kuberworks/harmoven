@@ -37,7 +37,14 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   // We call /api/auth/get-session rather than importing the auth instance directly —
   // middleware runs in the Next.js edge runtime and cannot use Node.js-specific adapters
   // (PrismaClient / @prisma/adapter-pg require Node.js APIs).
-  const sessionUrl = new URL('/api/auth/get-session', request.url)
+  //
+  // SECURITY: We build the session URL from the AUTH_URL env variable (a fixed server-
+  // controlled value), NOT from request.url. Using request.url would make this call
+  // vulnerable to SSRF via a forged Host header — an attacker could redirect the session
+  // check to an internal network endpoint. AUTH_URL is set at deploy time and never
+  // influenced by the incoming request.
+  const authBase = (process.env.AUTH_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  const sessionUrl = `${authBase}/api/auth/get-session`
   let sessionRes: Response
   try {
     sessionRes = await fetch(sessionUrl, {

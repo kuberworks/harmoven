@@ -37,6 +37,14 @@ const VALID_PROFILES = new Set<string>([
   'customer_support', 'ecommerce_ops', 'training_content', 'generic',
 ])
 
+// Whitelist of allowed agent_type values (#13 — DAG agent_type validation).
+// Checked before the switch so a tampered DB row or DAG JSON cannot reach
+// an unintended code path via a case-folding variant.
+const ALLOWED_AGENT_TYPES = new Set([
+  'CLASSIFIER', 'PLANNER', 'WRITER', 'REVIEWER',
+  'SMOKE_TEST', 'REPAIR', 'CRITICAL_REVIEW',
+])
+
 function asProfileId(v: unknown): ProfileId {
   if (typeof v === 'string' && VALID_PROFILES.has(v)) return v as ProfileId
   return 'generic'
@@ -101,7 +109,18 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
     // Wrap llm to carry the per-node context — agents call llm.chat() normally.
     const contextualLlm = new ContextualLLMClient(llm, selectionContext)
 
-    switch (node.agent_type.toUpperCase()) {
+    const normalizedType = node.agent_type.toUpperCase()
+
+    // #13 — whitelist validation: reject unknown agent types before the switch.
+    // This prevents a tampered DAG row from reaching an unexpected code path.
+    if (!ALLOWED_AGENT_TYPES.has(normalizedType)) {
+      throw new Error(
+        `[agentRunner] Unknown agent_type: "${node.agent_type}". `
+        + `Allowed: ${[...ALLOWED_AGENT_TYPES].join(', ')}`,
+      )
+    }
+
+    switch (normalizedType) {
 
       // ── CLASSIFIER ──────────────────────────────────────────────────────────
       case 'CLASSIFIER': {
@@ -237,9 +256,10 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
       }
 
       default:
+        // Should never reach here: whitelist check above catches unknown types first.
         throw new Error(
-          `[agentRunner] Unknown agent_type: "${node.agent_type}". ` +
-          `Supported: CLASSIFIER, PLANNER, WRITER, REVIEWER, SMOKE_TEST, REPAIR, CRITICAL_REVIEW`,
+          `[agentRunner] Unhandled agent_type: "${node.agent_type}". `
+          + `Allowed: ${[...ALLOWED_AGENT_TYPES].join(', ')}`,
         )
     }
   }
