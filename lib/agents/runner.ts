@@ -3,12 +3,13 @@
 // Wired into createExecutionEngine() as the default agentRunner.
 //
 // Node metadata contract (written when nodes are persisted from Planner output):
-//   WRITER:      { description, complexity, expected_output_type, domain_profile, task_type? }
-//   REVIEWER:    { domain_profile }
-//   PLANNER:     { task_input? }
-//   CLASSIFIER:  handoffIn = string | { input: string }
-//   SMOKE_TEST:  { worktree, routes?, timeout_s? }
-//   REPAIR:      { worktree, subpath } — used standalone (smoke-test integrates repair internally)
+//   WRITER:           { description, complexity, expected_output_type, domain_profile, task_type? }
+//   REVIEWER:         { domain_profile }
+//   PLANNER:          { task_input? }
+//   CLASSIFIER:       handoffIn = string | { input: string }
+//   SMOKE_TEST:       { worktree, routes?, timeout_s? }
+//   REPAIR:           { worktree, subpath } — used standalone (smoke-test integrates repair internally)
+//   CRITICAL_REVIEW:  { domain_profile, run_config_severity?, project_severity?, preset? }
 //
 // Selection context (optional, also from node metadata):
 //   { confidentiality?, jurisdiction_tags?, preferred_llm?, estimated_tokens? }
@@ -25,6 +26,8 @@ import { Reviewer } from '@/lib/agents/reviewer'
 import type { WriterOutput } from '@/lib/agents/writer'
 import { runSmokeTest } from '@/lib/agents/scaffolding/smoke-test.agent'
 import { repairForSubpath } from '@/lib/agents/scaffolding/repair.agent'
+import { CriticalReviewer } from '@/lib/agents/critical-reviewer'
+import { resolveCriticalSeverity } from '@/lib/agents/reviewer/critical-reviewer.types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -203,10 +206,40 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         return { handoffOut: { repaired: true, worktree, subpath }, costUsd: 0, tokensIn: 0, tokensOut: 0 }
       }
 
+      // ── CRITICAL_REVIEW ─────────────────────────────────────────────────────
+      // Runs after Standard Reviewer (APPROVE / APPROVE_WITH_WARNINGS).
+      // Skipped if Standard Reviewer issues REQUEST_REVISION.
+      // handoffIn: WriterOutput[] (same as REVIEWER)
+      // metadata: { domain_profile, run_config_severity?, project_severity?, preset? }
+      case 'CRITICAL_REVIEW': {
+        const writerOutputs: import('@/lib/agents/writer').WriterOutput[] = Array.isArray(handoffIn)
+          ? (handoffIn as import('@/lib/agents/writer').WriterOutput[])
+          : handoffIn != null ? [handoffIn as import('@/lib/agents/writer').WriterOutput] : []
+
+        const severity = resolveCriticalSeverity({
+          runConfigSeverity: typeof meta['run_config_severity'] === 'number'
+            ? (meta['run_config_severity'] as number) : null,
+          projectSeverity: typeof meta['project_severity'] === 'number'
+            ? (meta['project_severity'] as number) : null,
+          preset:       (meta['preset'] as string | undefined) ?? null,
+          domainProfile: asProfileId(meta['domain_profile']),
+        })
+
+        const result = await new CriticalReviewer(contextualLlm).review(
+          writerOutputs, severity, node.run_id, signal,
+        )
+        return {
+          handoffOut: result,
+          costUsd:   0,
+          tokensIn:  result.meta.tokens_input,
+          tokensOut: result.meta.tokens_output,
+        }
+      }
+
       default:
         throw new Error(
           `[agentRunner] Unknown agent_type: "${node.agent_type}". ` +
-          `Supported: CLASSIFIER, PLANNER, WRITER, REVIEWER, SMOKE_TEST, REPAIR`,
+          `Supported: CLASSIFIER, PLANNER, WRITER, REVIEWER, SMOKE_TEST, REPAIR, CRITICAL_REVIEW`,
         )
     }
   }
