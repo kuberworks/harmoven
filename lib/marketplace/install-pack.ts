@@ -13,7 +13,8 @@
 //   - Version validated — strict semver format
 //   - Local overrides never silently overwritten on update (Am.67.4)
 
-import { createHash } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
+import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { scanPackContent } from '@/lib/marketplace/scan'
 import type { PackManifest } from '@/lib/marketplace/types'
@@ -65,14 +66,12 @@ function assertSha256(hash: string): void {
 
 function verifyContentHash(content: string, expectedHash: string): void {
   const actual = createHash('sha256').update(content).digest('hex')
-  // Timing-safe: both strings are always 64 hex chars — constant time length.
-  // Node crypto.timingSafeEqual requires Buffer of equal length.
+  // Timing-safe: both strings are always 64 hex chars — constant-time comparison.
   const actualBuf   = Buffer.from(actual)
   const expectedBuf = Buffer.from(expectedHash.toLowerCase())
   if (actualBuf.length !== expectedBuf.length) {
     throw new MarketplaceError('Pack content hash mismatch — possible tampering', 'HASH_MISMATCH')
   }
-  const { timingSafeEqual } = require('node:crypto') as typeof import('node:crypto')
   if (!timingSafeEqual(actualBuf, expectedBuf)) {
     throw new MarketplaceError('Pack content hash mismatch — possible tampering', 'HASH_MISMATCH')
   }
@@ -82,6 +81,25 @@ function verifyContentHash(content: string, expectedHash: string): void {
 
 /** Registry base URL — can be overridden via environment (e.g. mirror, air-gap). */
 const REGISTRY_BASE = process.env.HARMOVEN_REGISTRY_URL ?? 'https://registry.harmoven.com/v1'
+
+/**
+ * Zod schema for PackManifest — validates the registry response at the boundary.
+ * An attacker controlling the registry cannot send a malformed manifest that would
+ * crash the install flow or pass a `null` sha256 to verifyContentHash().
+ */
+const PackManifestSchema = z.object({
+  pack_id:         z.string().regex(/^[a-z0-9_]{1,64}$/),
+  name:            z.string().min(1).max(256),
+  version:         z.string().regex(/^\d{1,4}\.\d{1,4}\.\d{1,4}$/),
+  author:          z.string().min(1).max(256),
+  description:     z.string().max(4096),
+  tags:            z.array(z.string().max(64)).max(32),
+  content:         z.string().min(1).max(1_000_000),
+  content_sha256:  z.string().regex(/^[0-9a-f]{64}$/i),
+  signature:       z.string().optional(),
+  bayesian_rating: z.number().min(0).max(5).optional(),
+  install_count:   z.number().int().min(0).optional(),
+}).strict()
 
 /**
  * Fetch a pack manifest from the registry.
@@ -102,8 +120,30 @@ async function fetchFromRegistry(packId: string, version: string): Promise<PackM
       'REGISTRY_ERROR',
     )
   }
-  const data = await res.json() as PackManifest
-  return data
+
+  // Validate Content-Type before parsing: a CloudFlare challenge page or HTML error
+  // would otherwise crash res.json() or silently cast to PackManifest with undefined fields.
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    throw new MarketplaceError(
+      `Registry returned unexpected content type "${contentType.slice(0, 80)}" for ${packId}@${version}`,
+      'REGISTRY_ERROR',
+    )
+  }
+
+  const raw = await res.json()
+
+  // Validate structure with Zod — prevents a compromised registry from injecting
+  // null/undefined into security-critical fields (e.g. content_sha256).
+  const parsed = PackManifestSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new MarketplaceError(
+      `Registry manifest validation failed for ${packId}@${version}: ${parsed.error.message}`,
+      'INVALID_MANIFEST',
+    )
+  }
+
+  return parsed.data as PackManifest
 }
 
 // ─── Semver comparison helpers ────────────────────────────────────────────────

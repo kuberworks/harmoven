@@ -10,6 +10,12 @@
 // RBAC is NOT enforced here — middleware only checks session presence.
 // Per-route permission checks are done inside each API route handler
 // using resolvePermissions() + assertPermissions().
+//
+// MFA ENFORCEMENT:
+//   instance_admin accounts must complete MFA before accessing any route.
+//   If 2FA is enabled on the account but not yet verified in this session,
+//   the middleware redirects to /auth/two-factor (Better Auth built-in page).
+//   This enforces orchestrator.yaml: mfa_required_for_admin: true.
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
@@ -22,8 +28,25 @@ const PUBLIC_PATHS = [
   '/api/health',
 ]
 
+/**
+ * Paths that instance_admin accounts with pending 2FA can still access.
+ * /auth/two-factor  — Better Auth's built-in 2FA challenge page
+ * /auth/two-factor/* — 2FA verification sub-routes
+ */
+const MFA_ALLOWED_PATHS = ['/auth/two-factor']
+
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'))
+}
+
+function isMfaAllowed(pathname: string): boolean {
+  return MFA_ALLOWED_PATHS.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'))
+}
+
+/** Shape of the Better Auth get-session response (minimal subset we need). */
+interface BetterAuthSession {
+  user?:    { role?: string; twoFactorEnabled?: boolean }
+  session?: { twoFactorVerified?: boolean }
 }
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
@@ -62,11 +85,36 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
 
   if (sessionRes.ok) {
-    const body = await sessionRes.json() as unknown
+    const body = await sessionRes.json() as BetterAuthSession | null
+
     // Better Auth returns null when no session exists.
-    if (body !== null && typeof body === 'object') {
-      return NextResponse.next()
+    if (body === null || typeof body !== 'object') {
+      const loginUrl = new URL('/login', request.url)
+      loginUrl.searchParams.set('callbackURL', pathname)
+      return NextResponse.redirect(loginUrl)
     }
+
+    // ── MFA enforcement for instance_admin (orchestrator.yaml: mfa_required_for_admin: true) ──
+    // If the account has 2FA enabled but the current session has not yet completed the
+    // 2FA challenge (twoFactorVerified !== true), redirect to the 2FA challenge page.
+    // This prevents a session hijack from bypassing MFA by stealing the session cookie
+    // before the 2FA step is completed.
+    //
+    // Note: if twoFactorEnabled is false, the instance_admin can still log in without MFA.
+    // Full enforcement (requiring 2FA setup before first admin access) requires a UI setup
+    // flow and is deferred — this handles the case where 2FA is configured but not verified.
+    if (
+      body.user?.role === 'instance_admin' &&
+      body.user?.twoFactorEnabled === true &&
+      body.session?.twoFactorVerified !== true &&
+      !isMfaAllowed(pathname)
+    ) {
+      const mfaUrl = new URL('/auth/two-factor', request.url)
+      mfaUrl.searchParams.set('callbackURL', pathname)
+      return NextResponse.redirect(mfaUrl)
+    }
+
+    return NextResponse.next()
   }
 
   // No valid session — redirect to /login, preserving the intended path as callbackURL.

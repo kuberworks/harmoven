@@ -13,6 +13,8 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
+import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
+import type { SessionCaller } from '@/lib/auth/rbac'
 import { scanPackContent } from '@/lib/marketplace/scan'
 
 // ─── UUID validation ──────────────────────────────────────────────────────────
@@ -21,15 +23,22 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
-async function assertAdminSkills(req: NextRequest) {
+type AdminGuardResult =
+  | { caller: SessionCaller; err: null }
+  | { caller: null;          err: NextResponse }
+
+async function assertAdminSkills(req: NextRequest): Promise<AdminGuardResult> {
   const caller = await resolveCaller(req)
   if (!caller) {
     return { caller: null, err: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
-  if (caller.type !== 'session' || caller.instanceRole !== 'instance_admin') {
-    return { caller: null, err: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
+  try {
+    assertInstanceAdmin(caller)  // narrows caller to SessionCaller
+    return { caller, err: null }
+  } catch (e) {
+    const status = (e instanceof UnauthorizedError) ? 401 : 403
+    return { caller: null, err: NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status }) }
   }
-  return { caller, err: null }
 }
 
 // ─── PATCH /api/admin/skills/:id ─────────────────────────────────────────────

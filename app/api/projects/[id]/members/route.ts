@@ -10,6 +10,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess } from '@/lib/auth/ownership'
 import {
   resolvePermissions,
+  invalidatePermCache,
   ForbiddenError,
   UnauthorizedError,
 } from '@/lib/auth/rbac'
@@ -120,6 +121,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       payload:     { project_id: projectId, user_id, role_id },
     },
   })
+
+  // Upsert may have changed the member's role — invalidate their cached permissions.
+  invalidatePermCache({ type: 'session', userId: user_id, instanceRole: null }, projectId)
 
   return NextResponse.json({ member }, { status: 201 })
 }

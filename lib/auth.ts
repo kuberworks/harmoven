@@ -23,6 +23,16 @@ if (!process.env.AUTH_SECRET && process.env.NODE_ENV === 'production') {
   throw new Error('AUTH_SECRET environment variable is required in production')
 }
 
+// SECURITY: AUTH_SKIP_VERIFY=true disables email verification.
+// This must never reach production — an operator mistake (copy from .env.dev)
+// would silently allow unverified accounts.
+if (process.env.AUTH_SKIP_VERIFY === 'true' && process.env.NODE_ENV === 'production') {
+  throw new Error(
+    'AUTH_SKIP_VERIFY cannot be set in production — it disables email verification.'
+    + ' Remove it from your production environment.',
+  )
+}
+
 export const auth = betterAuth({
   database: prismaAdapter(db, {
     provider: (process.env.DATABASE_PROVIDER as 'postgresql' | 'sqlite') ?? 'postgresql',
