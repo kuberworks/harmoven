@@ -24,8 +24,19 @@ export async function resolveCaller(req: NextRequest): Promise<Caller | null> {
     const bearer = req.headers.get('authorization')?.replace('Bearer ', '')
     if (bearer) {
       const keyHash = createHash('sha256').update(bearer).digest('hex')
+      const now = new Date()
       const key = await db.projectApiKey.findFirst({
-        where: { key_hash: keyHash, revoked_at: null },
+        where: {
+          key_hash:   keyHash,
+          revoked_at: null,
+          // Exclude keys whose expiry has passed (null = no expiry = valid).
+          // SECURITY: expires_at must be checked here too, not only in
+          // assertProjectAccess — resolveCaller is the first gate.
+          OR: [
+            { expires_at: null },
+            { expires_at: { gt: now } },
+          ],
+        },
         select: { id: true },
       })
       if (key) return { type: 'api_key', keyId: key.id }

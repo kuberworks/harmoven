@@ -17,6 +17,7 @@
 // Port:   kept alive — caller must call releasePreviewPort() on gate resolution
 
 import { execSync } from 'child_process'
+import path from 'path'
 import type { ILLMClient } from '@/lib/llm/interface'
 import { allocatePreviewPort, releasePreviewPort } from './port-allocator'
 import {
@@ -25,6 +26,27 @@ import {
   loadPreviewConfig,
 } from './preview-cascade'
 import type { PreviewResult, RouteCheck } from './preview-cascade'
+
+// ─── Worktree safety guard ────────────────────────────────────────────────────
+// Mirror of repair.agent.ts: all worktrees must live under WORKTREE_BASE_DIR.
+// Prevents path traversal if metadata.worktree is tampered with.
+
+function assertWorktreeIsSafe(worktree: string): string {
+  const base = process.env.WORKTREE_BASE_DIR
+  if (!base) {
+    throw new Error(
+      '[SmokeTestAgent] WORKTREE_BASE_DIR env variable is not set.',
+    )
+  }
+  const baseResolved = path.resolve(base)
+  const resolved     = path.resolve(worktree)
+  if (!resolved.startsWith(baseResolved + path.sep) && resolved !== baseResolved) {
+    throw new Error(
+      `[SmokeTestAgent] Rejected worktree path "${worktree}" — must be under WORKTREE_BASE_DIR (${baseResolved}).`,
+    )
+  }
+  return resolved
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,11 +141,14 @@ export async function runSmokeTest(
   signal?: AbortSignal,
 ): Promise<SmokeTestResult> {
   const {
-    worktree,
+    worktree: rawWorktree,
     run_id,
     routes   = ['/', '/api/health', '/login'],
     timeout_s = 30,
   } = input
+
+  // #4 — path traversal guard: validate worktree before any fs/exec call
+  const worktree = assertWorktreeIsSafe(rawWorktree)
 
   const timeoutMs = timeout_s * 1000
   const config    = loadPreviewConfig()

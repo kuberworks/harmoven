@@ -216,6 +216,14 @@ describe('port allocator', () => {
 // ─── RepairAgent — framework-specific patch prompt ───────────────────────────
 
 describe('repairForSubpath — framework detection + LLM call', () => {
+  beforeAll(() => {
+    // WORKTREE_BASE_DIR is required by the path-traversal guard.
+    // In tests we use '/tmp/harmoven-worktrees' — the FS calls are all mocked.
+    process.env.WORKTREE_BASE_DIR = '/tmp/harmoven-worktrees'
+  })
+  afterAll(() => {
+    delete process.env.WORKTREE_BASE_DIR
+  })
   afterEach(() => {
     mockExistsSync.mockReset()
     mockReadFileSync.mockReset()
@@ -239,7 +247,7 @@ describe('repairForSubpath — framework detection + LLM call', () => {
     llm.setNextResponse('module.exports = { basePath: "/preview/r1", assetPrefix: "/preview/r1" }')
 
     const { repairForSubpath } = await import('@/lib/agents/scaffolding/repair.agent')
-    await repairForSubpath('/worktree', '/preview/r1/', llm)
+    await repairForSubpath('/tmp/harmoven-worktrees/app', '/preview/r1/', llm)
 
     expect(llm.calls.length).toBe(1)
     expect(llm.calls[0]!.messages[0]!.content).toContain('nextjs')
