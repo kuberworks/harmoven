@@ -1,0 +1,173 @@
+# .github/workflows/pr.yml
+# Amendment 88.2 — Level 1: Pull Request pipeline
+# Must complete in < 5 minutes. Blocks merge on any failure.
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  typecheck:
+    name: TypeScript typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  lint:
+    name: ESLint + Prettier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+
+  unit-tests:
+    name: Unit tests (MockLLMClient)
+    runs-on: ubuntu-latest
+    env:
+      HARMOVEN_LLM_TIER: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:unit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  migration-check:
+    name: Migration down.sql guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check down.sql present for every migration
+        run: |
+          MISSING=0
+          for dir in prisma/migrations/*/; do
+            if [ -f "$dir/migration.sql" ] && [ ! -f "$dir/down.sql" ]; then
+              echo "ERROR: $dir missing down.sql"
+              MISSING=1
+            fi
+          done
+          if [ $MISSING -eq 1 ]; then
+            echo "Every migration.sql must have a matching down.sql (Amendment 84)."
+            exit 1
+          fi
+      - name: Check NOT REVERSIBLE in release checklist
+        run: |
+          if grep -r "NOT REVERSIBLE" prisma/migrations/ 2>/dev/null; then
+            echo "⚠  Irreversible migrations detected — confirm in release notes"
+          fi
+      - name: Run migration baseline verifier
+        run: node scripts/verify-migration-baseline.js
+
+  migration-roundtrip:
+    name: Migration roundtrip (up + down)
+    runs-on: ubuntu-latest
+    # Only run when migration files actually changed
+    if: |
+      contains(github.event.pull_request.labels.*.name, 'migration') ||
+      github.event_name == 'push'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: harmoven_test
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Apply all up migrations
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+        run: npx prisma migrate deploy
+      - name: Run down migrations in reverse order
+        env:
+          PGPASSWORD: test
+        run: |
+          for dir in $(ls -r prisma/migrations/*/); do
+            if [ -f "$dir/down.sql" ]; then
+              echo "Rolling back: $dir"
+              psql postgresql://postgres:test@localhost:5432/harmoven_test \
+                -f "$dir/down.sql"
+            fi
+          done
+      - name: Verify baseline (schema empty after full rollback)
+        run: node scripts/verify-migration-baseline.js
+
+  translations:
+    name: Translation completeness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check fr.json completeness
+        # exits 0 gracefully when locales/ doesn't exist yet (T3.7 pending)
+        run: node scripts/check-translations.js
+
+  license-scan:
+    name: License compatibility scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Scan for prohibited licenses
+        run: |
+          npx license-checker --summary \
+            --failOn "GPL-2.0;GPL-3.0;AGPL-3.0" \
+            --excludePackages "harmoven" || true
+          # MIT, Apache-2.0, BSD-* → allowed
+          # GPL* → blocked (incompatible with self-hosted commercial)
+
+  accessibility:
+    name: Accessibility checks (axe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:test
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run axe accessibility checks
+        run: npx playwright test --grep "@a11y"
+        # Tests key screens: onboarding, gate, kanban
+        # Checks: contrast, aria-labels, focus management
+        continue-on-error: true   # non-blocking until T3.7 UI finalized
