@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
         source: '/(.*)',
         headers: [
           {
+            key: 'X-Permitted-Cross-Domain-Policies',
+            value: 'none',
+          },
+          {
             key: 'X-Frame-Options',
             value: 'DENY',
           },
@@ -60,7 +64,14 @@ const nextConfig: NextConfig = {
   // Experimental features
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000'],
+      // Derive allowed origins from AUTH_URL so that production deployments with a
+      // custom domain don't silently block Server Actions (Next.js CSRF protection).
+      allowedOrigins: [
+        (process.env.AUTH_URL ?? 'http://localhost:3000')
+          .replace(/^https?:\/\//, '')
+          .replace(/\/$/, ''),
+        'localhost:3000',  // always allow localhost for dev
+      ],
     },
   },
 }

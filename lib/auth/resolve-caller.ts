@@ -41,8 +41,13 @@ export async function resolveCaller(req: NextRequest): Promise<Caller | null> {
       })
       if (key) return { type: 'api_key', keyId: key.id }
     }
-  } catch {
-    // Auth errors → caller unresolved → route returns 401
+  } catch (e) {
+    // Unexpected errors (Prisma misconfiguration, network, etc.) are logged so
+    // they don't silently masquerade as simple 401s in production.
+    // Auth failures (invalid token, expired session) still return null → 401.
+    if (process.env.NODE_ENV !== 'test') {
+      console.error('[resolveCaller] unexpected error resolving caller:', e)
+    }
   }
   return null
 }

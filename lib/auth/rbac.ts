@@ -42,9 +42,21 @@ function setCached(caller: Caller, projectId: string, perms: Set<Permission>): v
   _permCache.set(cacheKey(caller, projectId), { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS })
 }
 
-/** Invalidate cached permissions for a caller / project pair (e.g. after a role change). */
+/** Invalidate cached permissions for a specific caller / project pair. */
 export function invalidatePermCache(caller: Caller, projectId: string): void {
   _permCache.delete(cacheKey(caller, projectId))
+}
+
+/**
+ * Invalidate all cached permission entries for a project.
+ * Call this when a role *definition* changes (not just a member's role assignment)
+ * since a single role change can affect every member who held that role.
+ */
+export function invalidateProjectPermCache(projectId: string): void {
+  const suffix = `:${projectId}`
+  for (const key of _permCache.keys()) {
+    if (key.endsWith(suffix)) _permCache.delete(key)
+  }
 }
 
 export class ForbiddenError extends Error {
@@ -161,5 +173,22 @@ export function assertPermissions(
 ): void {
   for (const p of required) {
     if (!perms.has(p)) throw new ForbiddenError()
+  }
+}
+
+/**
+ * Assert the caller is an instance_admin session.
+ * Use this for all instance-level routes (/api/admin/*) to replace inline
+ * `caller.instanceRole === 'instance_admin'` checks.
+ *
+ * After this call TypeScript narrows `caller` to `SessionCaller`.
+ * Throws ForbiddenError (403). API keys are rejected — they cannot hold instance-level scope.
+ */
+export function assertInstanceAdmin(caller: Caller): asserts caller is SessionCaller {
+  if (caller.type !== 'session') {
+    throw new ForbiddenError('API keys cannot access instance-admin routes')
+  }
+  if (caller.instanceRole !== 'instance_admin') {
+    throw new ForbiddenError()
   }
 }

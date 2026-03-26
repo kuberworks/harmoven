@@ -11,6 +11,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess } from '@/lib/auth/ownership'
 import {
   resolvePermissions,
+  invalidatePermCache,
   ForbiddenError,
   UnauthorizedError,
 } from '@/lib/auth/rbac'
@@ -75,6 +76,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     },
   })
 
+  // Invalidate permission cache for this user — their new role takes effect immediately.
+  invalidatePermCache({ type: 'session', userId, instanceRole: null }, projectId)
+
   await db.auditLog.create({
     data: {
       actor:       actorId,
@@ -124,6 +128,9 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   await db.projectMember.delete({
     where: { project_id_user_id: { project_id: projectId, user_id: userId } },
   })
+
+  // Invalidate permission cache for the removed user.
+  invalidatePermCache({ type: 'session', userId, instanceRole: null }, projectId)
 
   await db.auditLog.create({
     data: {

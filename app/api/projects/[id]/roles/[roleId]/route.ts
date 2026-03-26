@@ -11,6 +11,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess } from '@/lib/auth/ownership'
 import {
   resolvePermissions,
+  invalidateProjectPermCache,
   ForbiddenError,
   UnauthorizedError,
 } from '@/lib/auth/rbac'
@@ -113,6 +114,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       payload:     { project_id: projectId, role_id: roleId, role_name: role.name },
     },
   })
+
+  // Role definition changed — invalidate all cached permissions for this project
+  // since every member holding this role has a stale permission set.
+  invalidateProjectPermCache(projectId)
 
   return NextResponse.json({ role: updated })
 }
