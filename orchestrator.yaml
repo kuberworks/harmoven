@@ -82,6 +82,11 @@ marketplace:
     verify_gpg_signature: false    # GPG verification — enabled in T3.8 (supply chain monitor)
     scan_content: true             # local prompt-injection + external URL scan always on
 
+ui:                                  # Amendment 86
+  default_locale: en               # en | fr — instance-wide default for all users
+  # If not set: browser Accept-Language is used as fallback.
+  # Users can override this individually in Settings → Preferences.
+
 analytics:                           # Amendment 85
   enabled: true
   hourly_rate_usd: 75.0            # assumed hourly cost for ROI calculation

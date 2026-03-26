@@ -1,0 +1,471 @@
+{
+  "nav": {
+    "runs": "Exécutions",
+    "projects": "Projets",
+    "marketplace": "Marketplace",
+    "analytics": "Analyses",
+    "admin": "Administration",
+    "settings": "Paramètres",
+    "help": "Aide",
+    "logout": "Se déconnecter",
+    "back": "Retour",
+    "new_run": "Nouvelle exécution",
+    "new_project": "Nouveau projet"
+  },
+  "auth": {
+    "login": "Se connecter",
+    "login_with_email": "Se connecter par e-mail",
+    "login_with_passkey": "Se connecter avec une clé d'accès",
+    "magic_link_sent": "Lien magique envoyé — vérifiez votre boîte mail",
+    "logout": "Se déconnecter",
+    "totp_title": "Authentification à deux facteurs",
+    "totp_prompt": "Entrez le code à 6 chiffres de votre application d'authentification",
+    "totp_submit": "Vérifier",
+    "totp_invalid": "Code invalide — réessayez",
+    "passkey_prompt": "Utilisez votre clé d'accès pour vous connecter",
+    "session_expired": "Votre session a expiré — veuillez vous reconnecter",
+    "unauthorized": "Vous n'avez pas la permission d'accéder à cette page"
+  },
+  "runs": {
+    "status": {
+      "pending": "En attente",
+      "running": "En cours",
+      "completed": "Terminé",
+      "failed": "Échoué",
+      "paused": "En pause",
+      "suspended": "Suspendu",
+      "interrupted": "Interrompu",
+      "cancelled": "Annulé"
+    },
+    "actions": {
+      "start": "Démarrer",
+      "pause": "Mettre en pause",
+      "resume": "Reprendre",
+      "cancel": "Annuler",
+      "approve": "Approuver et enregistrer",
+      "request_changes": "Demander des modifications",
+      "interrupt": "Interrompre le nœud",
+      "inject_context": "Injecter du contexte",
+      "new": "Nouvelle exécution",
+      "view": "Voir l'exécution",
+      "retry": "Réessayer"
+    },
+    "labels": {
+      "id": "ID d'exécution",
+      "created_at": "Démarré",
+      "completed_at": "Terminé",
+      "duration": "Durée",
+      "cost": "Coût",
+      "profile": "Profil",
+      "status": "Statut",
+      "task_input": "Description de la tâche",
+      "domain": "Domaine"
+    },
+    "empty": "Aucune exécution — démarrez votre première exécution",
+    "loading": "Chargement des exécutions…",
+    "error": "Impossible de charger les exécutions"
+  },
+  "gates": {
+    "tabs": {
+      "preview": "Aperçu",
+      "what_was_built": "Ce qui a été produit",
+      "reviewer": "Vérification",
+      "critical": "Critique",
+      "eval": "Évaluation",
+      "cost": "Coût",
+      "code": "Code",
+      "config": "Configuration",
+      "context": "Contexte"
+    },
+    "actions": {
+      "approve": "Approuver et continuer",
+      "request_changes": "Demander des modifications",
+      "abandon": "Abandonner l'exécution",
+      "inject": "Injecter du contexte",
+      "edit_partial": "Modifier la sortie partielle",
+      "replay": "Rejouer depuis ici",
+      "accept_partial": "Accepter tel quel"
+    },
+    "critical": {
+      "blocking": "Bloquant",
+      "important": "Important",
+      "watch": "À surveiller",
+      "fix_this": "Corriger",
+      "ignore": "Ignorer",
+      "fixing": "Correction…",
+      "fixed": "Corrigé",
+      "ignored": "Ignoré",
+      "no_findings": "Aucun problème critique",
+      "findings_count": "{count} problème(s)"
+    },
+    "reviewer": {
+      "verdict": {
+        "approve": "Approuvé",
+        "request_changes": "Modifications demandées",
+        "escalate": "Escaladé vers un humain"
+      },
+      "no_findings": "Aucun problème détecté",
+      "findings": "Problèmes"
+    },
+    "eval": {
+      "score": "Score de qualité",
+      "attempt": "Tentative {n} sur {max}",
+      "passed": "Validé",
+      "failed": "Seuil non atteint",
+      "feedback": "Retour pour l'agent"
+    },
+    "preview": {
+      "loading": "Chargement de l'aperçu…",
+      "unavailable": "Aperçu non disponible",
+      "subdomain": "Aperçu disponible sur",
+      "subpath": "Aperçu en cours sur",
+      "screenshots": "Captures d'écran"
+    },
+    "cost": {
+      "total": "Coût total",
+      "by_agent": "Par agent",
+      "by_model": "Par modèle",
+      "tokens_input": "Tokens en entrée",
+      "tokens_output": "Tokens en sortie",
+      "budget_used": "Budget utilisé"
+    },
+    "interrupt": {
+      "title": "Nœud interrompu",
+      "choose": "Que souhaitez-vous faire ?",
+      "edit_partial": "Modifier la sortie partielle",
+      "replay": "Rejouer ce nœud",
+      "accept": "Accepter tel quel et continuer"
+    }
+  },
+  "kanban": {
+    "column": {
+      "pending": "En attente",
+      "running": "En cours",
+      "gate": "En attente de validation",
+      "completed": "Terminé",
+      "failed": "Échoué"
+    },
+    "empty_column": "Aucune exécution ici",
+    "gate_pulse": "En attente de votre validation",
+    "drag_hint": "Glisser pour réorganiser"
+  },
+  "projects": {
+    "new": "Nouveau projet",
+    "name": "Nom du projet",
+    "domain": "Profil de domaine",
+    "description": "Description",
+    "created": "Créé",
+    "members": "Membres",
+    "settings": "Paramètres",
+    "empty": "Aucun projet pour l'instant",
+    "loading": "Chargement des projets…",
+    "error": "Impossible de charger les projets",
+    "config": {
+      "title": "Configuration",
+      "output_language": "Langue de sortie",
+      "output_language_hint": "La langue que les agents IA utiliseront pour tout le contenu généré.",
+      "system_prompt_language": "Langue des instructions",
+      "system_prompt_language_hint": "Langue utilisée pour les instructions des agents. L'anglais donne les meilleurs résultats.",
+      "system_prompt_language_warning": "Les résultats sont généralement meilleurs en anglais.",
+      "system_prompt_change_to": "Changer en {language}",
+      "system_prompt_keep_english": "Garder l'anglais",
+      "advanced": "Avancé",
+      "save": "Enregistrer"
+    },
+    "history": {
+      "title": "Historique de configuration",
+      "restored": "Configuration restaurée",
+      "diff": "Modifications",
+      "restore": "Restaurer cette version",
+      "restore_confirm": "Restaurer la configuration à cette version ?",
+      "no_history": "Aucun historique"
+    }
+  },
+  "members": {
+    "title": "Membres",
+    "add": "Ajouter un membre",
+    "remove": "Retirer",
+    "role": "Rôle",
+    "email": "E-mail",
+    "invite": "Inviter",
+    "pending": "Invitation en attente",
+    "empty": "Aucun membre",
+    "roles": {
+      "viewer": "Lecteur",
+      "operator": "Opérateur",
+      "user": "Utilisateur",
+      "user_with_costs": "Utilisateur (avec coûts)",
+      "developer": "Développeur",
+      "admin": "Administrateur",
+      "instance_admin": "Administrateur d'instance"
+    }
+  },
+  "api_keys": {
+    "title": "Clés API",
+    "create": "Créer une clé",
+    "revoke": "Révoquer",
+    "name": "Nom",
+    "role": "Rôle",
+    "prefix": "Préfixe de clé",
+    "created": "Créée",
+    "last_used": "Dernière utilisation",
+    "never_used": "Jamais utilisée",
+    "copy_warning": "Copiez cette clé maintenant — elle ne sera plus affichée",
+    "revoke_confirm": "Révoquer cette clé API ? Cette action est irréversible.",
+    "empty": "Aucune clé API"
+  },
+  "onboarding": {
+    "welcome": "Bienvenue dans Harmoven",
+    "setup_title": "Configurer votre instance",
+    "org_name": "Nom de l'organisation",
+    "org_name_placeholder": "Acme Corp",
+    "preset": "Préréglage de l'instance",
+    "preset_small_business": "Petite entreprise",
+    "preset_enterprise": "Entreprise",
+    "preset_developer": "Développeur",
+    "create_admin": "Créer un compte administrateur",
+    "admin_email": "E-mail administrateur",
+    "admin_password": "Mot de passe",
+    "continue": "Continuer",
+    "finish": "Terminer la configuration",
+    "step": "Étape {n} sur {total}",
+    "done": "Configuration terminée — redirection…"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "preferences": "Préférences",
+    "display_language": "Langue de l'interface",
+    "display_language_auto": "Détection automatique via le navigateur",
+    "display_language_en": "English",
+    "display_language_fr": "Français",
+    "progress_language": "Mises à jour de progression",
+    "progress_language_hint": "Mises à jour affichées pendant l'exécution de votre tâche.",
+    "progress_language_follow": "Identique à la langue d'affichage",
+    "save": "Enregistrer les préférences",
+    "saved": "Préférences enregistrées",
+    "profile": "Profil",
+    "email": "E-mail",
+    "name": "Nom",
+    "change_password": "Changer le mot de passe",
+    "totp_setup": "Configurer l'authentification à deux facteurs",
+    "totp_enabled": "L'authentification à deux facteurs est activée",
+    "passkey_add": "Ajouter une clé d'accès",
+    "passkeys": "Clés d'accès",
+    "passkey_remove": "Supprimer"
+  },
+  "admin": {
+    "title": "Administration",
+    "instance": "Instance",
+    "users": "Utilisateurs",
+    "audit_log": "Journal d'audit",
+    "skills": "Compétences et packs",
+    "config": "Configuration",
+    "health": "Santé du système",
+    "version": "Version",
+    "users_title": "Gestion des utilisateurs",
+    "users_empty": "Aucun utilisateur",
+    "ban": "Suspendre",
+    "unban": "Réactiver",
+    "promote": "Promouvoir administrateur",
+    "demote": "Retirer les droits admin",
+    "audit": {
+      "title": "Journal d'audit",
+      "actor": "Qui",
+      "action": "Action",
+      "target": "Cible",
+      "timestamp": "Quand",
+      "empty": "Aucun événement d'audit",
+      "loading": "Chargement…",
+      "filter_by": "Filtrer par"
+    },
+    "skills": {
+      "title": "Compétences installées",
+      "install": "Installer un pack",
+      "update": "Mettre à jour",
+      "uninstall": "Désinstaller",
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "version": "Version",
+      "rating": "Note",
+      "installs": "Installations",
+      "scan_status": {
+        "clean": "Sûr",
+        "pending": "Analyse en cours…",
+        "failed": "Analyse échouée"
+      },
+      "empty": "Aucune compétence installée",
+      "update_policy": {
+        "auto": "Mise à jour automatique",
+        "notify": "Notifier à la mise à jour",
+        "manual": "Mises à jour manuelles uniquement"
+      }
+    }
+  },
+  "marketplace": {
+    "title": "Marketplace",
+    "search": "Rechercher des packs…",
+    "install": "Installer",
+    "installed": "Installé",
+    "update_available": "Mise à jour disponible",
+    "rating": "Note",
+    "reviews": "{count} avis",
+    "by": "par {author}",
+    "version": "v{version}",
+    "description": "Description",
+    "requirements": "Prérequis",
+    "loading": "Chargement du marketplace…",
+    "empty": "Aucun résultat",
+    "categories": {
+      "all": "Tous",
+      "scaffolding": "Scaffolding",
+      "marketing": "Marketing",
+      "legal": "Juridique",
+      "data": "Données",
+      "finance": "Finance",
+      "hr": "RH",
+      "research": "Recherche"
+    }
+  },
+  "analytics": {
+    "title": "Analyses",
+    "period": "Période",
+    "period_7d": "7 derniers jours",
+    "period_30d": "30 derniers jours",
+    "period_90d": "90 derniers jours",
+    "period_custom": "Plage personnalisée",
+    "export": "Exporter",
+    "export_json": "Exporter en JSON",
+    "export_csv": "Exporter en CSV",
+    "export_pdf": "Exporter en PDF",
+    "kpis": {
+      "runs_completed": "Exécutions terminées",
+      "active_users": "Utilisateurs actifs",
+      "retention": "Rétention sur 30 jours",
+      "quality": "Score qualité moyen",
+      "roi": "ROI estimé"
+    },
+    "delta": "{delta}% vs période précédente",
+    "timeseries": "Activité dans le temps",
+    "by_profile": "Par profil de domaine",
+    "by_user": "Par utilisateur",
+    "no_data": "Aucune donnée pour cette période",
+    "feedback": {
+      "prompt": "Comment s'est passée cette exécution ?",
+      "skip": "Passer",
+      "submit": "Envoyer",
+      "hours_saved": "Heures économisées (estimation)",
+      "value_note": "Notes sur la valeur métier ?"
+    }
+  },
+  "errors": {
+    "connection_lost": "Connexion perdue — reconnexion en cours…",
+    "budget_exceeded": "Exécution arrêtée — limite de budget atteinte",
+    "llm_unavailable": "Modèle de secours utilisé — certaines fonctionnalités peuvent être plus lentes",
+    "run_timeout": "Cette exécution prend plus de temps que prévu — toujours en cours",
+    "not_found": "Page introuvable",
+    "forbidden": "Vous n'avez pas la permission de voir cette page",
+    "server_error": "Une erreur est survenue — veuillez réessayer",
+    "validation": "Veuillez vérifier le formulaire",
+    "session_expired": "Votre session a expiré",
+    "upload_failed": "Échec du chargement — veuillez réessayer",
+    "network": "Erreur réseau — vérifiez votre connexion"
+  },
+  "common": {
+    "loading": "Chargement…",
+    "saving": "Enregistrement…",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "close": "Fermer",
+    "open": "Ouvrir",
+    "copy": "Copier",
+    "copied": "Copié !",
+    "yes": "Oui",
+    "no": "Non",
+    "or": "ou",
+    "and": "et",
+    "search": "Rechercher",
+    "filter": "Filtrer",
+    "sort": "Trier",
+    "refresh": "Actualiser",
+    "export": "Exporter",
+    "import": "Importer",
+    "more": "Plus",
+    "less": "Moins",
+    "show": "Afficher",
+    "hide": "Masquer",
+    "enable": "Activer",
+    "disable": "Désactiver",
+    "required": "Requis",
+    "optional": "Optionnel",
+    "beta": "Bêta",
+    "new": "Nouveau",
+    "updated": "Mis à jour",
+    "deprecated": "Déprécié",
+    "unknown": "Inconnu",
+    "none": "Aucun",
+    "all": "Tout",
+    "other": "Autre",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "just_now": "À l'instant",
+    "ago": "il y a {time}"
+  },
+  "platform": {
+    "clarification_title": "Dites-nous en plus sur votre plateforme cible",
+    "mobile": {
+      "title": "Cible mobile",
+      "ios": "iOS",
+      "android": "Android",
+      "both": "Les deux (multiplateforme)",
+      "pwa": "Progressive Web App",
+      "react_native": "React Native",
+      "flutter": "Flutter"
+    },
+    "hardware": {
+      "title": "Cible matérielle",
+      "arduino": "Arduino",
+      "raspberry_pi": "Raspberry Pi",
+      "esp32": "ESP32",
+      "esp8266": "ESP8266",
+      "stm32": "STM32",
+      "rpi_pico": "Raspberry Pi Pico",
+      "other": "Autre embarqué"
+    },
+    "closed": {
+      "title": "Plateforme fermée",
+      "message": "Cette plateforme n'est pas prise en charge pour le scaffolding automatisé.",
+      "contact": "Contactez-nous pour des solutions entreprise."
+    },
+    "confirm": "Confirmer la plateforme",
+    "skip": "Passer — détecter automatiquement"
+  },
+  "context": {
+    "inject_title": "Injecter du contexte dans l'exécution",
+    "inject_placeholder": "Ajoutez des informations ou corrections pour l'agent…",
+    "inject_submit": "Envoyer le contexte",
+    "inject_success": "Contexte injecté — l'agent le verra à la prochaine étape",
+    "inject_hint": "L'agent intégrera cela lors de sa prochaine action."
+  },
+  "language": {
+    "mismatch_banner": "Votre tâche est en {detected} — les résultats seront en {configured}.",
+    "generate_in": "Générer en {language}",
+    "continue_with": "Continuer",
+    "output_language_changed": "Les résultats seront maintenant générés en {language} pour cette exécution."
+  },
+  "updates": {
+    "available": "Harmoven {version} est disponible",
+    "view_changelog": "Voir le changelog",
+    "update_now": "Mettre à jour maintenant",
+    "later": "Plus tard",
+    "up_to_date": "Harmoven est à jour",
+    "checking": "Vérification des mises à jour…",
+    "downloading": "Téléchargement de la mise à jour…",
+    "ready": "Mise à jour prête",
+    "restart": "Redémarrer et mettre à jour",
+    "tonight": "Ce soir",
+    "skip": "Ignorer cette version"
+  }
+}
