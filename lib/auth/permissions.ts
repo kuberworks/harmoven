@@ -1,6 +1,6 @@
 // lib/auth/permissions.ts
 // Fine-grained permission system — Amendment 78.1 / 28.1
-// All 27 permissions defined here as the single source of truth.
+// All 26 permissions defined here as the single source of truth.
 
 export type Permission =
   // Run lifecycle

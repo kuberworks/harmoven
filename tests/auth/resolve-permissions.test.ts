@@ -4,7 +4,7 @@
 // All DB calls are mocked; no network or database required.
 //
 // Scenarios:
-//   1. instance_admin → all 27 permissions (bypass)
+//   1. instance_admin → all 26 permissions (bypass)
 //   2. api_key caller → resolves role from ProjectApiKey
 //   3. session caller → resolves role from ProjectMember
 //   4. custom role extending built-in → additive permissions
@@ -71,6 +71,13 @@ const SESSION_USER: Caller = {
   instanceRole: null,
 }
 
+// A regular session caller who holds the built-in 'admin' project role
+const SESSION_ADMIN_MEMBER: Caller = {
+  type:         'session',
+  userId:       'user-admin-member',
+  instanceRole: null,
+}
+
 const APIKEY_CALLER: Caller = {
   type:  'api_key',
   keyId: 'key-abc123',
@@ -82,6 +89,7 @@ const PROJECT_ID = 'proj-test-001'
 beforeEach(() => {
   jest.clearAllMocks()
   invalidatePermCache(SESSION_USER, PROJECT_ID)
+  invalidatePermCache(SESSION_ADMIN_MEMBER, PROJECT_ID)
   invalidatePermCache(APIKEY_CALLER, PROJECT_ID)
 })
 
@@ -145,6 +153,46 @@ describe('resolvePermissions — api_key caller', () => {
 
     await expect(resolvePermissions(APIKEY_CALLER, PROJECT_ID)).rejects.toThrow(ForbiddenError)
   })
+
+  it('invalidatePermCache forces a DB re-fetch on next call', async () => {
+    mockDb.projectApiKey.findUnique.mockResolvedValue({
+      role: { extends: 'viewer', permissions: [] },
+    })
+
+    await resolvePermissions(APIKEY_CALLER, PROJECT_ID) // prime cache
+    invalidatePermCache(APIKEY_CALLER, PROJECT_ID)       // explicit invalidation
+    await resolvePermissions(APIKEY_CALLER, PROJECT_ID) // must re-hit DB
+
+    expect(mockDb.projectApiKey.findUnique).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ─── 2b. cache TTL expiry ────────────────────────────────────────────────────
+
+describe('resolvePermissions — cache TTL expiry', () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+    invalidatePermCache(APIKEY_CALLER, PROJECT_ID)
+  })
+
+  it('re-fetches from DB after the 30 s TTL expires', async () => {
+    mockDb.projectApiKey.findUnique.mockResolvedValue({
+      role: { extends: 'viewer', permissions: [] },
+    })
+
+    await resolvePermissions(APIKEY_CALLER, PROJECT_ID) // prime cache
+
+    // Advance past PERM_CACHE_TTL_MS (30 000 ms)
+    jest.advanceTimersByTime(30_001)
+
+    await resolvePermissions(APIKEY_CALLER, PROJECT_ID) // cache miss → DB again
+
+    expect(mockDb.projectApiKey.findUnique).toHaveBeenCalledTimes(2)
+  })
 })
 
 // ─── 3. session caller resolves via ProjectMember ────────────────────────────
@@ -171,6 +219,26 @@ describe('resolvePermissions — session caller', () => {
     mockDb.projectMember.findUnique.mockResolvedValueOnce(null)
 
     await expect(resolvePermissions(SESSION_USER, PROJECT_ID)).rejects.toThrow(ForbiddenError)
+  })
+
+  it('resolves full admin permission set for built-in admin role', async () => {
+    mockDb.projectMember.findUnique.mockResolvedValueOnce({
+      role: {
+        extends:     'developer',
+        permissions: ['project:members', 'project:credentials', 'admin:skills'],
+      },
+    })
+
+    const perms = await resolvePermissions(SESSION_ADMIN_MEMBER, PROJECT_ID)
+
+    // All admin-level permissions must be present
+    for (const p of BUILT_IN_ROLES.admin) {
+      expect(perms.has(p)).toBe(true)
+    }
+    // admin does NOT have instance-level permissions
+    expect(perms.has('admin:models')).toBe(false)
+    expect(perms.has('admin:audit')).toBe(false)
+    expect(perms.has('admin:instance')).toBe(false)
   })
 })
 
@@ -297,8 +365,10 @@ describe('validateApiKey', () => {
 
     const result = await validateApiKey(rawKey)
     expect(result).toEqual({ id: 'key-123', project_id: 'proj-abc' })
-    // last_used update should be called asynchronously
-    await Promise.resolve() // flush microtasks
+    // update() is fired with void (fire-and-forget); flush two microtask ticks
+    // to handle any Promise chaining introduced by future refactors.
+    await Promise.resolve()
+    await Promise.resolve()
     expect(mockDb.projectApiKey.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'key-123' } }),
     )
@@ -322,6 +392,14 @@ describe('ALL_PERMISSIONS', () => {
       for (const perm of BUILT_IN_ROLES[role]) {
         expect(instanceAdminSet.has(perm)).toBe(true)
       }
+    }
+  })
+
+  it('instance_admin covers every permission in ALL_PERMISSIONS', () => {
+    // Inverse check: no permission in ALL_PERMISSIONS is absent from instance_admin
+    const instanceAdminSet = new Set(BUILT_IN_ROLES.instance_admin)
+    for (const perm of ALL_PERMISSIONS) {
+      expect(instanceAdminSet.has(perm)).toBe(true)
     }
   })
 })
