@@ -59,6 +59,25 @@ updates:
   auto_install: false              # true = silently install; false = notify only
   check_interval_hours: 24
 
+marketplace:
+  registry_url: "https://registry.harmoven.com/v1"    # official Harmoven pack registry
+  auto_check_updates: true
+  update_check_interval_hours: 24
+  default_update_policy: notify    # auto | notify | manual
+  # auto   → auto-install patch bumps; notify for minor/major
+  # notify → always prompt the user before installing any update
+  # manual → never check automatically — user-initiated only
+  security:
+    verify_content_hash: true      # SHA-256 content hash always verified at install time
+    verify_gpg_signature: false    # GPG verification — enabled in T3.8 (supply chain monitor)
+    scan_content: true             # local prompt-injection + external URL scan always on
+
+analytics:                           # Amendment 85
+  enabled: true
+  hourly_rate_usd: 75.0            # assumed hourly cost for ROI calculation
+  anonymize_exports: false         # true = user names replaced by "User A", "User B"
+  retention_days: 365              # how long to keep computed analytics
+
 regulatory:
   contexts: []                     # e.g. [gdpr, hipaa] — declare what applies
 
