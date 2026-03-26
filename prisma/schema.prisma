@@ -235,10 +235,11 @@ model Run {
   tokens_actual        Int       @default(0)
   confidentiality      String?
   regulatory_contexts  Json?
-  started_at           DateTime?
-  completed_at         DateTime?
-  paused_at            DateTime? // Amendment 63 — manual pause timestamp
-  created_at           DateTime  @default(now())
+  started_at                DateTime?
+  completed_at              DateTime?
+  paused_at                 DateTime? // Amendment 63 — manual pause timestamp
+  last_completed_node_at    DateTime? // Amendment 64 — for context injection filtering
+  created_at                DateTime  @default(now())
   metadata             Json      @default("{}")
 
   // Amendment 85 — KPIs & ROI tracking (filled by user after completion)

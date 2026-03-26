@@ -19,7 +19,7 @@ const NODE_TRANSITIONS: Record<NodeStatus, NodeStatus[]> = {
   SKIPPED:     [],                             // terminal
   COMPLETED:   ['RUNNING'],                    // only via explicit "Replay node"
   DEADLOCKED:  [],                             // terminal — admin must intervene
-  INTERRUPTED: ['RUNNING'],                    // Am.65 — resume or replay
+  INTERRUPTED: ['RUNNING', 'PENDING', 'COMPLETED'], // Am.65 — resume/replay/accept-partial
 }
 
 // ─── Run state machine ────────────────────────────────────────────────────────
