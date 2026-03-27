@@ -89,17 +89,46 @@ services:
     profiles:
       - litellm   # only started when: docker compose --profile litellm up
 
-  # Docker socket proxy (Tecnativa) — used by scaffolding smoke test
-  # docker-proxy:
-  #   image: ghcr.io/tecnativa/docker-socket-proxy:latest
-  #   environment:
-  #     - CONTAINERS=1
-  #     - POST=1
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock:ro
-  #   networks:
-  #     - proxy_net
-  #   restart: unless-stopped
+  # Docker socket proxy (Tecnativa) — Amendment 92 H4.
+  # The Smoke Test Agent needs Docker to launch preview containers but must NOT
+  # have full Docker socket access. This proxy restricts it to the minimum needed.
+  #
+  # DOCKER_PROXY_DIGEST must be set in .env — use an immutable digest, not a tag.
+  # Find digest: docker pull ghcr.io/tecnativa/docker-socket-proxy:latest &&
+  #   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/tecnativa/docker-socket-proxy:latest
+  docker-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy@${DOCKER_PROXY_DIGEST:?DOCKER_PROXY_DIGEST must be set in .env — use immutable digest, not a tag}
+    environment:
+      # ── Allow what the Smoke Test Agent needs ─────────────────────────────
+      CONTAINERS: 1    # list, inspect, start, stop containers
+      IMAGES:     1    # pull images for preview containers
+      NETWORKS:   1    # create/inspect preview networks
+      POST:       1    # allow POST operations (start/stop/create)
+      # ── Explicitly block dangerous capabilities ────────────────────────────
+      AUTH:       0    # no auth config access
+      BUILD:      0    # no docker build (prevents arbitrary code execution)
+      COMMIT:     0    # no docker commit (prevents image poisoning)
+      CONFIGS:    0    # no swarm configs
+      DISTRIBUTION: 0  # no registry access from proxy
+      EXEC:       0    # NO exec into containers — critical: prevents shell escape
+      INFO:       0    # no daemon info (hides host system details)
+      NODES:      0    # no swarm nodes
+      PING:       0    # no ping (reduce fingerprinting)
+      PLUGINS:    0    # no plugin management
+      SECRETS:    0    # no swarm secrets
+      SERVICES:   0    # no swarm services
+      SESSION:    0    # no session management
+      SWARM:      0    # no swarm operations
+      SYSTEM:     0    # no system-level access
+      TASKS:      0    # no swarm tasks
+      VERSION:    0    # no version endpoint
+      VOLUMES:    0    # no volume creation/deletion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only mount — proxy enforces further restrictions
+    networks:
+      - docker_proxy_net
+    restart: unless-stopped
+    # No ports exposed — app connects via internal Docker network only
 
 volumes:
   postgres_data:
@@ -108,4 +137,8 @@ networks:
   litellm_internal:
     # Internal-only network between app and LiteLLM sidecar.
     # No external traffic can reach LiteLLM directly — enforced by Docker.
+    internal: true
+  docker_proxy_net:
+    # Internal network for Docker socket proxy access.
+    # Only the app service and docker-proxy are connected to this network.
     internal: true

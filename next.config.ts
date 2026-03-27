@@ -3,33 +3,57 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   output: 'standalone',
 
-  // HTTP security headers — applied on every response
+  // HTTP security headers — applied on every response.
+  // Spec: Amendment 92 (92.10) — complete header set.
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: [
-          {
-            key: 'X-Permitted-Cross-Domain-Policies',
-            value: 'none',
-          },
+          // ── Clickjacking ────────────────────────────────────────────────────
           {
             key: 'X-Frame-Options',
             value: 'DENY',
           },
+          // ── MIME sniffing ───────────────────────────────────────────────────
           {
             key: 'X-Content-Type-Options',
             value: 'nosniff',
           },
+          // ── Cross-domain policy (Flash/Silverlight) ──────────────────────────
+          {
+            key: 'X-Permitted-Cross-Domain-Policies',
+            value: 'none',
+          },
+          // ── Referrer ────────────────────────────────────────────────────────
           {
             key: 'Referrer-Policy',
             value: 'strict-origin-when-cross-origin',
           },
+          // ── Permissions ─────────────────────────────────────────────────────
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()',
+            value: [
+              'camera=()',
+              'microphone=()',
+              'geolocation=()',
+              'interest-cohort=()',  // FLoC opt-out
+            ].join(', '),
           },
-          // Strict-Transport-Security — only in production (HTTPS required)
+          // ── Cross-Origin isolation ──────────────────────────────────────────
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Cross-Origin-Resource-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'require-corp',
+          },
+          // ── HSTS — only meaningful in production (requires HTTPS) ────────────
           ...(process.env.NODE_ENV === 'production'
             ? [
                 {
@@ -38,22 +62,27 @@ const nextConfig: NextConfig = {
                 },
               ]
             : []),
-          // Content-Security-Policy
-          // Production: strict — no unsafe-eval/unsafe-inline in script-src.
-          // Development: relaxed for Next.js HMR (unsafe-eval required).
-          // T3.9 (Step 25) will add nonce-based CSP to remove unsafe-inline from style-src.
+          // ── Content-Security-Policy ─────────────────────────────────────────
+          // frame-src 'none' requires gate preview to use subpath mode (Am.73).
+          // connect-src: 'self' + wss:/ws: for SSE streams.
+          // style-src: unsafe-inline retained for Tailwind CSS (no inline-removal
+          //   without a runtime nonce strategy — future enhancement post-T3.9).
           {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
               process.env.NODE_ENV === 'production'
-                ? "script-src 'self'" // tightened further with nonces in T3.9
-                : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline'",
+                ? "script-src 'self'"
+                : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",  // HMR in dev
+              "style-src 'self' 'unsafe-inline'",  // Tailwind inline styles
               "img-src 'self' data: blob:",
               "font-src 'self'",
-              "connect-src 'self'",
-              "frame-ancestors 'none'",
+              "connect-src 'self' wss: ws:",    // SSE + WebSocket
+              "frame-src 'none'",               // no iframes
+              "frame-ancestors 'none'",         // no embedding Harmoven
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
             ].join('; '),
           },
         ],

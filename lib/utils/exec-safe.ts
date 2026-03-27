@@ -1,19 +1,29 @@
 // lib/utils/exec-safe.ts
-// Safe subprocess execution utility — Amendment 94.4 (Am.83 × Am.92).
+// Safe subprocess execution utility — Amendment 92 (Am.83 × Am.92).
 //
 // SECURITY: Never use exec() with string interpolation — command injection risk.
-// All git operations in config-git/ MUST use execFileAsync() exclusively.
+// All subprocess calls MUST use execFileAsync() + assertSafe*() validators.
 //
 // Rules:
 //   - execFileAsync() uses child_process.execFile — args are passed as an array,
 //     never shell-interpolated. No shell metacharacter injection possible.
-//   - assertSafePath() validates filesystem paths before passing to execFile:
-//       no null bytes, no '..' traversal segments, non-empty.
-//   - Both functions are intentionally small and reviewable.
+//   - git/path values must be validated with assertSafeRef/assertSafePath from
+//     lib/utils/input-validation.ts before being passed as arguments.
+//   - exec() with template literals is banned via ESLint no-restricted-syntax.
+//   - Never pass { ...process.env } to child processes — use safeBaseEnv() from
+//     lib/utils/safe-env.ts instead.
 
 import { execFile }  from 'child_process'
 import { promisify } from 'util'
-import path          from 'path'
+import {
+  assertSafeRef,
+  assertSafeBranchName,
+  assertSafePath as assertSafePathShared,
+  assertSafeUrl,
+}  from '@/lib/utils/input-validation'
+import { gitEnv, gitSshEnv } from '@/lib/utils/safe-env'
+
+export { assertSafeRef, assertSafeBranchName, assertSafeUrl } from '@/lib/utils/input-validation'
 
 const execFilePromise = promisify(execFile)
 
@@ -33,44 +43,66 @@ export interface ExecResult {
 export async function execFileAsync(
   file:    string,
   args:    string[],
-  options: { cwd?: string; timeout?: number } = {},
+  options: { cwd?: string; timeout?: number; env?: Record<string, string | undefined> } = {},
 ): Promise<ExecResult> {
   const { stdout, stderr } = await execFilePromise(file, args, {
     cwd:     options.cwd,
     timeout: options.timeout ?? 30_000,   // 30 s default — git ops are fast
-    // Do not inherit shell env wholesale; pass only what git needs
-    env: {
-      HOME:        process.env.HOME,
-      PATH:        process.env.PATH,
-      GIT_AUTHOR_NAME:    'Harmoven',
-      GIT_AUTHOR_EMAIL:   'config@harmoven.local',
-      GIT_COMMITTER_NAME: 'Harmoven',
-      GIT_COMMITTER_EMAIL:'config@harmoven.local',
-    },
+    // Use caller-supplied env or fall back to git env (never full process.env)
+    env: options.env ?? gitEnv(),
   })
   return { stdout: stdout.toString(), stderr: stderr.toString() }
 }
 
 /**
- * Assert that a path is safe to pass to git commands:
- *   - Non-empty string
- *   - No null bytes (binary injection)
- *   - No '..' traversal segments after normalization
- *
- * Throws if the path fails any check.
- * Returns the path unchanged on success.
+ * Assert that a path is safe to pass to git commands.
+ * Re-exports the shared version from input-validation.ts.
+ * Kept here for backwards compatibility with callers that import from exec-safe.
  */
 export function assertSafePath(p: string): string {
-  if (!p || typeof p !== 'string') {
-    throw new Error('[execSafe] Path must be a non-empty string')
-  }
-  if (p.includes('\0')) {
-    throw new Error(`[execSafe] Path contains null byte: "${p}"`)
-  }
-  // Check raw segments BEFORE normalization — catches '../' that normalize() resolves away
-  const rawSegments = p.split(/[\/\\]/)
-  if (rawSegments.includes('..')) {
-    throw new Error(`[execSafe] Path traversal detected in: "${p}"`)
-  }
+  assertSafePathShared(p)  // throws ValidationError on failure
   return p
+}
+
+// ─── High-level git operation helpers ────────────────────────────────────────
+
+/**
+ * Clone a git repository at a specific ref.
+ * All arguments validated before use.
+ */
+export async function gitClone(
+  url:     string,
+  workDir: string,
+  ref:     string,
+): Promise<void> {
+  assertSafeUrl(url)
+  assertSafeRef(ref)
+  assertSafePathShared(workDir)
+  await execFileAsync('git', [
+    'clone',
+    '--depth', '1',
+    '--single-branch',
+    '--branch', ref,
+    url,
+    workDir,
+  ], { env: gitEnv() })
+}
+
+/**
+ * Create a git worktree at a new path with a new branch.
+ */
+export async function gitWorktreeAdd(
+  repoPath:     string,
+  worktreePath: string,
+  branchName:   string,
+): Promise<void> {
+  assertSafePathShared(repoPath)
+  assertSafePathShared(worktreePath)
+  assertSafeBranchName(branchName)
+  await execFileAsync('git', [
+    '-C', repoPath,
+    'worktree', 'add',
+    worktreePath,
+    '-b', branchName,
+  ], { env: gitEnv() })
 }

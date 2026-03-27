@@ -121,6 +121,8 @@ model User {
   sessions              Session[]
   accounts              Account[]
   two_factor            TwoFactor?
+  passkeys              Passkey[]
+  api_keys              BetterAuthApiKey[]
   runs                  Run[]
   project_memberships   ProjectMember[]
   user_preferences      UserPreference[]
@@ -182,6 +184,65 @@ model TwoFactor {
   user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("twoFactor")
+}
+
+// ─── Passkey (FIDO2/WebAuthn) — @better-auth/passkey ─────────────────────────
+// Generated from @better-auth/passkey@1.5.6 schema definition.
+// One row per registered authenticator (device). A user may have multiple.
+
+model Passkey {
+  id           String    @id @default(cuid())
+  name         String?
+  publicKey    String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String    @unique
+  counter      Int
+  deviceType   String    // "singleDevice" | "multiDevice"
+  backedUp     Boolean
+  transports   String?   // comma-separated list from AuthenticatorTransport
+  aaguid       String?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@map("passkey")
+}
+
+// ─── API Key — @better-auth/api-key ──────────────────────────────────────────
+// User-level API keys managed via Better Auth (distinct from ProjectApiKey which
+// is the project-scoped RBAC key system in lib/auth/project-api-key.ts).
+// Table name "apikey" is hardcoded by the plugin (API_KEY_TABLE_NAME const).
+
+model BetterAuthApiKey {
+  id                 String    @id @default(cuid())
+  configId           String    @default("default")
+  name               String?
+  start              String?   // first 4 chars of the raw key (display only)
+  referenceId        String
+  prefix             String?
+  key                String    @unique   // hashed key stored here
+  refillInterval     Int?
+  refillAmount       Int?
+  lastRefillAt       DateTime?
+  enabled            Boolean   @default(true)
+  rateLimitEnabled   Boolean   @default(true)
+  rateLimitTimeWindow Int?
+  rateLimitMax       Int?
+  requestCount       Int       @default(0)
+  remaining          Int?
+  lastRequest        DateTime?
+  expiresAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  permissions        String?   // JSON-encoded string[] of allowed permissions
+  metadata           Json?
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([configId])
+  @@index([referenceId])
+  @@map("apikey")
 }
 
 // ─── Projects ────────────────────────────────────────────────────────────────

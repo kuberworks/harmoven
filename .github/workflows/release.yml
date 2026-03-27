@@ -186,3 +186,63 @@ jobs:
           docker tag harmoven/app:${{ github.sha }} harmoven/app:latest
           docker push harmoven/app:${VERSION}
           docker push harmoven/app:latest
+
+  # ─── Amendment 93: publish-release-pins ─────────────────────────────────────
+  # Writes image digest + commit SHA + Cosign bundle to release-pins.yaml
+  # in config.git. Detects tag rewrites (3-layer immutability verification).
+  publish-release-pins:
+    name: Publish release pins (Am.93)
+    needs: [docker-release, build-electron-mac, build-electron-win, build-electron-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout config.git
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: harmoven/harmoven-instance-config
+          token: ${{ secrets.CONFIG_GIT_TOKEN }}
+          path: config-repo
+
+      - name: Get commit SHA for this tag
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Get Docker image digest
+        id: digest
+        run: |
+          DIGEST=$(docker manifest inspect \
+            harmoven/app:${GITHUB_REF_NAME} \
+            --format '{{.config.digest}}')
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Sign image and generate Cosign bundle
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD:    ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign sign --key env://COSIGN_PRIVATE_KEY \
+            harmoven/app@${{ steps.digest.outputs.digest }}
+          cosign verify --key cosign.pub \
+            harmoven/app:${GITHUB_REF_NAME} \
+            --output-file cosign-bundle.json
+
+      - name: Update release-pins.yaml
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          python3 scripts/update-release-pins.py \
+            --version "$VERSION" \
+            --digest  "${{ steps.digest.outputs.digest }}" \
+            --commit  "${{ steps.commit.outputs.sha }}" \
+            --bundle  "$(base64 -w0 cosign-bundle.json)" \
+            --file    config-repo/instance/release-pins.yaml
+
+      - name: Commit and push release pins
+        run: |
+          cd config-repo
+          git config user.name  "harmoven-release-bot"
+          git config user.email "release-bot@harmoven.com"
+          git add instance/release-pins.yaml
+          git commit -m "release-pins: add ${GITHUB_REF_NAME} [skip ci]"
+          git push

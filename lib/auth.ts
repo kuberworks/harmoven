@@ -17,6 +17,8 @@ import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { admin } from 'better-auth/plugins/admin'
 import { twoFactor } from 'better-auth/plugins/two-factor'
+import { passkey } from '@better-auth/passkey'
+import { apiKey } from '@better-auth/api-key'
 import { db } from '@/lib/db/client'
 
 if (!process.env.AUTH_SECRET && process.env.NODE_ENV === 'production') {
@@ -72,18 +74,16 @@ export const auth = betterAuth({
     requireEmailVerification: process.env.AUTH_SKIP_VERIFY !== 'true',
   },
 
-  // ─── Email sending ────────────────────────────────────────────────────────
-  // Used for: magic links, email verification, password reset.
-  // Configure SMTP_* or RESEND_API_KEY in .env.
-  // In development (AUTH_SKIP_VERIFY=true), email sending is skipped entirely.
-  ...(process.env.SMTP_HOST
-    ? {
-        emailAndPassword: {
-          enabled: true,
-          requireEmailVerification: process.env.AUTH_SKIP_VERIFY !== 'true',
-        },
-      }
-    : {}),
+  // ─── Session ──────────────────────────────────────────────────────────────
+  // SECURITY: cookie cache DISABLED — required for instant force-revocation.
+  // auth.api.revokeUserSessions() must take effect immediately (spec §8, Am.78).
+  // If caching were enabled, revoked sessions could still be accepted for up to
+  // the cache TTL after revocation — critical for compromised admin accounts.
+  session: {
+    cookieCache: {
+      enabled: false,
+    },
+  },
 
   // ─── Plugins ──────────────────────────────────────────────────────────────
   plugins: [
@@ -96,6 +96,21 @@ export const auth = betterAuth({
     }),
     // Two-factor authentication (TOTP + backup codes)
     twoFactor(),
+    // Passkey (FIDO2/WebAuthn) — package: @better-auth/passkey
+    // rpId must be the bare domain (no scheme/port).
+    // In dev: 'localhost'. In prod: set AUTH_DOMAIN=app.harmoven.com
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // Cast: @better-auth/passkey depends on @better-auth/core which duplicates
+    // BetterAuthPlugin — the types are structurally identical at runtime.
+    passkey({
+      rpName: 'Harmoven',
+      rpID: process.env.AUTH_DOMAIN ?? 'localhost',
+      origin: process.env.AUTH_URL ?? 'http://localhost:3000',
+    }) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+    // API key management — package: @better-auth/api-key
+    // Enables auth.api.apiKey.create/list/revoke for user-level keys.
+    // Distinct from ProjectApiKey (project-scoped RBAC keys in lib/auth/project-api-key.ts).
+    apiKey() as any, // eslint-disable-line @typescript-eslint/no-explicit-any
   ],
 
   // ─── Custom User Fields ───────────────────────────────────────────────────
