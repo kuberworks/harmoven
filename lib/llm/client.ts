@@ -29,6 +29,7 @@ import { BUILT_IN_PROFILES, loadActiveProfiles } from './profiles'
 import { selectByTier, selectLlm } from './selector'
 import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
+import { validateLLMBaseUrl } from '@/lib/security/ssrf-protection'
 
 // ─── Orchestrator YAML types ───────────────────────────────────────────────────
 
@@ -160,9 +161,13 @@ async function streamAnthropic(
 
 // ─── OpenAI + OpenAI-compatible providers ─────────────────────────────────────
 
-function buildOpenAIClient(profile: LlmProfileConfig): OpenAI {
+async function buildOpenAIClient(profile: LlmProfileConfig): Promise<OpenAI> {
   const cached = _openaiCache.get(profile.id)
   if (cached) return cached
+  // SSRF guard: validate admin-supplied base_url before connecting (DoD T1.9, T3.9).
+  if (profile.base_url) {
+    await validateLLMBaseUrl(profile.base_url)
+  }
   const envKey = profile.api_key_env
   const apiKey = envKey ? (process.env[envKey] ?? 'no-key') : 'no-key'
   // For Ollama the key is irrelevant — the server accepts any value.
@@ -183,7 +188,7 @@ async function callOpenAI(
   messages: ChatMessage[],
   options:  ChatOptions,
 ): Promise<ChatResult> {
-  const client = buildOpenAIClient(profile)
+  const client = await buildOpenAIClient(profile)
 
   const completion = await client.chat.completions.create(
     {
@@ -210,7 +215,7 @@ async function streamOpenAI(
   options:  ChatOptions,
   onChunk:  (chunk: string) => void,
 ): Promise<ChatResult> {
-  const client = buildOpenAIClient(profile)
+  const client = await buildOpenAIClient(profile)
 
   const stream = await client.chat.completions.stream(
     {
