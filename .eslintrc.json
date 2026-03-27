@@ -1,0 +1,16 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["litellm", "litellm/*", "@litellm/*"],
+            "message": "Never import LiteLLM directly. The LiteLLM sidecar is an isolated process — use ILLMClient via HTTP gateway (lib/llm/client.ts). Direct LiteLLM imports break process isolation (Amendment 91)."
+          }
+        ]
+      }
+    ]
+  }
+}

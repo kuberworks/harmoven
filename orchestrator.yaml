@@ -41,6 +41,13 @@ security:
   session_timeout_minutes: 480     # 8 hours
   setup_token_required: true       # /setup route protected by token shown in Docker logs
   rate_limit_provider: memory      # memory (default, Electron-safe) | upstash (production)
+  supply_chain:                    # Amendment 91 — T3.8 supply chain security
+    verify_image_digest: true      # reject Docker image updates without digest match
+    verify_pack_signatures: false  # GPG verification for marketplace packs (enable after key setup)
+    verify_mcp_skill_hashes: true  # SHA256 each MCP skill entrypoint at startup
+    require_github_release: true   # reject updates with no matching GitHub release tag
+    cosign_public_key: null        # absolute path to Cosign public key (enables Cosign verify)
+    pinned_litellm_version: "1.82.6"  # must match litellm.pinned_version above
 
 proactivity:
   max_auto_runs_per_day: 20
@@ -49,6 +56,8 @@ proactivity:
 
 litellm:
   enabled: false                   # opt-in — requires LiteLLM sidecar in docker-compose.yml
+  pinned_version: "1.82.6"         # T3.8: sidecar must run this exact version
+  # gateway_url — set via LITELLM_GATEWAY_URL env var (injected by docker-compose)
 
 memory:
   enabled: true
@@ -79,7 +88,9 @@ marketplace:
   # manual → never check automatically — user-initiated only
   security:
     verify_content_hash: true      # SHA-256 content hash always verified at install time
-    verify_gpg_signature: false    # GPG verification — enabled in T3.8 (supply chain monitor)
+    verify_gpg_signature: false    # GPG verification — requires keyring setup (Am.91, T3.8)
+                                   # Set to true after importing the Harmoven registry public key:
+                                   #   gpg --import harmoven-registry.pub
     scan_content: true             # local prompt-injection + external URL scan always on
 
 ui:                                  # Amendment 86
