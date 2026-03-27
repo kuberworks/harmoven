@@ -1,5 +1,5 @@
-// app/api/runs/[id]/stream/route.ts
-// GET /api/runs/:id/stream — SSE live event stream for a single run.
+// app/api/runs/[runId]/stream/route.ts
+// GET /api/runs/:runId/stream — SSE live event stream for a single run.
 // Spec: TECHNICAL.md Section 29.6, Amendment 79.
 //
 // Security:
@@ -25,10 +25,9 @@ const HEARTBEAT_MS = 30_000
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ runId: string }> },
 ) {
-  const { id } = await params
-  const runId = id
+  const { runId } = await params
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   const caller = await resolveCaller(req)
