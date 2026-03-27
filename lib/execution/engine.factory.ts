@@ -19,6 +19,7 @@ import type { AgentRunnerFn, ExecutorDb, IExecutionEngine } from '@/lib/executio
 import { CustomExecutor } from '@/lib/execution/custom/executor'
 import { makeAgentRunner } from '@/lib/agents/runner'
 import { createLLMClient } from '@/lib/llm/client'
+import { resumeSuspendedRunsFromCrash } from '@/lib/execution/custom/crash-recovery'
 
 // ─── Orchestrator config loader ───────────────────────────────────────────────
 
@@ -203,6 +204,13 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
       })
     }, ORPHAN_CRON_INTERVAL_MS)
     cron.unref()
+
+    // Resume SUSPENDED runs from a previous graceful or unclean shutdown.
+    // Must run after recoverOrphans() so that orphaned nodes have been reset.
+    // Am.34.3b — "resume RUNNING runs on startup".
+    void resumeSuspendedRunsFromCrash(engine).catch((err: unknown) => {
+      console.error('[harmoven] crash recovery (resume suspended) failed on startup:', err)
+    })
   }
 
   return engine
