@@ -135,6 +135,26 @@ jobs:
         # exits 0 gracefully when locales/ doesn't exist yet (T3.7 pending)
         run: node scripts/check-translations.js
 
+  openapi-drift:
+    name: OpenAPI types drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Regenerate types/api.ts from openapi/v1.yaml
+        run: npm run generate:types
+      - name: Fail if types/api.ts is out of sync with openapi/v1.yaml
+        run: |
+          if ! git diff --exit-code types/api.ts; then
+            echo "ERROR: types/api.ts is out of sync with openapi/v1.yaml."
+            echo "Run 'npm run generate:types' and commit the updated types/api.ts."
+            exit 1
+          fi
+
   license-scan:
     name: License compatibility scan
     runs-on: ubuntu-latest
