@@ -162,10 +162,20 @@ def main() -> None:
     # Read existing entries
     existing = read_existing(args.file)
 
+    # Am.93 immutability: refuse to overwrite an existing pin with a DIFFERENT digest
     if args.version in existing:
-        print(f"WARNING: version {args.version} already in {args.file}, overwriting.", file=sys.stderr)
+        block = existing[args.version]
+        if args.digest not in block:
+            print(
+                f"ERROR: version {args.version} already pinned with a DIFFERENT digest. "
+                "Tag re-push detected — release-pins.yaml is immutable for released versions.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        print(f"INFO: version {args.version} already pinned with the same digest — no-op.")
+        return
 
-    # Add/replace the new version entry
+    # Add the new version entry
     existing[args.version] = build_entry(args.version, args.digest, args.commit, args.bundle)
 
     # Write back

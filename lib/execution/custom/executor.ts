@@ -27,6 +27,7 @@ import {
 } from '@/lib/execution/custom/state-machine'
 import { HeartbeatManager, ORPHAN_THRESHOLD_MS } from '@/lib/execution/custom/heartbeat'
 import type { IProjectEventBus, RunSSEEvent, ProjectLifecycleEvent } from '@/lib/events/project-event-bus.interface'
+import { credentialVault } from '@/lib/execution/credential-scope'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,14 @@ export class CustomExecutor implements IExecutionEngine {
     // Cache project_id for event emission throughout this run's lifecycle
     this._runProjectIds.set(runId, run.project_id)
 
+    // Issue a scoped credential vault for this run (T3.9 — credentialVault wiring).
+    // Providers are extracted from the run config if available; TTL = 60 min max.
+    const runConfigRaw = run.run_config as Record<string, unknown> | null
+    const providers = Array.isArray(runConfigRaw?.['providers'])
+      ? (runConfigRaw['providers'] as string[])
+      : []
+    await credentialVault.issueRunScope(runId, run.project_id, providers, 60)
+
     await this.transitionRun(runId, currentStatus, 'RUNNING')
     if (!run.started_at) {
       await this.db.run.update({ where: { id: runId }, data: { started_at: new Date() } })
@@ -142,6 +151,8 @@ export class CustomExecutor implements IExecutionEngine {
       this._cancelSignals.delete(runId)
       this._pausedRunIds.delete(runId)
       this._runProjectIds.delete(runId)
+      // Revoke credential scope regardless of outcome (T3.9 — vault cleanup).
+      credentialVault.revokeRunScope(runId)
     }
   }
 

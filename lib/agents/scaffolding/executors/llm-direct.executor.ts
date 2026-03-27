@@ -23,6 +23,7 @@ import type {
   LayerAgentInput,
   LayerAgentOutput,
 }                                  from '../layer-agent-executor.interface'
+import { scanWorktreeForSecrets }  from '@/lib/agents/scaffolding/secret-scanner'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -233,6 +234,15 @@ export class LLMDirectExecutor implements ILayerAgentExecutor {
 
       const parsed  = parseLayerResponse(result.content)
       const created = writeFilesToWorktree(parsed.files, input.worktree_path)
+
+      // Secret scan after write — non-throwing, logs findings as warning (T3.9).
+      const scanResult = await scanWorktreeForSecrets(input.worktree_path)
+      if (scanResult.findings.length > 0) {
+        console.warn(
+          `[LLMDirectExecutor] ${scanResult.findings.length} secret(s) detected in worktree`,
+          { worktree: input.worktree_path, findings: scanResult.findings.map(f => ({ file: f.file, type: f.type })) },
+        )
+      }
 
       return {
         success:        true,

@@ -17,6 +17,7 @@ services:
       # Only relevant when litellm.enabled=true in orchestrator.yaml.
       - LITELLM_GATEWAY_URL=${LITELLM_GATEWAY_URL:-http://litellm:4000}
     networks:
+      - app_net
       - litellm_internal
     depends_on:
       db:
@@ -36,13 +37,15 @@ services:
     # pass cannot silently lower it without touching this file.
     command: postgres -c synchronous_commit=on
     ports:
-      - "${HARMOVEN_DB_PORT:-5432}:5432"  # override in .env if 5432 is already taken
+      - "127.0.0.1:${HARMOVEN_DB_PORT:-5432}:5432"  # localhost only — no external exposure
+    networks:
+      - app_net
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-harmoven}
       POSTGRES_USER: ${POSTGRES_USER:-harmoven}
       # SECURITY: POSTGRES_PASSWORD must be set in .env — no default is provided.
       # Use: POSTGRES_PASSWORD=$(openssl rand -base64 32)
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (run: openssl rand -base64 32)}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (run: openssl rand -base64 32)}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -126,6 +129,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only mount — proxy enforces further restrictions
     networks:
+      - app_net
       - docker_proxy_net
     restart: unless-stopped
     # No ports exposed — app connects via internal Docker network only
@@ -134,6 +138,9 @@ volumes:
   postgres_data:
 
 networks:
+  app_net:
+    # Default app network: app ↔ db, app ↔ docker-proxy.
+    internal: true
   litellm_internal:
     # Internal-only network between app and LiteLLM sidecar.
     # No external traffic can reach LiteLLM directly — enforced by Docker.

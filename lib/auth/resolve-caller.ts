@@ -1,13 +1,12 @@
 // lib/auth/resolve-caller.ts
 // Shared helper: resolve a Caller from a Next.js request.
 // Used by SSE routes and any other route needing session OR API key auth.
-// Centralises crypto import (no require('crypto') in modules).
+// Uses api-key-validator for timing-safe Bearer token comparison (T3.9 wiring).
 
-import { createHash } from 'node:crypto'
 import type { NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
-import { db } from '@/lib/db/client'
 import type { Caller } from '@/lib/auth/rbac'
+import { extractBearerKey, validateApiKey } from '@/lib/auth/api-key-validator'
 
 export async function resolveCaller(req: NextRequest): Promise<Caller | null> {
   try {
@@ -21,25 +20,12 @@ export async function resolveCaller(req: NextRequest): Promise<Caller | null> {
     }
 
     // API key auth: expect Authorization: Bearer hv1_...
-    const bearer = req.headers.get('authorization')?.replace('Bearer ', '')
-    if (bearer) {
-      const keyHash = createHash('sha256').update(bearer).digest('hex')
-      const now = new Date()
-      const key = await db.projectApiKey.findFirst({
-        where: {
-          key_hash:   keyHash,
-          revoked_at: null,
-          // Exclude keys whose expiry has passed (null = no expiry = valid).
-          // SECURITY: expires_at must be checked here too, not only in
-          // assertProjectAccess — resolveCaller is the first gate.
-          OR: [
-            { expires_at: null },
-            { expires_at: { gt: now } },
-          ],
-        },
-        select: { id: true },
-      })
-      if (key) return { type: 'api_key', keyId: key.id }
+    // extractBearerKey validates the format; validateApiKey does DB lookup
+    // with timingSafeEqual comparison (Amendment 92).
+    const rawKey = extractBearerKey(req.headers.get('authorization'))
+    if (rawKey) {
+      const result = await validateApiKey(rawKey)
+      if (result) return { type: 'api_key', keyId: result.id }
     }
   } catch (e) {
     // Unexpected errors (Prisma misconfiguration, network, etc.) are logged so
