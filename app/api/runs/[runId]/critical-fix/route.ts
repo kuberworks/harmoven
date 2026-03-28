@@ -8,17 +8,27 @@
 // Idempotent for the same finding_id — creates/updates CriticalFindingFix row.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z }                         from 'zod'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { db } from '@/lib/db/client'
-import type { CriticalFinding } from '@/lib/agents/reviewer/critical-reviewer.types'
 
-interface CriticalFixBody {
-  finding_id: string
-  finding:    CriticalFinding
-  result_id:  string // CriticalReviewResult.id
-}
+// ─── Zod schema ─────────────────────────────────────────────────────────────
+// finding is a nested object — validate the fields we use (title, severity).
+// Max sizes prevent DoS via oversized payloads.
+const CriticalFindingSchema = z.object({
+  title:       z.string().min(1).max(500),
+  severity:    z.enum(['critical', 'high', 'medium', 'low']),
+  description: z.string().max(5_000).optional(),
+  location:    z.string().max(500).optional(),
+}).passthrough()  // allow extra fields from CriticalFinding type
+
+const CriticalFixBodySchema = z.object({
+  finding_id: z.string().min(1).max(128),
+  finding:    CriticalFindingSchema,
+  result_id:  z.string().min(1).max(128),
+}).strict()
 
 export async function POST(
   req: NextRequest,
@@ -51,18 +61,19 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // ─── Parse body ────────────────────────────────────────────────────────────
-  let body: CriticalFixBody
+  // ─── Parse + validate body (C-02: Zod strict) ────────────────────────────────
+  let rawBody: unknown
   try {
-    body = await req.json() as CriticalFixBody
+    rawBody = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { finding_id, finding, result_id } = body
-  if (!finding_id || !finding || !result_id) {
-    return NextResponse.json({ error: 'Missing required fields: finding_id, finding, result_id' }, { status: 400 })
+  const parsed = CriticalFixBodySchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
+  const { finding_id, finding, result_id } = parsed.data
 
   // ─── Validate that result_id belongs to this run ───────────────────────────
   const reviewResult = await (db as any).criticalReviewResult.findUnique({
