@@ -122,6 +122,7 @@ async function callAnthropic(
     content,
     tokensIn:  response.usage.input_tokens,
     tokensOut: response.usage.output_tokens,
+    costUsd:   0,
     model:     response.model,
   }
 }
@@ -164,6 +165,7 @@ async function streamAnthropic(
     content:   fullText,
     tokensIn:  final.usage.input_tokens,
     tokensOut: final.usage.output_tokens,
+    costUsd:   0,
     model:     final.model,
   }
 }
@@ -215,6 +217,7 @@ async function callOpenAI(
     content,
     tokensIn:  completion.usage?.prompt_tokens     ?? 0,
     tokensOut: completion.usage?.completion_tokens ?? 0,
+    costUsd:   0,
     model:     completion.model,
   }
 }
@@ -250,6 +253,7 @@ async function streamOpenAI(
     content:   fullText,
     tokensIn:  final.usage?.prompt_tokens     ?? 0,
     tokensOut: final.usage?.completion_tokens ?? 0,
+    costUsd:   0,
     model:     modelName,
   }
 }
@@ -328,7 +332,7 @@ async function streamGemini(
     tokensOut += chunk.usageMetadata?.candidatesTokenCount  ?? 0
   }
 
-  return { content: fullText, tokensIn, tokensOut, model: profile.model_string }
+  return { content: fullText, tokensIn, tokensOut, costUsd: 0, model: profile.model_string }
 }
 
 // ─── DirectLLMClient ──────────────────────────────────────────────────────────
@@ -341,6 +345,15 @@ async function streamGemini(
  *   any profile id                    → resolved directly (e.g. 'claude-haiku-4-5-20251001')
  *   any model string (provider-native) → attempted as-is on the default provider
  */
+
+/** Compute cost in USD from profile pricing and actual token counts. */
+function computeCostUsd(profile: LlmProfileConfig, tokensIn: number, tokensOut: number): number {
+  return (
+    (tokensIn  / 1_000_000) * Number(profile.cost_per_1m_input_tokens)  +
+    (tokensOut / 1_000_000) * Number(profile.cost_per_1m_output_tokens)
+  )
+}
+
 export class DirectLLMClient implements ILLMClient {
   private readonly profiles: LlmProfileConfig[]
   readonly name = 'direct'
@@ -398,7 +411,8 @@ export class DirectLLMClient implements ILLMClient {
   async chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const profile = this.resolveProfile(options.model, options.selectionContext)
-    return this.dispatchChat(profile, messages, options)
+    const result  = await this.dispatchChat(profile, messages, options)
+    return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
   }
 
   async stream(
@@ -408,7 +422,8 @@ export class DirectLLMClient implements ILLMClient {
   ): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const profile = this.resolveProfile(options.model, options.selectionContext)
-    return this.dispatchStream(profile, messages, options, onChunk)
+    const result  = await this.dispatchStream(profile, messages, options, onChunk)
+    return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
   }
 
   // ── Provider dispatch ────────────────────────────────────────────────────────
@@ -526,9 +541,11 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
     }
   }
 
-  // Lazy-import db to avoid circular deps at module load time.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { db } = require('@/lib/db/client') as { db: { llmProfile: { findMany: Function; upsert: Function } } }
+  // Lazy dynamic import: avoids circular deps at module load time.
+  // Must use await import() (not require()) so webpack treats it as a proper
+  // async import — synchronous require() of an async webpack module returns
+  // an unresolved namespace where named exports are undefined.
+  const { db } = await import('@/lib/db/client') as unknown as { db: { llmProfile: { findMany: Function; upsert: Function } } }
 
   // Seed BUILT_IN_PROFILES for the active ids listed in orchestrator.yaml.
   // Upsert is idempotent — admin-customised rows are never overwritten.
