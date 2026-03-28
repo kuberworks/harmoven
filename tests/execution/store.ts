@@ -101,6 +101,13 @@ export class InMemoryRunStore implements ExecutorDb {
     },
   }
 
+  humanGate = {
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const gate = { id: crypto.randomUUID(), ...data }
+      return gate as { id: string }
+    },
+  }
+
   auditLog = {
     create: async ({ data }: { data: unknown }) => {
       this._auditLog.push(data)

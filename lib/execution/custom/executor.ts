@@ -28,6 +28,7 @@ import {
 import { HeartbeatManager, ORPHAN_THRESHOLD_MS } from '@/lib/execution/custom/heartbeat'
 import type { IProjectEventBus, RunSSEEvent, ProjectLifecycleEvent } from '@/lib/events/project-event-bus.interface'
 import { credentialVault } from '@/lib/execution/credential-scope'
+import { PlannerExhaustionError } from '@/lib/agents/planner'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -549,10 +550,10 @@ export class CustomExecutor implements IExecutionEngine {
       // Check terminal condition (all COMPLETED/SKIPPED/DEADLOCKED)
       if (this.allNodesTerminal(nodes)) break
 
-      // Check if the run was paused — exit the loop cleanly.
-      // resumeRun() will call executeRun() again from PAUSED status to restart.
+      // Check if the run was paused or suspended for human gate — exit the loop cleanly.
+      // resumeRun() / resolveInterruptGate() will call executeRun() again to restart.
       const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
-      if (run.status === 'PAUSED' || this._pausedRunIds.has(runId)) {
+      if (run.status === 'PAUSED' || run.status === 'SUSPENDED' || this._pausedRunIds.has(runId)) {
         return  // exit without finalizing — resume will re-enter
       }
 
@@ -594,13 +595,15 @@ export class CustomExecutor implements IExecutionEngine {
       await sleep(POLL_INTERVAL_MS)
     }
 
-    // Finalize run status
+    // Finalize run status.
+    // Guard: if the run was suspended (e.g. planner exhausted → human gate), do NOT
+    // override that back to FAILED — the executor exits and waits for operator input.
     const finalNodes = await this.db.node.findMany({ where: { run_id: runId } })
     if (!signal.aborted) {
       const finalStatus = this.computeFinalRunStatus(finalNodes)
       const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
       const currentStatus = currentRun.status as RunStatus
-      if (!isTerminalRun(currentStatus)) {
+      if (!isTerminalRun(currentStatus) && currentStatus !== 'SUSPENDED') {
         await this.transitionRun(runId, currentStatus, finalStatus)
         await this.db.run.update({ where: { id: runId }, data: { completed_at: new Date() } })
 
@@ -729,6 +732,7 @@ export class CustomExecutor implements IExecutionEngine {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const isAbort = err instanceof DOMException && err.name === 'AbortError'
+      const isPlannerExhausted = err instanceof PlannerExhaustionError
 
       if (isAbort) {
         await this.db.node.update({
@@ -744,12 +748,47 @@ export class CustomExecutor implements IExecutionEngine {
         this._emit(runId, { type: 'error', node_id: node.node_id ?? node.id, message })
       }
 
+      if (isPlannerExhausted) {
+        // Spec: "max 3 re-runs on validation failure → Human Gate if still invalid"
+        // Open a HumanGate and suspend the run — do not fail it.
+        try {
+          const gate = await this.db.humanGate.create({
+            data: {
+              run_id: runId,
+              reason: 'planner_exhausted',
+              data: {
+                node_id:      node.node_id,
+                error:        message,
+                attempts:     (err as PlannerExhaustionError).attempts,
+              },
+            },
+          })
+          const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+          if (canTransitionRun(run.status as RunStatus, 'SUSPENDED')) {
+            await this.transitionRun(runId, run.status as RunStatus, 'SUSPENDED')
+            await this.db.run.update({
+              where: { id: runId },
+              data: { suspended_reason: 'planner_exhausted' },
+            })
+          }
+          this._emit(runId, {
+            type: 'human_gate',
+            gate_id: gate.id,
+            reason: 'planner_exhausted',
+            data: { node_id: node.node_id, message },
+          })
+          this._emit(runId, { type: 'gate_opened', gate_id: gate.id, reason: 'planner_exhausted' })
+        } catch (gateErr) {
+          console.error(`[executor] Failed to open human gate for run ${runId}:`, gateErr)
+        }
+      }
+
       await this.db.auditLog.create({
         data: {
           run_id: runId,
           node_id: node.node_id,
           actor: 'system',
-          action_type: isAbort ? 'node_interrupted' : 'node_failed',
+          action_type: isAbort ? 'node_interrupted' : (isPlannerExhausted ? 'planner_gate_opened' : 'node_failed'),
           payload: { error: message },
         },
       })
