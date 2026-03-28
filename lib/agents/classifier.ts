@@ -190,7 +190,10 @@ export class IntentClassifier {
 
     let parsed: unknown
     try {
-      parsed = JSON.parse(result.content)
+      // Strip markdown code fences (```json ... ``` or ``` ... ```) that some
+      // models emit even when prompted for raw JSON.
+      const stripped = result.content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+      parsed = JSON.parse(stripped)
     } catch {
       throw new Error(
         `IntentClassifier: LLM returned invalid JSON — ${result.content.slice(0, 200)}`,

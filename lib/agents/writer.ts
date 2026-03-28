@@ -188,8 +188,23 @@ export class Writer {
 
     let parsed: unknown
     try {
-      parsed = JSON.parse(raw)
+      // Strip leading/trailing markdown code fences, then try direct parse.
+      // If that fails, try to extract the first complete JSON object from the response
+      // (some models embed JSON inside prose or add trailing text after the object).
+      const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+      try {
+        parsed = JSON.parse(stripped)
+      } catch {
+        // Fallback: find the outermost JSON object in the response
+        const match = stripped.match(/(\{[\s\S]*\})/)
+        if (match) {
+          parsed = JSON.parse(match[1])
+        } else {
+          throw new SyntaxError('no JSON object found')
+        }
+      }
     } catch {
+      console.error(`[Writer(${node.node_id})] full raw response:`, raw)
       throw new Error(
         `Writer(${node.node_id}): LLM returned invalid JSON — ${raw.slice(0, 200)}`,
       )

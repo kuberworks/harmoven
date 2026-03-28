@@ -129,7 +129,8 @@ export class Reviewer {
 
     let parsed: unknown
     try {
-      parsed = JSON.parse(result.content)
+      const stripped = result.content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+      parsed = JSON.parse(stripped)
     } catch {
       throw new Error(
         `Reviewer: LLM returned invalid JSON — ${result.content.slice(0, 200)}`,

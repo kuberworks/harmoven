@@ -12,19 +12,19 @@ execution_engine:
   max_concurrent_nodes: 4          # per run — respected by CustomExecutor
 
 llm:
-  default_provider: cometapi
+  default_provider: anthropic
   profiles_active:
-    - cometapi-fast                # fast  — gpt-4o-mini  (CLASSIFIER, simple tasks)
-    - cometapi                     # balanced — gpt-4o    (PLANNER, WRITER)
-    - cometapi-powerful            # powerful — claude-sonnet-4-6 (REVIEWER, complex)
-    # To use Claude natively via CometAPI, override model_string via admin API:
-    #   PATCH /api/admin/models/cometapi-fast     { "model_string": "claude-3-5-haiku-20241022" }
-    #   PATCH /api/admin/models/cometapi          { "model_string": "claude-sonnet-4-6" }
-    #   PATCH /api/admin/models/cometapi-powerful { "model_string": "claude-opus-4-6" }
-    # Or activate Anthropic profiles directly (requires ANTHROPIC_API_KEY):
-    # - claude-3-5-haiku-20241022  # fast
-    # - claude-3-7-sonnet-20250219 # balanced
-    # - claude-opus-4-6            # powerful
+    - claude-haiku-4-5             # fast     — CLASSIFIER, simple tasks
+    - claude-sonnet-4-6            # balanced — PLANNER, WRITER
+    - claude-opus-4-6              # powerful — REVIEWER, complex reasoning
+    # CometAPI (disabled):
+    # - cometapi-fast
+    # - cometapi
+    # - cometapi-powerful
+    # Legacy Claude 3.x (fallback if needed):
+    # - claude-3-5-haiku-20241022
+    # - claude-3-7-sonnet-20250219
+    # - claude-3-opus-20240229
 
 confidentiality:
   default_level: MEDIUM            # LOW | MEDIUM | HIGH | CRITICAL

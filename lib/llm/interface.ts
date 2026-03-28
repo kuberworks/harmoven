@@ -39,6 +39,8 @@ export interface ChatResult {
   tokensIn: number
   tokensOut: number
   model: string
+  /** Estimated cost in USD computed from the profile's price-per-million-token rates. */
+  costUsd: number
 }
 
 /** ILLMClient — minimal client interface used by agents and the executor. */

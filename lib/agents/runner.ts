@@ -57,23 +57,38 @@ function asProfileId(v: unknown): ProfileId {
  * This enables multi-criteria routing (selectLlm) in DirectLLMClient for nodes
  * that carry confidentiality/jurisdiction/budget constraints in their metadata.
  * Agents never need to be aware of this — they just call llm.chat() as normal.
+ *
+ * Also accumulates total costUsd / tokensIn / tokensOut across all calls made
+ * during a single node execution so runner.ts can report accurate per-node cost.
  */
 class ContextualLLMClient implements ILLMClient {
+  totalCostUsd = 0
+  totalTokensIn = 0
+  totalTokensOut = 0
+
   constructor(
     private readonly inner: ILLMClient,
     private readonly ctx: ChatOptions['selectionContext'],
   ) {}
 
-  chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult> {
-    return this.inner.chat(messages, { ...options, selectionContext: this.ctx })
+  async chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult> {
+    const result = await this.inner.chat(messages, { ...options, selectionContext: this.ctx })
+    this.totalCostUsd   += result.costUsd
+    this.totalTokensIn  += result.tokensIn
+    this.totalTokensOut += result.tokensOut
+    return result
   }
 
-  stream(
+  async stream(
     messages: ChatMessage[],
     options: ChatOptions,
     onChunk: (chunk: string) => void,
   ): Promise<ChatResult> {
-    return this.inner.stream(messages, { ...options, selectionContext: this.ctx }, onChunk)
+    const result = await this.inner.stream(messages, { ...options, selectionContext: this.ctx }, onChunk)
+    this.totalCostUsd   += result.costUsd
+    this.totalTokensIn  += result.tokensIn
+    this.totalTokensOut += result.tokensOut
+    return result
   }
 }
 
@@ -131,7 +146,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
             ?? ''
 
         const result = await new IntentClassifier(contextualLlm).classify(input, signal)
-        return { handoffOut: result, costUsd: 0, tokensIn: 0, tokensOut: 0 }
+        return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
       }
 
       // ── PLANNER ─────────────────────────────────────────────────────────────
@@ -146,7 +161,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         const result = await new Planner(contextualLlm).plan(
           taskInput, classifierResult, node.run_id, signal,
         )
-        return { handoffOut: result, costUsd: 0, tokensIn: 0, tokensOut: 0 }
+        return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
       }
 
       // ── WRITER ──────────────────────────────────────────────────────────────
@@ -167,9 +182,9 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         const result = await new Writer(contextualLlm).execute(nodeInput, signal, onChunk)
         return {
           handoffOut: result,
-          costUsd:   0,
-          tokensIn:  result.execution_meta.tokens_input,
-          tokensOut: result.execution_meta.tokens_output,
+          costUsd:   contextualLlm.totalCostUsd,
+          tokensIn:  contextualLlm.totalTokensIn,
+          tokensOut: contextualLlm.totalTokensOut,
         }
       }
 
@@ -186,9 +201,9 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         )
         return {
           handoffOut: result,
-          costUsd:   0,
-          tokensIn:  result.meta.tokens_input,
-          tokensOut: result.meta.tokens_output,
+          costUsd:   contextualLlm.totalCostUsd,
+          tokensIn:  contextualLlm.totalTokensIn,
+          tokensOut: contextualLlm.totalTokensOut,
         }
       }
 

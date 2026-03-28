@@ -833,9 +833,9 @@ export class CustomExecutor implements IExecutionEngine {
       // Accumulate cost to run (§34.3 updateCosts)
       if (output.costUsd > 0 || output.tokensIn > 0 || output.tokensOut > 0) {
         const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
-        const prevCost = currentRun.cost_actual_usd ?? 0
+        const prevCost   = Number(currentRun.cost_actual_usd ?? 0)
         const prevTokens = currentRun.tokens_actual ?? 0
-        const newCost   = prevCost + output.costUsd
+        const newCost    = prevCost + output.costUsd
         const newTokens = prevTokens + output.tokensIn + output.tokensOut
         await this.db.run.update({
           where: { id: runId },

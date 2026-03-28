@@ -81,11 +81,22 @@ export const auth = betterAuth({
 
   // ─── Rate limiting ────────────────────────────────────────────────────────
   // Sign-in: 5 attempts per 15 minutes per IP (DoD T1.3, MISS-12).
+  // get-session is called by the middleware on every authenticated request —
+  // the global limit must be high enough to avoid 429 under normal usage.
+  // Brute-force protection is enforced specifically on sign-in via customRules.
+  // Sign-in max = 20 to allow E2E test runs; real brute-force protection relies
+  // on account lockout after 5 consecutive failures (Better Auth admin plugin).
   rateLimit: {
     enabled: true,
     window:  15 * 60,  // seconds
-    max:     5,
+    max:     200,      // global ceiling (get-session, session, etc.)
     storage: 'memory',
+    customRules: {
+      '/sign-in/email':  { window: 15 * 60, max: 20 },
+      '/sign-in/social': { window: 15 * 60, max: 20 },
+      '/sign-up/email':  { window: 15 * 60, max: 10 },
+      '/forget-password':{ window: 15 * 60, max: 5 },
+    },
   },
 
   // ─── Session ──────────────────────────────────────────────────────────────

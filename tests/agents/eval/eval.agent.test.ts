@@ -5,7 +5,7 @@ import { jest } from '@jest/globals'
 
 // ─── Mock ILLMClient ─────────────────────────────────────────────────────────
 
-const mockChatFn = jest.fn<() => Promise<{ content: string; model: string; tokensIn: number; tokensOut: number }>>()
+const mockChatFn = jest.fn<() => Promise<{ content: string; model: string; tokensIn: number; tokensOut: number; costUsd: number }>>()
 
 const mockLlm = {
   chat: mockChatFn,
@@ -142,6 +142,7 @@ function makeLlmResult(content: string) {
     model: 'claude-haiku',
     tokensIn: 100,
     tokensOut: 50,
+    costUsd: 0,
   }
 }
 

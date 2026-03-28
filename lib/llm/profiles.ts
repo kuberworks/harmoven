@@ -43,10 +43,10 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
 
   // ── Anthropic ──────────────────────────────────────────────────────────────
   {
-    // claude-3-5-haiku-20241022: fastest + cheapest Anthropic model (Oct 2024)
-    id:                       'claude-3-5-haiku-20241022',
+    // claude-haiku-4-5: fastest Claude 4 — fast tier (2025)
+    id:                       'claude-haiku-4-5',
     provider:                 'anthropic',
-    model_string:             'claude-3-5-haiku-20241022',
+    model_string:             'claude-haiku-4-5',
     tier:                     'fast',
     context_window:           200_000,
     cost_per_1m_input_tokens:  0.80,
@@ -57,10 +57,10 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     api_key_env:              'ANTHROPIC_API_KEY',
   },
   {
-    // claude-3-7-sonnet-20250219: balanced tier (Feb 2025)
-    id:                       'claude-3-7-sonnet-20250219',
+    // claude-sonnet-4-6: balanced Claude 4 — PLANNER, WRITER (2025)
+    id:                       'claude-sonnet-4-6',
     provider:                 'anthropic',
-    model_string:             'claude-3-7-sonnet-20250219',
+    model_string:             'claude-sonnet-4-6',
     tier:                     'balanced',
     context_window:           200_000,
     cost_per_1m_input_tokens:  3.00,
@@ -71,7 +71,47 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     api_key_env:              'ANTHROPIC_API_KEY',
   },
   {
-    // claude-3-opus-20240229: most powerful Anthropic model available at launch
+    // claude-opus-4-6: most powerful Claude 4 — REVIEWER, complex reasoning (2025)
+    id:                       'claude-opus-4-6',
+    provider:                 'anthropic',
+    model_string:             'claude-opus-4-6',
+    tier:                     'powerful',
+    context_window:           200_000,
+    cost_per_1m_input_tokens:  15.00,
+    cost_per_1m_output_tokens: 75.00,
+    jurisdiction:             'us',
+    trust_tier:               1,
+    task_type_affinity:       ['strategic_planning', 'legal_reasoning', 'ambiguity_resolution', 'complex_analysis'],
+    api_key_env:              'ANTHROPIC_API_KEY',
+  },
+  // ── Anthropic (legacy Claude 3.x — kept for backward compatibility) ────────
+  {
+    id:                       'claude-3-5-haiku-20241022',
+    provider:                 'anthropic',
+    model_string:             'claude-3-5-haiku-20241022',
+    tier:                     'fast',
+    context_window:           200_000,
+    cost_per_1m_input_tokens:  0.80,
+    cost_per_1m_output_tokens: 4.00,
+    jurisdiction:             'us',
+    trust_tier:               1,
+    task_type_affinity:       ['intent_classification', 'context_distillation'],
+    api_key_env:              'ANTHROPIC_API_KEY',
+  },
+  {
+    id:                       'claude-3-7-sonnet-20250219',
+    provider:                 'anthropic',
+    model_string:             'claude-3-7-sonnet-20250219',
+    tier:                     'balanced',
+    context_window:           200_000,
+    cost_per_1m_input_tokens:  3.00,
+    cost_per_1m_output_tokens: 15.00,
+    jurisdiction:             'us',
+    trust_tier:               1,
+    task_type_affinity:       ['document_analysis', 'report_writing'],
+    api_key_env:              'ANTHROPIC_API_KEY',
+  },
+  {
     id:                       'claude-3-opus-20240229',
     provider:                 'anthropic',
     model_string:             'claude-3-opus-20240229',
@@ -81,7 +121,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     cost_per_1m_output_tokens: 75.00,
     jurisdiction:             'us',
     trust_tier:               1,
-    task_type_affinity:       ['strategic_planning', 'legal_reasoning', 'ambiguity_resolution', 'complex_analysis'],
+    task_type_affinity:       ['strategic_planning', 'legal_reasoning'],
     api_key_env:              'ANTHROPIC_API_KEY',
   },
 
