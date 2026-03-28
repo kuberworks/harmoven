@@ -28,5 +28,13 @@ export async function register(): Promise<void> {
     await syncInstanceConfig().catch((err: unknown) =>
       console.warn('[bootstrap] syncInstanceConfig failed (non-fatal):', err),
     )
+
+    // B-02: sweep OPEN gates whose timeout_at is in the past (catches gates
+    // that expired while the server was down). Also starts the periodic sweep.
+    const { sweepExpiredGates, startGateSweep } = await import('@/lib/execution/gate-timeout')
+    await sweepExpiredGates().catch((err: unknown) =>
+      console.warn('[bootstrap] sweepExpiredGates failed (non-fatal):', err),
+    )
+    startGateSweep()
   }
 }

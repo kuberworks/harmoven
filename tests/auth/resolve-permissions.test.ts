@@ -179,15 +179,15 @@ describe('resolvePermissions — cache TTL expiry', () => {
     invalidatePermCache(APIKEY_CALLER, PROJECT_ID)
   })
 
-  it('re-fetches from DB after the 30 s TTL expires', async () => {
+  it('re-fetches from DB after the 60 s TTL expires', async () => {
     mockDb.projectApiKey.findUnique.mockResolvedValue({
       role: { extends: 'viewer', permissions: [] },
     })
 
     await resolvePermissions(APIKEY_CALLER, PROJECT_ID) // prime cache
 
-    // Advance past PERM_CACHE_TTL_MS (30 000 ms)
-    jest.advanceTimersByTime(30_001)
+    // Advance past PERM_CACHE_TTL_MS (60 000 ms)
+    jest.advanceTimersByTime(60_001)
 
     await resolvePermissions(APIKEY_CALLER, PROJECT_ID) // cache miss → DB again
 

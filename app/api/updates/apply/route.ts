@@ -39,7 +39,7 @@ const ApplyUpdateBodySchema = z.object({
   bump:        z.enum(['major', 'minor', 'patch']),
   /** Admin confirmed they understand the migration warnings */
   confirmed:   z.boolean(),
-})
+}).strict()
 
 // ─── Health check polling ─────────────────────────────────────────────────────
 

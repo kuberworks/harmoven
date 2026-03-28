@@ -103,7 +103,7 @@ const PatchCredentialBody = z.object({
 }).strict()
 
 export async function PATCH(req: NextRequest, { params }: Params) {
-  const { err } = await guardAdminCreds(req)
+  const { caller, err } = await guardAdminCreds(req)
   if (err) return err
 
   const { credId } = await params
@@ -143,6 +143,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     where:  { id: credId },
     data:   { ...rest, ...encData },
     select: CRED_SELECT,
+  })
+
+  await db.auditLog.create({
+    data: {
+      actor:       caller!.userId,
+      action_type: 'credential_updated',
+      payload: {
+        credential_id:  credId,
+        fields_updated: Object.keys(rest),
+        value_rotated:  !!value,
+      },
+    },
   })
 
   return NextResponse.json({ credential })

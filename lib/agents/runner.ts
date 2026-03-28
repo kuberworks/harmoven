@@ -86,7 +86,7 @@ class ContextualLLMClient implements ILLMClient {
  * @param llm The ILLMClient to use (typically from createLLMClient()).
  */
 export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
-  return async (node: NodeRow, handoffIn: unknown, signal: AbortSignal): Promise<AgentOutput> => {
+  return async (node: NodeRow, handoffIn: unknown, signal: AbortSignal, onChunk?: (chunk: string) => void): Promise<AgentOutput> => {
     const meta = (typeof node.metadata === 'object' && node.metadata !== null
       ? node.metadata
       : {}) as Record<string, unknown>
@@ -162,7 +162,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           run_id:         node.run_id,
         }
 
-        const result = await new Writer(contextualLlm).execute(nodeInput, signal)
+        const result = await new Writer(contextualLlm).execute(nodeInput, signal, onChunk)
         return {
           handoffOut: result,
           costUsd:   0,
