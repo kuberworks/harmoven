@@ -2,7 +2,7 @@
 // Unit tests for Planner — 2 scenarios.
 // Uses MockLLMClient — zero network / LLM cost.
 
-import { Planner } from '@/lib/agents/planner'
+import { Planner, PlannerExhaustionError } from '@/lib/agents/planner'
 import { MockLLMClient } from '@/lib/llm/mock-client'
 import type { PlannerHandoff } from '@/lib/agents/planner'
 import type { ClassifierResult } from '@/lib/agents/classifier'
@@ -182,13 +182,39 @@ describe('Planner', () => {
     expect(result.meta.human_gate_points).toContain('before_execution')
   })
 
-  it('throws on invalid JSON from LLM', async () => {
+  it('throws PlannerExhaustionError when LLM consistently returns invalid output', async () => {
+    // With the retry loop, invalid responses are retried 3x; after exhaustion,
+    // PlannerExhaustionError is thrown wrapping the last validation error.
     const llm = new MockLLMClient()
     llm.setNextResponse('broken { json')
 
     const planner = new Planner(llm)
-    await expect(
-      planner.plan('any task', appProfile, 'run-err'),
-    ).rejects.toThrow('Planner: LLM returned invalid JSON')
+    const err = await planner.plan('any task', appProfile, 'run-err').catch(e => e)
+
+    expect(err).toBeInstanceOf(PlannerExhaustionError)
+    expect((err as PlannerExhaustionError).attempts).toBe(3)
+    expect((err as PlannerExhaustionError).lastError).toBeInstanceOf(Error)
+  })
+
+  it('throws PlannerExhaustionError after 3 consecutive validation failures (BUG-015)', async () => {
+    // Arrange: MockLLMClient returns invalid JSON for every call (no fallback set).
+    // The Planner retries the full cycle up to 3 times; after all fail with invalid
+    // JSON, it should throw PlannerExhaustionError (not a generic JSON error).
+    const llm = new MockLLMClient()
+    // Set 3 bad responses — one per validation attempt
+    llm.setNextResponse('invalid json 1')
+    llm.setNextResponse('invalid json 2')
+    llm.setNextResponse('invalid json 3')
+
+    const planner = new Planner(llm)
+    const error = await planner
+      .plan('cannot be planned', appProfile, 'run-exhausted')
+      .catch(e => e)
+
+    expect(error).toBeInstanceOf(PlannerExhaustionError)
+    expect((error as PlannerExhaustionError).attempts).toBe(3)
+    expect((error as PlannerExhaustionError).message).toContain('human gate')
+    // All 3 attempts were made (withRetry calls llm.chat once per outer loop iteration)
+    expect(llm.calls.length).toBe(3)
   })
 })

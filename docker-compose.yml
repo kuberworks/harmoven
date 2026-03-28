@@ -46,7 +46,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-harmoven}
       # SECURITY: POSTGRES_PASSWORD must be set in .env — no default is provided.
       # Use: POSTGRES_PASSWORD=$(openssl rand -base64 32)
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (run: openssl rand -base64 32)}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped

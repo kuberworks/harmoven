@@ -59,6 +59,9 @@ export interface ExecutorDb {
   handoff: {
     create(args: { data: unknown }): Promise<unknown>
   }
+  humanGate: {
+    create(args: { data: unknown }): Promise<{ id: string }>
+  }
   auditLog: {
     create(args: { data: unknown }): Promise<unknown>
   }

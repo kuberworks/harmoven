@@ -194,6 +194,26 @@ function validateDag(dag: PlannerHandoff['dag']): void {
   }
 }
 
+// ─── Planner exhaustion error ────────────────────────────────────────────────
+
+/**
+ * Thrown when the Planner fails validation 3 times in a row.
+ * The caller (executor) should open a HumanGate instead of failing the run.
+ */
+export class PlannerExhaustionError extends Error {
+  constructor(
+    public readonly attempts: number,
+    public readonly lastError: unknown,
+  ) {
+    super(
+      `Planner: DAG validation failed after ${attempts} attempt${
+        attempts === 1 ? '' : 's'
+      } — opening human gate for operator review`,
+    )
+    this.name = 'PlannerExhaustionError'
+  }
+}
+
 // ─── Planner ─────────────────────────────────────────────────────────────────
 
 export class Planner {
@@ -205,67 +225,89 @@ export class Planner {
     run_id: string,
     signal?: AbortSignal,
   ): Promise<PlannerHandoff> {
-    const result = await withRetry(
-      () => this.llm.chat(
-        [
-          { role: 'system', content: PLANNER_SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: JSON.stringify({
-              task: task_input,
-              run_id,
-              // Full classifier context — not just profile id
-              classifier: {
-                domain_profile:          profile.detected_profile,
-                domain:                  profile.domain,
-                output_type:             profile.output_type,
-                confidence:              profile.confidence,
-                input_summary:           profile.input_summary,
-                clarification_questions: profile.clarification_questions,
+    // Outer loop: retry the full LLM + validation cycle up to 3 times on
+    // *validation* failures. withRetry() inside already handles LLM-level
+    // transient errors (network, rate-limit, 5xx) without counting them here.
+    // Spec: "Planner retry: max 3 re-runs on validation failure → Human Gate"
+    const MAX_VALIDATION_ATTEMPTS = 3
+    let lastErr: unknown
+
+    for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
+      try {
+        const result = await withRetry(
+          () => this.llm.chat(
+            [
+              { role: 'system', content: PLANNER_SYSTEM_PROMPT },
+              {
+                role: 'user',
+                content: JSON.stringify({
+                  task: task_input,
+                  run_id,
+                  // Full classifier context — not just profile id
+                  classifier: {
+                    domain_profile:          profile.detected_profile,
+                    domain:                  profile.domain,
+                    output_type:             profile.output_type,
+                    confidence:              profile.confidence,
+                    input_summary:           profile.input_summary,
+                    clarification_questions: profile.clarification_questions,
+                  },
+                }),
               },
-            }),
+            ],
+            { model: 'powerful', signal },
+          ),
+          {
+            signal,
+            onRetry: (err, llmAttempt) =>
+              console.warn(`[Planner] LLM attempt ${llmAttempt} failed (validation attempt ${attempt}):`, err),
           },
-        ],
-        { model: 'powerful', signal },
-      ),
-      {
-        signal,
-        onRetry: (err, attempt) =>
-          console.warn(`[Planner] attempt ${attempt} failed:`, err),
-      },
-    )
+        )
 
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(result.content)
-    } catch {
-      throw new Error(
-        `Planner: LLM returned invalid JSON — ${result.content.slice(0, 200)}`,
-      )
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(result.content)
+        } catch {
+          throw new Error(
+            `Planner: LLM returned invalid JSON — ${result.content.slice(0, 200)}`,
+          )
+        }
+
+        const raw = parsed as Record<string, unknown>
+        const meta = raw['meta'] as Record<string, unknown> | undefined
+        if (typeof meta?.['confidence'] !== 'number') {
+          throw new Error('Planner: missing or invalid "meta.confidence" field in LLM response')
+        }
+
+        const confidence = meta['confidence'] as number
+        if (confidence < 0 || confidence > 100) {
+          throw new Error('Planner: meta.confidence must be 0–100')
+        }
+
+        // Clamp cost estimate to sane range ($0–$999)
+        if (typeof meta['estimated_cost_usd'] === 'number') {
+          meta['estimated_cost_usd'] = Math.min(Math.max(0, meta['estimated_cost_usd']), 999)
+        }
+
+        const dag = raw['dag'] as PlannerHandoff['dag']
+        validateDag(dag)
+
+        return {
+          ...(raw as Omit<PlannerHandoff, 'requires_human_approval'>),
+          requires_human_approval: confidence < 85,
+        }
+      } catch (err) {
+        // Never retry on abort — it's an intentional cancellation.
+        if (err instanceof DOMException && err.name === 'AbortError') throw err
+        lastErr = err
+        console.warn(
+          `[Planner] validation attempt ${attempt}/${MAX_VALIDATION_ATTEMPTS} failed:`,
+          err instanceof Error ? err.message : err,
+        )
+      }
     }
 
-    const raw = parsed as Record<string, unknown>
-    const meta = raw['meta'] as Record<string, unknown> | undefined
-    if (typeof meta?.['confidence'] !== 'number') {
-      throw new Error('Planner: missing or invalid "meta.confidence" field in LLM response')
-    }
-
-    const confidence = meta['confidence'] as number
-    if (confidence < 0 || confidence > 100) {
-      throw new Error('Planner: meta.confidence must be 0–100')
-    }
-
-    // Clamp cost estimate to sane range ($0–$999)
-    if (typeof meta['estimated_cost_usd'] === 'number') {
-      meta['estimated_cost_usd'] = Math.min(Math.max(0, meta['estimated_cost_usd']), 999)
-    }
-
-    const dag = raw['dag'] as PlannerHandoff['dag']
-    validateDag(dag)
-
-    return {
-      ...(raw as Omit<PlannerHandoff, 'requires_human_approval'>),
-      requires_human_approval: confidence < 85,
-    }
+    // All validation attempts exhausted — escalate to human gate.
+    throw new PlannerExhaustionError(MAX_VALIDATION_ATTEMPTS, lastErr)
   }
 }
