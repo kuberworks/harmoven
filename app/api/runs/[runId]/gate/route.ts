@@ -25,11 +25,20 @@ const GateBody = z.discriminatedUnion('decision', [
   z.object({
     decision: z.literal('replay_node'),
     node_id:  z.string().min(1),
-    patch:    z.record(z.unknown()).optional(),
+    // CVE-HARM-012: limit patch size to prevent oversized inputs
+    patch:    z.record(z.unknown()).refine(
+      (p) => JSON.stringify(p).length <= 100_000,
+      { message: 'patch payload exceeds maximum size of 100 KB' },
+    ).optional(),
   }).strict(),
   z.object({
     decision: z.literal('modify'),
-    patch:    z.record(z.unknown()),
+    // CVE-HARM-012: limit patch size — unbounded patch allows injecting arbitrary
+    // data into task_input which influences subsequent agent behaviour.
+    patch:    z.record(z.unknown()).refine(
+      (p) => JSON.stringify(p).length <= 100_000,
+      { message: 'patch payload exceeds maximum size of 100 KB' },
+    ),
   }).strict(),
 ])
 

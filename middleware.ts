@@ -35,6 +35,9 @@ const PUBLIC_PATHS = [
   // not via session cookies. Including here prevents middleware from blocking external
   // webhook deliveries from CI/CD or third-party services.
   '/api/webhooks',
+  // Non-sensitive instance policy (mfa_required_for_admin flag) — read by the middleware
+  // itself in parallel with get-session. Must be public to avoid a recursive auth loop.
+  '/api/instance/policy',
 ]
 
 /**
@@ -63,6 +66,24 @@ interface BetterAuthSession {
   session?: { twoFactorVerified?: boolean }
 }
 
+/** In-memory cache for /api/instance/policy — refreshed every 60 s. */
+let policyCache: { mfa_required_for_admin: boolean; until: number } | null = null
+
+/** Fetch instance policy with a 60 s in-memory TTL to avoid per-request DB overhead. */
+async function fetchPolicy(base: string): Promise<boolean> {
+  const now = Date.now()
+  if (policyCache && now < policyCache.until) return policyCache.mfa_required_for_admin
+  try {
+    const res = await fetch(`${base}/api/instance/policy`)
+    if (res.ok) {
+      const data = await res.json() as { mfa_required_for_admin?: boolean }
+      policyCache = { mfa_required_for_admin: data.mfa_required_for_admin ?? true, until: now + 60_000 }
+      return policyCache.mfa_required_for_admin
+    }
+  } catch { /* ignore — fall back to default */ }
+  return true  // default: enforce MFA
+}
+
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl
 
@@ -82,14 +103,21 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   // influenced by the incoming request.
   const authBase = (process.env.AUTH_URL ?? 'http://localhost:3000').replace(/\/$/, '')
   const sessionUrl = `${authBase}/api/auth/get-session`
+
+  // Fetch session + policy in parallel — policy has a 60 s in-memory cache so the
+  // extra HTTP call is only made once per minute per process instance.
   let sessionRes: Response
+  let mfaRequiredByDb: boolean
   try {
-    sessionRes = await fetch(sessionUrl, {
-      headers: {
-        // Forward cookies so Better Auth can read the session token.
-        cookie: request.headers.get('cookie') ?? '',
-      },
-    })
+    ;[sessionRes, mfaRequiredByDb] = await Promise.all([
+      fetch(sessionUrl, {
+        headers: {
+          // Forward cookies so Better Auth can read the session token.
+          cookie: request.headers.get('cookie') ?? '',
+        },
+      }),
+      fetchPolicy(authBase),
+    ])
   } catch {
     // Network / cold-start failure — fail closed.
     if (isApiRoute(pathname)) {
@@ -126,18 +154,51 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     // 2FA challenge (twoFactorVerified !== true), redirect to the 2FA challenge page.
     // This prevents a session hijack from bypassing MFA by stealing the session cookie
     // before the 2FA step is completed.
-    //
-    // Note: if twoFactorEnabled is false, the instance_admin can still log in without MFA.
-    // Full enforcement (requiring 2FA setup before first admin access) requires a UI setup
-    // flow and is deferred — this handles the case where 2FA is configured but not verified.
     if (body.user?.role === 'instance_admin') {
-      if (body.user?.twoFactorEnabled !== true && process.env.NODE_ENV === 'production') {
-        // SECURITY WARNING: an instance_admin without 2FA is a misconfiguration.
-        // orchestrator.yaml sets mfa_required_for_admin: true — this admin bypasses that.
-        // The setup wizard should enforce 2FA at account creation; log to aid detection.
-        console.warn(
+      // CVE-HARM-011: MFA enforcement for instance_admin.
+      //
+      // Precedence (highest → lowest):
+      //   1. Env var override (HARMOVEN_ENFORCE_ADMIN_MFA=false + acknowledgement) — always wins
+      //   2. DB setting via PATCH /api/admin/security { mfa_required_for_admin: false }
+      //   3. Default: enforce (true)
+      //
+      // Env var misconfiguration (flag set without acknowledgement) → stays enforced + error log.
+      const disableRequested    = process.env.HARMOVEN_ENFORCE_ADMIN_MFA === 'false'
+      const disableAcknowledged = process.env.HARMOVEN_MFA_DISABLE_ACKNOWLEDGED === 'I_UNDERSTAND_THE_SECURITY_RISK'
+
+      if (disableRequested && !disableAcknowledged) {
+        console.error(
+          '[harmoven] MISCONFIGURATION: HARMOVEN_ENFORCE_ADMIN_MFA=false is set but '
+          + 'HARMOVEN_MFA_DISABLE_ACKNOWLEDGED is missing or incorrect. '
+          + 'MFA enforcement remains ACTIVE. '
+          + 'Set HARMOVEN_MFA_DISABLE_ACKNOWLEDGED=I_UNDERSTAND_THE_SECURITY_RISK to confirm.',
+        )
+      }
+
+      // Env var wins when both conditions are met; otherwise fall back to DB setting.
+      const envOverrideDisables = disableRequested && disableAcknowledged
+      const enforceMfa = envOverrideDisables ? false : mfaRequiredByDb
+
+      if (enforceMfa && body.user?.twoFactorEnabled !== true) {
+        console.error(
           `[harmoven] SECURITY: instance_admin "${(body.user as { email?: string }).email ?? 'unknown'}" `
-          + `is accessing the system without 2FA configured. Enable TOTP or Passkey immediately.`,
+          + `is accessing the system without 2FA configured — blocking access until 2FA is enabled.`,
+        )
+        if (!isMfaAllowed(pathname)) {
+          const mfaSetupUrl = new URL('/auth/two-factor', request.url)
+          mfaSetupUrl.searchParams.set('callbackURL', pathname)
+          mfaSetupUrl.searchParams.set('setup', '1')
+          return NextResponse.redirect(mfaSetupUrl)
+        }
+      }
+
+      if (!enforceMfa) {
+        // MFA enforcement disabled — log a persistent warning on every admin access.
+        console.warn(
+          `[harmoven] WARNING: MFA enforcement is DISABLED. `
+          + `instance_admin "${(body.user as { email?: string }).email ?? 'unknown'}" `
+          + `accessed without confirmed 2FA. `
+          + (envOverrideDisables ? '(env var override)' : '(DB setting)'),
         )
       }
 

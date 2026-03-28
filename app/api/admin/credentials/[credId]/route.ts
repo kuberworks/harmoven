@@ -11,8 +11,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
-import { createCipheriv, createHash, randomBytes } from 'crypto'
-import type { CipherGCM }            from 'crypto'
+import { createCipheriv, randomBytes } from 'node:crypto'
+import type { CipherGCM }            from 'node:crypto'
+import { deriveCredentialKey }        from '@/lib/utils/credential-crypto'
 import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
@@ -39,12 +40,14 @@ async function guardAdminCreds(req: NextRequest): Promise<AdminGuardResult> {
 }
 
 // ─── Encryption ───────────────────────────────────────────────────────────────
+// Key derivation: HKDF-SHA256 via lib/utils/credential-crypto.ts (CVE-HARM-001 fix).
+// DO NOT revert to createHash('sha256').update(raw) — see security note in credential-crypto.ts.
 
 function encryptValue(plaintext: string): string {
   const raw = process.env.ENCRYPTION_KEY
   if (!raw) throw new Error('[Credentials] ENCRYPTION_KEY is not set')
-  const key    = createHash('sha256').update(raw).digest()
-  const iv     = randomBytes(12)
+  const key    = deriveCredentialKey(raw)         // HKDF-SHA256 — not bare SHA-256
+  const iv     = randomBytes(12)                  // 96-bit IV (GCM standard)
   const cipher = createCipheriv('aes-256-gcm', key, iv) as CipherGCM
   const enc    = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
   const tag    = cipher.getAuthTag()

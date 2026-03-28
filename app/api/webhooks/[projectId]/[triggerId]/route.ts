@@ -91,14 +91,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  // ── 4. Timestamp freshness ───────────────────────────────────────────────────
+  // ── 4. Timestamp freshness — REQUIRED (CVE-HARM-002: replay attack prevention) ────
+  // The timestamp header is mandatory: without it an attacker who intercepts a valid
+  // HMAC-signed payload can replay it indefinitely.
+  // Senders must include X-Webhook-Timestamp: <unix seconds>; reject if absent.
   const timestampHeader = req.headers.get('x-webhook-timestamp')
-  if (timestampHeader) {
-    const ts  = parseInt(timestampHeader, 10)
-    const now = Math.floor(Date.now() / 1000)
-    if (isNaN(ts) || Math.abs(now - ts) > TIMESTAMP_WINDOW) {
-      return NextResponse.json({ error: 'Timestamp out of range' }, { status: 400 })
-    }
+  if (!timestampHeader) {
+    return NextResponse.json({ error: 'X-Webhook-Timestamp header is required' }, { status: 400 })
+  }
+  const ts  = parseInt(timestampHeader, 10)
+  const now = Math.floor(Date.now() / 1000)
+  if (isNaN(ts) || Math.abs(now - ts) > TIMESTAMP_WINDOW) {
+    return NextResponse.json({ error: 'Timestamp out of range — must be within ±5 minutes of server time' }, { status: 400 })
   }
 
   // ── 5. Idempotency — reject duplicate deliveries ─────────────────────────────
