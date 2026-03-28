@@ -74,10 +74,18 @@ const nextConfig: NextConfig = {
               process.env.NODE_ENV === 'production'
                 ? "script-src 'self'"
                 : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",  // HMR in dev
-              "style-src 'self' 'unsafe-inline'",  // Tailwind inline styles
+              "style-src 'self' 'unsafe-inline'",  // Tailwind inline styles — unsafe-inline
+              // retained because Tailwind v3 emits inline styles; removing it requires a
+              // runtime nonce strategy (future enhancement, post-T3.9).
               "img-src 'self' data: blob:",
               "font-src 'self'",
-              "connect-src 'self' wss: ws:",    // SSE + WebSocket
+              // connect-src: SSE streams use EventSource to same-origin paths (/api/…).
+              // ws:/wss: are only needed in dev for Next.js HMR WebSocket.
+              // Wildcard wss:/ws: is removed from production to prevent exfiltration via
+              // arbitrary WebSocket endpoints (I-03).
+              process.env.NODE_ENV === 'production'
+                ? "connect-src 'self'"
+                : "connect-src 'self' ws: wss:",  // HMR WebSocket in dev
               "frame-src 'none'",               // no iframes
               "frame-ancestors 'none'",         // no embedding Harmoven
               "object-src 'none'",

@@ -76,11 +76,20 @@ export function toCsv(data: AnalyticsResponse): string {
 }
 
 function csvEscape(value: string): string {
-  // Escape only when necessary — values containing comma, quote, or newline
-  if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
-    return `"${value.replace(/"/g, '""')}"`
+  // CVE-HARM-004: CSV formula injection protection.
+  // Spreadsheet apps (Excel, LibreOffice, Google Sheets) interpret cells starting
+  // with =, +, -, @, \t, \r as formulas. Prefix them with a single quote so they
+  // are treated as literal strings. The quote is not displayed in the cell.
+  let v = value
+  if (v.length > 0 && /^[=+\-@\t\r]/.test(v)) {
+    v = `'${v}`
   }
-  return value
+  // Standard RFC 4180 quoting: wrap in double-quotes when the value contains
+  // commas, double-quotes, or newlines.
+  if (v.includes(',') || v.includes('"') || v.includes('\n') || v.includes('\r')) {
+    return `"${v.replace(/"/g, '""')}"`
+  }
+  return v
 }
 
 // ─── PDF (HTML) export ────────────────────────────────────────────────────────

@@ -64,6 +64,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (!newRole.is_builtin && newRole.project_id !== projectId) {
     return NextResponse.json({ error: 'Role does not belong to this project' }, { status: 400 })
   }
+  // SECURITY (CVE-HARM-003): instance_admin is an instance-level role that must only be
+  // granted via the Better Auth admin plugin or direct DB tooling by a super-admin.
+  // Allowing it here would let any project:admin elevate any user to full instance control.
+  if (newRole.name === 'instance_admin') {
+    return NextResponse.json(
+      { error: 'Cannot assign instance_admin role via project API — use the instance admin panel' },
+      { status: 403 },
+    )
+  }
 
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
 

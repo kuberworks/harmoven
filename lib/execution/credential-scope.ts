@@ -22,7 +22,8 @@
 
 // db is lazy-loaded inside issueRunScope() to avoid eager PrismaClient init
 // (which requires DATABASE_URL at module load time — breaks unit tests).
-import { createDecipheriv, createHash, type DecipherGCM } from 'node:crypto'
+import { createDecipheriv, type DecipherGCM } from 'node:crypto'
+import { deriveCredentialKey, deriveLegacyCredentialKey } from '@/lib/utils/credential-crypto'
 
 /** Add `minutes` minutes to the given date — inline to avoid date-fns dependency. */
 function addMinutes(date: Date, minutes: number): Date {
@@ -42,39 +43,54 @@ export interface RunCredentialScope {
 // ─── Encryption helpers ───────────────────────────────────────────────────────
 
 /**
- * Derive a 32-byte AES key from ENCRYPTION_KEY.
- * Uses SHA-256 of the env var so any string length works.
+ * Decrypt a GCM ciphertext with the given key.
+ * Throws if the authentication tag is invalid (wrong key or tampered data).
  */
-function getEncryptionKey(): Buffer {
-  const raw = process.env.ENCRYPTION_KEY
-  if (!raw) throw new Error('[CredentialVault] ENCRYPTION_KEY is not set')
-  return createHash('sha256').update(raw).digest()
+function decryptGcm(ivHex: string, encHex: string, tagHex: string, key: Buffer): string {
+  const iv       = Buffer.from(ivHex, 'hex')   // 12-byte IV (96 bits, GCM standard)
+  const enc      = Buffer.from(encHex, 'hex')
+  const tag      = Buffer.from(tagHex, 'hex')  // 16-byte authentication tag
+  const decipher = createDecipheriv('aes-256-gcm', key, iv) as DecipherGCM
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
 }
 
+/**
+ * Decrypt a credential ciphertext.
+ *
+ * Supported formats:
+ *   plaintext (dev mode)   — no ':' character
+ *   GCM (current)          — 'gcm:<ivHex12B>:<ciphertextHex>:<tagHex16B>'  (4 parts)
+ *   CBC (legacy read-only) — '<ivHex16B>:<ciphertextHex>'                   (2 parts)
+ *
+ * GCM path: tries HKDF-derived key first (post-migration);
+ *   on auth-tag failure falls back to legacy SHA-256 key (pre-migration).
+ *   See lib/utils/credential-crypto.ts for migration guidance.
+ *
+ * SECURITY: GCM is the required format (Amendment 92 — AES-256-GCM).
+ * CBC support is retained read-only for migrating existing DB records.
+ * No new credentials are written in CBC format.
+ */
 function decrypt(ciphertext: string): string {
-  // Supported formats:
-  //   plaintext (dev mode)  — no ':' character
-  //   GCM (current)         — 'gcm:<ivHex12B>:<ciphertextHex>:<tagHex16B>'  (4 parts)
-  //   CBC (legacy read-only) — '<ivHex16B>:<ciphertextHex>'                  (2 parts)
-  //
-  // SECURITY: GCM is the required format (Amendment 92 — AES-256-GCM).
-  // CBC support is retained read-only for migrating existing DB records.
-  // No new credentials are written in CBC format.
   if (!ciphertext.includes(':')) return ciphertext
+
+  const raw = process.env.ENCRYPTION_KEY
+  if (!raw) throw new Error('[CredentialVault] ENCRYPTION_KEY is not set')
 
   try {
     const parts = ciphertext.split(':')
-    const key   = getEncryptionKey()
 
     if (parts[0] === 'gcm' && parts.length === 4) {
-      // Current format: gcm:<ivHex(12B=24chars)>:<ciphertextHex>:<tagHex(16B=32chars)>
       const [, ivHex, encHex, tagHex] = parts
-      const iv       = Buffer.from(ivHex!, 'hex')   // 12-byte IV (96 bits, GCM standard)
-      const enc      = Buffer.from(encHex!, 'hex')
-      const tag      = Buffer.from(tagHex!, 'hex')  // 16-byte authentication tag
-      const decipher = createDecipheriv('aes-256-gcm', key, iv) as DecipherGCM
-      decipher.setAuthTag(tag)
-      return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
+      // Try HKDF-derived key first (credentials encrypted after the CVE-HARM-001 fix).
+      try {
+        return decryptGcm(ivHex!, encHex!, tagHex!, deriveCredentialKey(raw))
+      } catch {
+        // GCM auth-tag mismatch → credential was encrypted with the legacy SHA-256 key.
+        // Transparently fall back so existing credentials keep working.
+        // Re-encrypt via the admin panel to migrate to the HKDF path.
+        return decryptGcm(ivHex!, encHex!, tagHex!, deriveLegacyCredentialKey(raw))
+      }
     }
 
     if (parts.length === 2) {
@@ -83,7 +99,7 @@ function decrypt(ciphertext: string): string {
       const [ivHex, encHex] = parts
       const iv       = Buffer.from(ivHex!, 'hex')
       const enc      = Buffer.from(encHex!, 'hex')
-      const decipher = createDecipheriv('aes-256-cbc', key, iv)
+      const decipher = createDecipheriv('aes-256-cbc', deriveLegacyCredentialKey(raw), iv)
       return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
     }
 

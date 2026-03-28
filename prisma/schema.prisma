@@ -803,3 +803,15 @@ model LlmProviderKey {
   @@index([provider])
   @@map("LlmProviderKey")
 }
+
+// ─── System Settings — instance-wide key/value store ─────────────────────────
+// Writable via PATCH /api/admin/security (instance_admin only).
+// Readable via GET /api/instance/policy (public, non-sensitive values only).
+// Env vars take precedence over DB values for security-critical settings.
+
+model SystemSetting {
+  key        String   @id       // e.g. 'security.mfa_required_for_admin'
+  value      String             // JSON-encoded value (string, bool, number)
+  updated_at DateTime @updatedAt
+  updated_by String?            // user_id of last editor (null = seeded/migrated)
+}

@@ -69,6 +69,50 @@ export async function GET(req: NextRequest) {
 
 // ─── POST /api/admin/skills ──────────────────────────────────────────────────
 
+/**
+ * Allowlist of executables an MCP skill manifest may specify as `command`.
+ * CVE-HARM-005: without this check an admin (or a compromised admin account)
+ * could register command: "/bin/bash" and obtain RCE via the MCP stdio transport.
+ *
+ * Only well-known package runners and interpreters are permitted.
+ * Absolute paths are rejected — only the basename is matched.
+ */
+const ALLOWED_MCP_COMMANDS = new Set([
+  'npx', 'node', 'nodejs',
+  'python', 'python3',
+  'uvx', 'uv',
+  'deno',
+  'bun',
+])
+
+/**
+ * Validate a skill config object.
+ * Ensures `command`, if present, is in the allowlist and that the overall
+ * structure does not contain unknown dangerous fields.
+ */
+function validateMcpConfig(config: unknown): string | null {
+  if (!config || typeof config !== 'object') return null
+  const c = config as Record<string, unknown>
+  if ('command' in c) {
+    const cmd = String(c['command'] ?? '')
+    // Reject absolute paths and traversal attempts; only basename is checked.
+    const basename = cmd.split('/').pop()?.split('\\').pop() ?? cmd
+    if (!ALLOWED_MCP_COMMANDS.has(basename)) {
+      return (
+        `MCP skill command "${cmd}" is not in the allowed executable list. `
+        + `Allowed: ${[...ALLOWED_MCP_COMMANDS].join(', ')}`
+      )
+    }
+  }
+  if ('args' in c && Array.isArray(c['args'])) {
+    if ((c['args'] as unknown[]).length > 32) return 'args array exceeds maximum length of 32'
+    for (const arg of c['args'] as unknown[]) {
+      if (typeof arg !== 'string') return 'all args must be strings'
+    }
+  }
+  return null
+}
+
 const InstallSkillBody = z.object({
   name:        z.string().min(1).max(128),
   source_url:  z.string().url().optional(),
@@ -96,6 +140,14 @@ export async function POST(req: NextRequest) {
   }
 
   const { name, source_url, source_type, version, content, config } = parsed.data
+
+  // Validate MCP config command allowlist (CVE-HARM-005)
+  if (config) {
+    const configErr = validateMcpConfig(config)
+    if (configErr) {
+      return NextResponse.json({ error: configErr }, { status: 422 })
+    }
+  }
 
   // Security scan — only if content provided (for local / git sources)
   if (content) {

@@ -10,9 +10,12 @@
 //   - Subprocess env is constructed via mcpSkillEnv() — never process.env spread.
 //   - Connections are cached by skillId to reuse stdio transport.
 //   - callTool() throws SkillNotApprovedError for unapproved/disabled skills.
+//   - config.command is validated against an allowlist at execution time
+//     (CVE-HARM-005 defense-in-depth — belt+suspenders with admin-time validation).
 
 import { Client }               from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import path                     from 'node:path'
 import { db }                   from '@/lib/db/client'
 import { mcpSkillEnv }          from '@/lib/utils/safe-env'
 
@@ -33,6 +36,19 @@ export class SkillNotApprovedError extends Error {
     this.name = 'SkillNotApprovedError'
   }
 }
+
+// ─── Command allowlist (CVE-HARM-005 defense-in-depth) ───────────────────────
+// Also enforced at install time in app/api/admin/skills/route.ts.
+// This check runs at execution time as a belt+suspenders guard in case a record
+// was created before the admin-time validation was in place.
+
+const ALLOWED_MCP_COMMANDS = new Set([
+  'npx', 'node', 'nodejs',
+  'python', 'python3',
+  'uvx', 'uv',
+  'deno',
+  'bun',
+])
 
 // ─── Connection cache ─────────────────────────────────────────────────────────
 // One Client instance per skillId — reuses the stdio transport across calls.
@@ -55,6 +71,16 @@ async function getClient(skillId: string): Promise<Client> {
   }
 
   const config = skill.config as unknown as McpSkillConfig
+
+  // Defense-in-depth: validate command at execution time.
+  // Primary validation happens at install time; this catches legacy records.
+  const cmdBasename = path.basename(config.command)
+  if (!ALLOWED_MCP_COMMANDS.has(cmdBasename)) {
+    throw new SkillNotApprovedError(
+      skillId,
+      `command "${config.command}" is not in the allowed executable list (${[...ALLOWED_MCP_COMMANDS].join(', ')})`,
+    )
+  }
 
   const transport = new StdioClientTransport({
     command: config.command,
