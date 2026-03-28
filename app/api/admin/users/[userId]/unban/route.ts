@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ userId: string }> }
 
@@ -44,6 +45,16 @@ export async function POST(req: NextRequest, { params }: Params) {
   await db.user.update({
     where: { id: userId },
     data:  { banned: false, banReason: null, banExpires: null },
+  })
+
+  // AuditLog: unban is a security-critical action — must always be recorded (spec MISS-01).
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       caller.userId,
+      action_type: 'admin.user.unbanned',
+      payload:     { target_user_id: userId },
+    },
   })
 
   return NextResponse.json({ ok: true, userId, banned: false })

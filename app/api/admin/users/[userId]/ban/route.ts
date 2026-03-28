@@ -16,6 +16,7 @@ import { z }                         from 'zod'
 import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ userId: string }> }
 
@@ -76,6 +77,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       },
     }),
     db.session.deleteMany({ where: { userId } }),
+    // AuditLog: ban is a security-critical action — must always be recorded (spec MISS-01).
+    db.auditLog.create({
+      data: {
+        id:          uuidv7(),
+        actor:       caller.userId,
+        action_type: 'admin.user.banned',
+        payload:     { target_user_id: userId, reason: reason ?? null, expires_at: expires_at ?? null },
+      },
+    }),
   ])
 
   return NextResponse.json({ ok: true, userId, banned: true })

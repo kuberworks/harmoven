@@ -77,6 +77,11 @@ export function checkRateLimit(
   windowMs: number,
 ): NextResponse | null {
   if (process.env.NODE_ENV === 'test') return null
+  // NOTE (WARN-002): rate limiting is intentionally ACTIVE in development (NODE_ENV=development).
+  // In dev without a reverse proxy, X-Forwarded-For is unset → all requests share the
+  // 'unknown' IP bucket. Rate limits are still enforced but per-bucket, not per-real-IP.
+  // To test: make 11 rapid authenticated POST /api/runs requests — the 11th returns 429.
+  // Unauthenticated requests are blocked by middleware before reaching this check.
 
   const ip = getIP(req)
   const bucketKey = `${key}:${ip}`

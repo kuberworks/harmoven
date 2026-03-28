@@ -14,6 +14,7 @@ import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -113,6 +114,16 @@ export async function POST(req: NextRequest) {
       ...(notify         !== undefined && { notify: notify as Prisma.InputJsonValue }),
       enabled:    enabled ?? true,
       created_by: caller.userId,
+    },
+  })
+
+  // AuditLog: every write must be recorded (spec MISS-01 — REC-A fix).
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       caller.userId,
+      action_type: 'admin.trigger.created',
+      payload:     { name: trigger.name, type: trigger.type, project_id: trigger.project_id, enabled: trigger.enabled },
     },
   })
 

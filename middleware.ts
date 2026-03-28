@@ -84,11 +84,46 @@ async function fetchPolicy(base: string): Promise<boolean> {
   return true  // default: enforce MFA
 }
 
+/**
+ * Better Auth's default session cookie name (lib/auth.ts has no `cookieName` override).
+ * If the cookie name is changed in lib/auth.ts configuration, update this constant.
+ *
+ * BUG-001 FIX: Used to fast-exit unauthenticated requests without calling get-session.
+ */
+const SESSION_COOKIE_NAME = 'better-auth.session_token'
+
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl
 
   if (isPublic(pathname)) {
     return NextResponse.next()
+  }
+
+  // BUG-001 FIX — Fast-exit when no session cookie is present.
+  //
+  // Problem: Better Auth rate-limits ALL auth endpoints (global `rateLimit` config in
+  // lib/auth.ts: max=5 per 15 min per IP). The middleware called /api/auth/get-session
+  // on EVERY protected request — meaning 5 anonymous requests exhausted the quota and
+  // caused get-session to return 429. The middleware then returned 503 to ALL callers
+  // (including authenticated ones on the same IP) for 15 minutes.
+  //
+  // Fix: if the Better Auth session cookie is absent, the caller is definitively
+  // unauthenticated — return 401/redirect immediately without calling get-session.
+  //
+  // SECURITY: this is safe because:
+  //   a) The route handler authenticates independently via resolveCaller() + auth.api.getSession()
+  //      so a forged cookie name (no valid token) will still be rejected by the route.
+  //   b) An attacker who sends the cookie with a forged value will pass this check but
+  //      will still be rejected by auth.api.getSession() in the route handler.
+  //   c) The policy fetch (fetchPolicy) is NOT rate-limited — it queries /api/instance/policy
+  //      which is a public route with its own 60 s in-memory cache, unaffected by this fix.
+  if (!request.cookies.has(SESSION_COOKIE_NAME)) {
+    if (isApiRoute(pathname)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('callbackURL', pathname)
+    return NextResponse.redirect(loginUrl)
   }
 
   // Better Auth sets a session cookie; verify it by calling the internal session endpoint.
