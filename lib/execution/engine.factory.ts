@@ -174,10 +174,13 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
   const db = config.db ?? new PrismaExecutorDb()
 
   const agentRunner: AgentRunnerFn = config.agentRunner ?? (() => {
-    // Production default: createLLMClient() reads orchestrator.yaml; makeAgentRunner() dispatches
-    // to the correct agent class (CLASSIFIER, PLANNER, WRITER, REVIEWER) per node.agent_type.
-    const llm = createLLMClient()
-    return makeAgentRunner(llm)
+    // Production code must go through getExecutionEngine() which awaits
+    // createLLMClient() and passes the result here. Reaching this branch
+    // without an agentRunner is a programming error — fail loudly.
+    throw new Error(
+      '[createExecutionEngine] No agentRunner provided. ' +
+      'Use getExecutionEngine() for production — it awaits createLLMClient() before constructing the engine.',
+    )
   })()
 
   const maxConcurrentNodes = config.maxConcurrentNodes ?? (isTestContext ? 4 : loadMaxConcurrentNodes())
@@ -271,7 +274,13 @@ declare global {
  */
 export async function getExecutionEngine(): Promise<IExecutionEngine> {
   if (!globalThis.__harmoven_execution_engine) {
-    globalThis.__harmoven_execution_engine = createExecutionEngine()
+    // createLLMClient() is async — it reads DB and seeds built-in profiles.
+    // Must be awaited before constructing the engine so the agentRunner has a
+    // fully-loaded ILLMClient backed by live DB profiles.
+    const llm = await createLLMClient()
+    globalThis.__harmoven_execution_engine = createExecutionEngine({
+      agentRunner: makeAgentRunner(llm),
+    })
   }
   return globalThis.__harmoven_execution_engine
 }

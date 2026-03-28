@@ -154,11 +154,27 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     api_key_env:              'GOOGLE_API_KEY',
   },
 
-  // ── CometAPI — OpenAI-compatible, 500+ models via single key ──────────────
+  // ── CometAPI — OpenAI-compatible gateway, 600+ models via single key ────────
+  // Three tiers expose different model families through the same base_url + key.
+  // Activate any combination in orchestrator.yaml → profiles_active.
   {
-    id:                       'cometapi',
+    id:                       'cometapi-fast',
     provider:                 'cometapi',
-    model_string:             'gpt-4o',    // default; overridden per-request if needed
+    model_string:             'gpt-4o-mini',  // fast + cheap — CLASSIFIER, simple tasks
+    tier:                     'fast',
+    context_window:           128_000,
+    cost_per_1m_input_tokens:  0.15,
+    cost_per_1m_output_tokens: 0.60,
+    jurisdiction:             'us',
+    trust_tier:               2,
+    task_type_affinity:       ['intent_classification', 'simple_tasks'],
+    base_url:                 'https://api.cometapi.com/v1',
+    api_key_env:              'COMETAPI_API_KEY',
+  },
+  {
+    id:                       'cometapi',         // kept for backward compatibility
+    provider:                 'cometapi',
+    model_string:             'gpt-4o',           // balanced — PLANNER, WRITER
     tier:                     'balanced',
     context_window:           128_000,
     cost_per_1m_input_tokens:  2.50,
@@ -166,6 +182,20 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     jurisdiction:             'us',
     trust_tier:               2,
     task_type_affinity:       [],
+    base_url:                 'https://api.cometapi.com/v1',
+    api_key_env:              'COMETAPI_API_KEY',
+  },
+  {
+    id:                       'cometapi-powerful',
+    provider:                 'cometapi',
+    model_string:             'claude-sonnet-4-6', // powerful — REVIEWER, complex reasoning
+    tier:                     'powerful',
+    context_window:           200_000,
+    cost_per_1m_input_tokens:  3.00,
+    cost_per_1m_output_tokens: 15.00,
+    jurisdiction:             'us',
+    trust_tier:               2,
+    task_type_affinity:       ['complex_reasoning', 'review', 'planning'],
     base_url:                 'https://api.cometapi.com/v1',
     api_key_env:              'COMETAPI_API_KEY',
   },
@@ -186,6 +216,45 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     api_key_env:              undefined,
   },
 ]
+
+// ─── DB ↔ LlmProfileConfig mapper ─────────────────────────────────────────────
+
+/**
+ * Map a Prisma LlmProfile row to the runtime LlmProfileConfig interface.
+ * `base_url` and `api_key_env` are stored in the JSON `config` column
+ * so they can be updated via the admin API without a schema migration.
+ */
+export function dbRowToLlmProfileConfig(row: {
+  id:                        string
+  provider:                  string
+  model_string:              string
+  tier:                      string
+  context_window:            number
+  cost_per_1m_input_tokens:  unknown  // Prisma Decimal → coerce
+  cost_per_1m_output_tokens: unknown
+  jurisdiction:              string
+  trust_tier:                number
+  task_type_affinity:        string[]
+  config:                    unknown
+}): LlmProfileConfig {
+  const cfg = (typeof row.config === 'object' && row.config !== null
+    ? row.config
+    : {}) as Record<string, unknown>
+  return {
+    id:                       row.id,
+    provider:                 row.provider,
+    model_string:             row.model_string,
+    tier:                     row.tier as LlmProfileConfig['tier'],
+    context_window:           row.context_window,
+    cost_per_1m_input_tokens:  Number(row.cost_per_1m_input_tokens),
+    cost_per_1m_output_tokens: Number(row.cost_per_1m_output_tokens),
+    jurisdiction:             row.jurisdiction as LlmProfileConfig['jurisdiction'],
+    trust_tier:               row.trust_tier as LlmProfileConfig['trust_tier'],
+    task_type_affinity:       row.task_type_affinity ?? [],
+    base_url:    typeof cfg['base_url']    === 'string' ? cfg['base_url']    : undefined,
+    api_key_env: typeof cfg['api_key_env'] === 'string' ? cfg['api_key_env'] : undefined,
+  }
+}
 
 // ─── Loader ────────────────────────────────────────────────────────────────────
 

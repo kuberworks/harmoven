@@ -14,11 +14,17 @@ execution_engine:
 llm:
   default_provider: cometapi
   profiles_active:
-    - cometapi                     # balanced — OpenAI-compatible via CometAPI (gpt-4o)
-    # - claude-3-5-haiku-20241022  # fast, low cost — uncomment to use Anthropic directly
-    # - claude-3-7-sonnet-20250219 # balanced — complex tasks (Anthropic direct)
-    # - gemini-3-1-pro
-    # - gpt-5-4
+    - cometapi-fast                # fast  — gpt-4o-mini  (CLASSIFIER, simple tasks)
+    - cometapi                     # balanced — gpt-4o    (PLANNER, WRITER)
+    - cometapi-powerful            # powerful — claude-sonnet-4-6 (REVIEWER, complex)
+    # To use Claude natively via CometAPI, override model_string via admin API:
+    #   PATCH /api/admin/models/cometapi-fast     { "model_string": "claude-3-5-haiku-20241022" }
+    #   PATCH /api/admin/models/cometapi          { "model_string": "claude-sonnet-4-6" }
+    #   PATCH /api/admin/models/cometapi-powerful { "model_string": "claude-opus-4-6" }
+    # Or activate Anthropic profiles directly (requires ANTHROPIC_API_KEY):
+    # - claude-3-5-haiku-20241022  # fast
+    # - claude-3-7-sonnet-20250219 # balanced
+    # - claude-opus-4-6            # powerful
 
 confidentiality:
   default_level: MEDIUM            # LOW | MEDIUM | HIGH | CRITICAL

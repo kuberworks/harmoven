@@ -25,7 +25,7 @@ import {
 } from '@google/generative-ai'
 
 import type { ILLMClient, ChatMessage, ChatOptions, ChatResult } from '@/lib/llm/interface'
-import { BUILT_IN_PROFILES, loadActiveProfiles } from './profiles'
+import { BUILT_IN_PROFILES, loadActiveProfiles, dbRowToLlmProfileConfig } from './profiles'
 import { selectByTier, selectLlm } from './selector'
 import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
@@ -450,24 +450,68 @@ export class DirectLLMClient implements ILLMClient {
 // ─── createLLMClient factory ──────────────────────────────────────────────────
 
 /**
- * Factory: reads orchestrator.yaml and returns the appropriate ILLMClient.
- *   litellm.enabled: true  → LiteLLMClient (opt-in sidecar)
- *   else                   → DirectLLMClient with active profiles from config
- *
- * @param yamlPath Optional override path to orchestrator.yaml (default: <cwd>/orchestrator.yaml)
+ * Seed BUILT_IN_PROFILES entries for `activeIds` into the DB if they don't
+ * already exist. Safe to call multiple times (upsert-on-conflict-do-nothing).
+ * Only runs in non-test environments.
  */
-export function createLLMClient(yamlPath?: string): ILLMClient {
+async function seedMissingProfilesToDb(
+  activeIds: string[],
+  db: { llmProfile: { upsert: Function } },
+): Promise<void> {
+  for (const id of activeIds) {
+    const built = BUILT_IN_PROFILES.find(p => p.id === id)
+    if (!built) continue
+    try {
+      await (db.llmProfile.upsert as Function)({
+        where: { id },
+        // Only create if missing — never overwrite admin-customised rows.
+        update: {},
+        create: {
+          id,
+          provider:                 built.provider,
+          model_string:             built.model_string,
+          tier:                     built.tier,
+          context_window:           built.context_window,
+          cost_per_1m_input_tokens:  built.cost_per_1m_input_tokens,
+          cost_per_1m_output_tokens: built.cost_per_1m_output_tokens,
+          jurisdiction:             built.jurisdiction,
+          trust_tier:               built.trust_tier,
+          task_type_affinity:       built.task_type_affinity,
+          enabled:                  true,
+          // Store provider-specific config (base_url, api_key_env) in JSON column
+          // so the admin API can override them without a schema migration.
+          config: {
+            ...(built.base_url    ? { base_url:    built.base_url    } : {}),
+            ...(built.api_key_env ? { api_key_env: built.api_key_env } : {}),
+          },
+        },
+      })
+    } catch (err) {
+      console.warn(`[LLM] Failed to seed profile "${id}" to DB (non-fatal):`, err)
+    }
+  }
+}
+
+/**
+ * Async factory: reads orchestrator.yaml for LiteLLM opt-in and the list of
+ * profiles to seed, then loads enabled LlmProfile rows from the database.
+ *
+ * Source-of-truth hierarchy:
+ *   1. DB (LlmProfile table) — editable at runtime via POST/PATCH /api/admin/models.
+ *   2. BUILT_IN_PROFILES catalog — seeded into DB on first use (upsert-never-overwrite).
+ *   3. orchestrator.yaml profiles_active — controls which built-ins are seeded.
+ *
+ * @param yamlPath Optional override path to orchestrator.yaml.
+ */
+export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   if (process.env.NODE_ENV === 'test') {
-    // In tests, the MockLLMClient is injected directly — never auto-create a DirectLLMClient.
-    // This is a safeguard only; tests should never call createLLMClient().
+    // Tests inject MockLLMClient directly — never call createLLMClient().
     throw new Error('[createLLMClient] Do not call createLLMClient() in tests — inject MockLLMClient directly.')
   }
 
   const config = readOrchestratorConfig(yamlPath)
 
   if (config.litellm?.enabled) {
-    // LiteLLM sidecar opt-in — dynamic import so the module is only required when enabled.
-    // If the litellm-client module doesn't exist yet, fail loudly rather than silently.
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { LiteLLMClient } = require('@/lib/llm/litellm-client') as { LiteLLMClient: new (address: string) => ILLMClient }
@@ -482,12 +526,30 @@ export function createLLMClient(yamlPath?: string): ILLMClient {
     }
   }
 
-  const activeIds = config.llm?.profiles_active ?? []
-  const profiles  = loadActiveProfiles(activeIds)
+  // Lazy-import db to avoid circular deps at module load time.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { db } = require('@/lib/db/client') as { db: { llmProfile: { findMany: Function; upsert: Function } } }
 
-  if (profiles.length === 0) {
-    console.warn('[LLM] No active profiles found in orchestrator.yaml — using built-in defaults.')
+  // Seed BUILT_IN_PROFILES for the active ids listed in orchestrator.yaml.
+  // Upsert is idempotent — admin-customised rows are never overwritten.
+  const activeIds = config.llm?.profiles_active ?? []
+  if (activeIds.length > 0) {
+    await seedMissingProfilesToDb(activeIds, db)
+  } else {
+    // No explicit list — seed the default fallback profile.
+    await seedMissingProfilesToDb(['claude-3-5-haiku-20241022'], db)
   }
 
-  return new DirectLLMClient(profiles.length > 0 ? profiles : undefined)
+  // Load all enabled profiles from DB — this is the live source of truth.
+  const rows = await (db.llmProfile.findMany as Function)({ where: { enabled: true } })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const profiles: LlmProfileConfig[] = (rows as any[]).map(dbRowToLlmProfileConfig)
+
+  if (profiles.length === 0) {
+    // Absolute fallback — should never happen after seeding, but guard anyway.
+    console.warn('[LLM] No enabled profiles in DB — using built-in defaults.')
+    return new DirectLLMClient(loadActiveProfiles(activeIds.length > 0 ? activeIds : ['claude-3-5-haiku-20241022']))
+  }
+
+  return new DirectLLMClient(profiles)
 }
