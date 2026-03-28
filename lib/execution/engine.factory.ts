@@ -21,6 +21,34 @@ import { CustomExecutor } from '@/lib/execution/custom/executor'
 import { makeAgentRunner } from '@/lib/agents/runner'
 import { createLLMClient } from '@/lib/llm/client'
 import { resumeSuspendedRunsFromCrash } from '@/lib/execution/custom/crash-recovery'
+import { db as _prismaDb } from '@/lib/db/client'
+
+// ─── ExecutorDb adapter — wraps PrismaClient and adds findOrphaned ────────────
+/**
+ * Lazy ExecutorDb implementation for production.
+ * Uses the module-level `_prismaDb` import (same pattern as API routes) to ensure
+ * the Proxy is properly resolved. Adds findOrphaned via a raw findMany call.
+ */
+class PrismaExecutorDb implements ExecutorDb {
+  get run()       { return _prismaDb.run       as unknown as ExecutorDb['run'] }
+  get handoff()   { return _prismaDb.handoff   as unknown as ExecutorDb['handoff'] }
+  get humanGate() { return _prismaDb.humanGate as unknown as ExecutorDb['humanGate'] }
+  get auditLog()  { return _prismaDb.auditLog  as unknown as ExecutorDb['auditLog'] }
+
+  get node(): ExecutorDb['node'] {
+    return {
+      findMany:     (args) => (_prismaDb.node.findMany   as Function)(args),
+      create:       (args) => (_prismaDb.node.create     as Function)(args),
+      update:       (args) => (_prismaDb.node.update     as Function)(args),
+      updateMany:   (args) => (_prismaDb.node.updateMany as Function)(args),
+      /** Return all RUNNING nodes with last_heartbeat before the given threshold. */
+      findOrphaned: ({ before }: { before: Date }) =>
+        (_prismaDb.node.findMany as Function)({
+          where: { status: 'RUNNING', last_heartbeat: { lt: before } },
+        }),
+    }
+  }
+}
 
 // ─── Orchestrator config loader ───────────────────────────────────────────────
 
@@ -143,11 +171,7 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
   // In test contexts the caller always injects db — skip production defaults.
   const isTestContext = config.db != null
 
-  const db = config.db ?? (() => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { db: prismaDb } = require('@/lib/db/client') as { db: ExecutorDb }
-    return prismaDb
-  })()
+  const db = config.db ?? new PrismaExecutorDb()
 
   const agentRunner: AgentRunnerFn = config.agentRunner ?? (() => {
     // Production default: createLLMClient() reads orchestrator.yaml; makeAgentRunner() dispatches

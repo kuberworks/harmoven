@@ -29,6 +29,7 @@ import { HeartbeatManager, ORPHAN_THRESHOLD_MS } from '@/lib/execution/custom/he
 import type { IProjectEventBus, RunSSEEvent, ProjectLifecycleEvent } from '@/lib/events/project-event-bus.interface'
 import { credentialVault } from '@/lib/execution/credential-scope'
 import { PlannerExhaustionError } from '@/lib/agents/planner'
+import type { PlannerHandoff }     from '@/lib/agents/planner'
 import { gateTimeoutAt }          from '@/lib/execution/gate-timeout'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -558,6 +559,9 @@ export class CustomExecutor implements IExecutionEngine {
         return  // exit without finalizing — resume will re-enter
       }
 
+      // Reload DAG from DB every iteration — it may have been expanded by the PLANNER.
+      dag = run.dag as Dag
+
       // Find READY nodes: PENDING with all dependencies COMPLETED or SKIPPED
       const readyNodes = this.getReadyNodes(nodes, dag)
 
@@ -724,6 +728,107 @@ export class CustomExecutor implements IExecutionEngine {
         where: { id: runId },
         data: { last_completed_node_at: new Date() },
       })
+
+      // ── PLANNER DAG expansion ────────────────────────────────────────────────
+      // When the PLANNER completes, its handoffOut contains a full plan (dag.nodes +
+      // dag.edges for WRITER/REVIEWER/QA nodes). We merge those into the run DAG
+      // and create the corresponding Node DB records so the execution loop can
+      // pick up the new PENDING nodes immediately.
+      if (node.agent_type === 'PLANNER' && output.handoffOut != null) {
+        try {
+          const plan = output.handoffOut as PlannerHandoff
+          if (Array.isArray(plan.dag?.nodes) && plan.dag.nodes.length > 0) {
+            const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+            const currentDag = currentRun.dag as { nodes: { id: string; agent_type: string }[]; edges: { from: string; to: string }[] }
+
+            // Build set of already-known node IDs to avoid duplicates.
+            const existingIds = new Set(currentDag.nodes.map(n => n.id))
+
+            // Compute next numeric suffix to avoid ID collisions with existing nodes.
+            // Existing IDs like "n1", "n2" give max index 2; new nodes start at n3, n4…
+            const maxExistingIndex = Math.max(
+              0,
+              ...currentDag.nodes
+                .map(n => parseInt(n.id.replace(/^n/, ''), 10))
+                .filter(i => !isNaN(i)),
+            )
+
+            // Build a remapping of PLANNER's node IDs → new unique IDs.
+            // The LLM may reuse n1/n2/etc. that already exist — always remap all of them.
+            const idRemap = new Map<string, string>()
+            let nextIndex = maxExistingIndex + 1
+            for (const pn of plan.dag.nodes) {
+              idRemap.set(pn.node_id, `n${nextIndex++}`)
+            }
+
+            const newDagNodes = plan.dag.nodes.map(pn => ({
+              id: idRemap.get(pn.node_id)!,
+              agent_type: pn.agent,
+            }))
+
+            // Remap edge IDs; also add edge from PLANNER node to first root plan node.
+            const plannerEdge = { from: node.node_id, to: idRemap.get(plan.dag.nodes.find(pn => pn.dependencies.length === 0)?.node_id ?? '')! }
+            const remappedEdges = plan.dag.edges.map(e => ({
+              from: idRemap.get(e.from) ?? e.from,
+              to:   idRemap.get(e.to)   ?? e.to,
+            }))
+            const newDagEdges = plannerEdge.to
+              ? [plannerEdge, ...remappedEdges]
+              : remappedEdges
+
+            const expandedDag = {
+              nodes: [...currentDag.nodes, ...newDagNodes],
+              edges: [...currentDag.edges, ...newDagEdges],
+            }
+
+            // Persist expanded DAG.
+            await this.db.run.update({ where: { id: runId }, data: { dag: expandedDag } })
+
+            // Create Node DB records for each new plan node using their remapped IDs.
+            for (const pn of plan.dag.nodes) {
+              const remappedId = idRemap.get(pn.node_id)!
+              // Remap deps to match new node IDs.
+              const remappedDeps = pn.dependencies.map(dep => idRemap.get(dep) ?? dep)
+              await this.db.node.create({
+                data: {
+                  run_id:         runId,
+                  node_id:        remappedId,
+                  agent_type:     pn.agent,
+                  status:         'PENDING',
+                  started_at:     null,
+                  completed_at:   null,
+                  interrupted_at: null,
+                  interrupted_by: null,
+                  last_heartbeat: null,
+                  retries:        0,
+                  handoff_in:     null,
+                  handoff_out:    null,
+                  partial_output: null,
+                  partial_updated_at: null,
+                  cost_usd:       0,
+                  tokens_in:      0,
+                  tokens_out:     0,
+                  error:          null,
+                  metadata: {
+                    description:          pn.description,
+                    complexity:           pn.complexity,
+                    expected_output_type: pn.expected_output_type,
+                    domain_profile:       plan.domain_profile,
+                    dependencies:         remappedDeps,
+                  },
+                },
+              })
+            }
+
+            // Emit event so SSE subscribers see the expanded DAG.
+            this._emit(runId, { type: 'state_change', entity_type: 'run', id: runId, status: 'RUNNING' })
+          }
+        } catch (expandErr) {
+          console.error(`[executor] Failed to expand DAG from PLANNER output for run ${runId}:`, expandErr)
+          // Non-fatal — execution loop continues; if no new ready nodes, run will complete.
+        }
+      }
+
 
       // Accumulate cost to run (§34.3 updateCosts)
       if (output.costUsd > 0 || output.tokensIn > 0 || output.tokensOut > 0) {

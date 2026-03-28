@@ -169,8 +169,23 @@ export async function POST(req: NextRequest) {
   // H-04: created_by stores actorId so any run is traceable to a user or key.
   const createdBy = caller.type === 'session' ? caller.userId : actorId
 
-  // Create PENDING run; DAG is empty until the Planner agent runs.
-  // Spec T1.2: all new Run IDs must use UUIDv7 for time-sortable ordering.
+  // Bootstrap the DAG with CLASSIFIER (n1) → PLANNER (n2).
+  // The CLASSIFIER classifies intent; the PLANNER decomposes into WRITER/REVIEWER nodes.
+  // After PLANNER completes, the executor expands the DAG with the plan's nodes.
+  const classifierNodeId = 'n1'
+  const plannerNodeId    = 'n2'
+  const taskInputStr = typeof body.task_input === 'string'
+    ? body.task_input
+    : JSON.stringify(body.task_input)
+  const initialDag = {
+    nodes: [
+      { id: classifierNodeId, agent_type: 'CLASSIFIER' },
+      { id: plannerNodeId,    agent_type: 'PLANNER'    },
+    ],
+    edges: [{ from: classifierNodeId, to: plannerNodeId }],
+  }
+
+  // Create PENDING run. Spec T1.2: all new Run IDs must use UUIDv7.
   const run = await db.run.create({
     data: {
       id:               uuidv7(),
@@ -180,7 +195,7 @@ export async function POST(req: NextRequest) {
       domain_profile:   body.domain_profile,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       task_input:       body.task_input as any,
-      dag:              { nodes: [], edges: [] },
+      dag:              initialDag,
       run_config:       { providers: [] },
       transparency_mode: body.transparency_mode ?? false,
       confidentiality:  body.confidentiality ?? null,
@@ -192,6 +207,33 @@ export async function POST(req: NextRequest) {
         ? body.task_input.length
         : JSON.stringify(body.task_input).length,
     },
+  })
+
+  // Create the initial CLASSIFIER and PLANNER Node DB records.
+  // Both are PENDING; the PLANNER becomes ready only after CLASSIFIER completes.
+  const nodeBase = {
+    started_at: null, completed_at: null, interrupted_at: null, interrupted_by: null,
+    last_heartbeat: null, retries: 0, partial_output: null, partial_updated_at: null,
+    cost_usd: 0, tokens_in: 0, tokens_out: 0, error: null,
+  }
+  await db.node.createMany({
+    data: [
+      {
+        ...nodeBase,
+        id: uuidv7(), run_id: run.id, node_id: classifierNodeId,
+        agent_type: 'CLASSIFIER', status: 'PENDING',
+        // Stash task_input so the runner reads it as the initial handoff
+        // (CLASSIFIER has no predecessor → handoffIn is null).
+        metadata: { task_input: taskInputStr },
+      },
+      {
+        ...nodeBase,
+        id: uuidv7(), run_id: run.id, node_id: plannerNodeId,
+        agent_type: 'PLANNER', status: 'PENDING',
+        // Stash task_input and domain_profile as fallbacks.
+        metadata: { task_input: taskInputStr, domain_profile: body.domain_profile },
+      },
+    ],
   })
 
   // AuditLog: every write operation must be recorded (spec MISS-01).
