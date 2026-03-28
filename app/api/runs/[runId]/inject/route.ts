@@ -5,19 +5,21 @@
 //
 // Auth: runs:inject permission required.
 // Body: { content: string } — max 2000 chars.
+// C-02: Zod .strict() replaces manual cast (no unknown fields accepted).
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z }                         from 'zod'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { db } from '@/lib/db/client'
 import { getExecutionEngine } from '@/lib/execution/engine.factory'
 
-interface InjectBody {
-  content: string
-}
-
 const MAX_CONTENT_LENGTH = 2000
+
+const InjectBody = z.object({
+  content: z.string().min(1).max(MAX_CONTENT_LENGTH),
+}).strict()
 
 export async function POST(
   req: NextRequest,
@@ -50,23 +52,18 @@ export async function POST(
   }
 
   // ─── Validate body ────────────────────────────────────────────────────────
-  let body: InjectBody
+  let rawBody: unknown
   try {
-    body = await req.json() as InjectBody
+    rawBody = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { content } = body
-  if (typeof content !== 'string' || content.trim().length === 0) {
-    return NextResponse.json({ error: 'content must be a non-empty string' }, { status: 400 })
+  const parsed = InjectBody.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
-  if (content.length > MAX_CONTENT_LENGTH) {
-    return NextResponse.json(
-      { error: `content exceeds maximum length of ${MAX_CONTENT_LENGTH} characters` },
-      { status: 422 },
-    )
-  }
+  const { content } = parsed.data
 
   // ─── Inject ───────────────────────────────────────────────────────────────
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`

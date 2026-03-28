@@ -153,5 +153,14 @@ export async function POST(req: NextRequest) {
     select: CRED_SELECT,
   })
 
+  // H-01 — AuditLog: credential creation must be recorded (write-only — value never logged).
+  await db.auditLog.create({
+    data: {
+      actor:       caller.userId,
+      action_type: 'admin.credential.created',
+      payload:     { credential_id: credential.id, project_id, name, type },
+    },
+  })
+
   return NextResponse.json({ credential }, { status: 201 })
 }

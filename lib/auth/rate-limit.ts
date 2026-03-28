@@ -5,8 +5,19 @@
 // Uses an LRU-style Map with per-key expiry. Falls back to always-allow in
 // test environments. For horizontal scale, replace with @upstash/ratelimit.
 //
-// SECURITY: IP is read from X-Forwarded-For (trusted CDN/reverse-proxy setup)
-// with a fallback. Do NOT expose this directly without a trusted proxy.
+// C-03 — SECURITY: X-Forwarded-For trust model
+// The leftmost IP in XFF is set by the client and is trivially forgeable.
+// To obtain the actual client IP, we trust TRUSTED_PROXY_COUNT reverse proxies
+// (default: 1, assuming nginx/Caddy/Traefik in Docker) and take the entry
+// added by the outermost trusted proxy — i.e. xffParts[xffParts.length - N].
+//
+// Operators MUST set TRUSTED_PROXY_COUNT correctly in .env:
+//   0  — No proxy in front; XFF is always forged; fall back to 'unknown' (weaker)
+//   1  — One trusted proxy (nginx, Caddy, Traefik, Cloudflare edge) — default
+//   N  — N chained trusted proxies
+//
+// If TRUSTED_PROXY_COUNT=0 with no reverse proxy, all requests share the
+// 'unknown' bucket — rate limiting is still enforced but per-instance only.
 
 import type { NextRequest, NextResponse } from 'next/server'
 import { NextResponse as Response } from 'next/server'
@@ -18,12 +29,36 @@ interface RateLimitEntry {
 
 const _buckets = new Map<string, RateLimitEntry>()
 
-/** Extract IP from the request (X-Forwarded-For or fallback). */
+/**
+ * Extract the client IP from the request respecting trusted proxy count.
+ *
+ * With TRUSTED_PROXY_COUNT=1 (default):
+ *   XFF: "forged, real-client-ip" → the proxy appends "real-client-ip" → we take it.
+ *   XFF: "real-client-ip"         → single hop → we take it.
+ *
+ * Attackers can inject leading IPs but cannot inject entries AFTER trusted proxies add theirs.
+ */
 function getIP(req: NextRequest): string {
   const forwarded = req.headers.get('x-forwarded-for')
-  const first = forwarded?.split(',')[0]?.trim()
-  // ip() is not available in all Next.js versions — fallback to empty string
-  return first ?? 'unknown'
+  if (!forwarded) return 'unknown'
+
+  const parts = forwarded.split(',').map(s => s.trim()).filter(Boolean)
+  if (parts.length === 0) return 'unknown'
+
+  const trustedProxies = Math.max(0,
+    parseInt(process.env.TRUSTED_PROXY_COUNT ?? '1', 10) || 1,
+  )
+
+  if (trustedProxies === 0) {
+    // No trusted proxy — XFF is fully untrusted. All traffic shares 'unknown'.
+    // Rate limiting still applies per-instance, not per-IP.
+    return 'unknown'
+  }
+
+  // Take the entry at index (length - trustedProxies), floor at 0.
+  // This is the IP that the outermost trusted proxy recorded as the client.
+  const idx = Math.max(0, parts.length - trustedProxies)
+  return parts[idx] ?? 'unknown'
 }
 
 /**
