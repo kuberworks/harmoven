@@ -86,7 +86,10 @@ export class PgNotifyEventBus implements IProjectEventBus {
 
     // Re-subscribe to all active channels after reconnect
     for (const project_id of this.subscriberCount.keys()) {
-      await client.query('LISTEN $1', [channel(project_id)]).catch(() => {})
+      // LISTEN does not support parameterized queries in PostgreSQL.
+      // channel() is always `harmoven:project:{uuid}` and project_id
+      // was validated as UUID v4 by assertUuidProjectId() at subscribe time.
+      await client.query(`LISTEN "${channel(project_id)}"`).catch(() => {})
     }
 
     client.on('notification', async msg => {
@@ -189,8 +192,10 @@ export class PgNotifyEventBus implements IProjectEventBus {
     this.subscriberCount.set(project_id, count)
 
     if (count === 1 && this.listener) {
-      // First subscriber for this project — start listening
-      this.listener.query('LISTEN $1', [channel(project_id)])
+      // First subscriber for this project — start listening.
+      // LISTEN does not support parameterized queries; use safe string interpolation.
+      // project_id is UUID v4 (validated above) so harmoven:project:{uuid} is injection-safe.
+      this.listener.query(`LISTEN "${channel(project_id)}"`)
         .catch(err => console.error('[PgNotifyEventBus] LISTEN error:', err))
     }
 
@@ -201,7 +206,7 @@ export class PgNotifyEventBus implements IProjectEventBus {
       const remaining = (this.subscriberCount.get(project_id) ?? 1) - 1
       this.subscriberCount.set(project_id, remaining)
       if (remaining === 0 && this.listener) {
-        this.listener.query('UNLISTEN $1', [channel(project_id)])
+        this.listener.query(`UNLISTEN "${channel(project_id)}"`)
           .catch(err => console.error('[PgNotifyEventBus] UNLISTEN error:', err))
         this.subscriberCount.delete(project_id)
       }

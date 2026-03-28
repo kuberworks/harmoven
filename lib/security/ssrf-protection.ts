@@ -98,14 +98,18 @@ export async function assertNotPrivateHost(rawUrl: string): Promise<void> {
     )
   }
 
-  // Resolve hostname and check all returned addresses
-  let addresses: dns.LookupAddress[] = []
+  // Resolve hostname and check all returned addresses.
+  // SECURITY: fail-closed — if DNS resolution fails for any reason (DNS rebinding
+  // preparation, misconfigured resolver, network partition), we block the request
+  // rather than allow it through. An attacker controlling DNS could suppress
+  // resolution during validation and then redirect to a private IP at call time.
+  let addresses: dns.LookupAddress[]
   try {
     addresses = await dns.lookup(parsed.hostname, { all: true })
   } catch {
-    // DNS resolution failure — treat as safe (URL may be used in restricted env)
-    // In production, unresolvable hosts will just time out at connection time.
-    return
+    throw new ValidationError(
+      `SSRF blocked: cannot resolve host "${parsed.hostname}" — request rejected`
+    )
   }
 
   for (const { address } of addresses) {
