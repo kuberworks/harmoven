@@ -31,7 +31,10 @@ export async function GET(
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   const caller = await resolveCaller(req)
-  if (!caller) return new Response('Unauthorized', { status: 401 })
+  if (!caller) return new Response(
+    JSON.stringify({ error: 'Unauthorized' }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } },
+  )
 
   // ─── Run access + permission check ─────────────────────────────────────────
   // Step 1: look up the run to get projectId (avoids IDOR)
@@ -39,7 +42,10 @@ export async function GET(
     where: { id: runId },
     select: { project_id: true },
   })
-  if (!runLookup) return new Response('Not Found', { status: 404 })
+  if (!runLookup) return new Response(
+    JSON.stringify({ error: 'Not Found' }),
+    { status: 404, headers: { 'Content-Type': 'application/json' } },
+  )
 
   const { project_id: projectId } = runLookup
 
@@ -50,14 +56,26 @@ export async function GET(
     // Step 3: assert run belongs to that project
     run = await assertRunAccess(runId, projectId)
   } catch (e) {
-    if (e instanceof UnauthorizedError) return new Response('Unauthorized', { status: 401 })
-    if (e instanceof ForbiddenError)    return new Response('Forbidden',     { status: 403 })
-    return new Response('Not Found', { status: 404 })
+    if (e instanceof UnauthorizedError) return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    )
+    if (e instanceof ForbiddenError) return new Response(
+      JSON.stringify({ error: 'Forbidden' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } },
+    )
+    return new Response(
+      JSON.stringify({ error: 'Not Found' }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } },
+    )
   }
 
   const perms = await resolvePermissions(caller, run.project_id)
   if (!perms.has('stream:state')) {
-    return new Response('Forbidden', { status: 403 })
+    return new Response(
+      JSON.stringify({ error: 'Forbidden' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } },
+    )
   }
 
   // ─── SSE stream ────────────────────────────────────────────────────────────

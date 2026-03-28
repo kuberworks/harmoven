@@ -66,11 +66,18 @@ services:
   #   - Receives ONLY LLM API provider keys, NOT DATABASE_URL, AUTH_SECRET, or LITELLM_MASTER_KEY
   #   - App receives ONLY LITELLM_GATEWAY_URL — never the raw provider API keys
   #
-  # LITELLM_DIGEST must be set in .env — use the immutable digest for the pinned version.
-  # Example: LITELLM_DIGEST=sha256:abc123...
-  # Find digest via: docker pull ghcr.io/berriai/litellm:main-v1.82.6 && docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/berriai/litellm:main-v1.82.6
+  # F-03: LITELLM_DIGEST is OPTIONAL when the `litellm` profile is not active.
+  # Docker Compose resolves variables even for services in inactive profiles,
+  # so using :? (mandatory) would break `docker compose up` for devs not using LiteLLM.
+  # Use :- (optional with empty default) — the image line is syntactically valid even
+  # when blank; Docker will error at pull time only if the profile is actually activated
+  # without the variable set.
+  #
+  # To activate: LITELLM_DIGEST=sha256:<digest> docker compose --profile litellm up
+  # Find digest: docker pull ghcr.io/berriai/litellm:main-v1.82.6 && \
+  #   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/berriai/litellm:main-v1.82.6
   litellm:
-    image: ghcr.io/berriai/litellm@${LITELLM_DIGEST:?LITELLM_DIGEST must be set in .env — use immutable digest, not a tag}
+    image: ghcr.io/berriai/litellm@${LITELLM_DIGEST:-sha256:0000000000000000000000000000000000000000000000000000000000000000}
     # No 'ports:' here — accessible only via internal Docker DNS: http://litellm:4000
     # Expose to host ONLY for local development by adding: ports: ["127.0.0.1:4000:4000"]
     # litellm_net is NOT internal — LiteLLM needs internet to reach provider APIs.

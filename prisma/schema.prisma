@@ -278,6 +278,10 @@ model Project {
 // ─── Runs ─────────────────────────────────────────────────────────────────────
 
 model Run {
+  // H-03 / Spec T1.2: Run IDs MUST be UUID v7 (time-sortable) for v2 federation.
+  // @default(uuid()) generates v4 — it is kept as a Prisma fallback only.
+  // ALL application-level Run creation MUST call uuidv7() and pass the id explicitly.
+  // Never rely on Prisma's default here: use `db.run.create({ data: { id: uuidv7(), … } })`.
   id                   String    @id @default(uuid())
   project_id           String
   project              Project   @relation(fields: [project_id], references: [id])

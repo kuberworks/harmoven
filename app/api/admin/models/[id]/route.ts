@@ -7,6 +7,8 @@
 // Required: instance_admin role.
 // DELETE guard: 409 Conflict if the model is referenced by active runs.
 // Security: model ID sanitised to prevent path traversal; Zod strict body validation.
+//           PATCH: assertNotPrivateHost() on config.base_url (SSRF — C-01).
+//           AuditLog written for every PATCH and DELETE (H-01).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
@@ -15,6 +17,8 @@ import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
+import { assertNotPrivateHost }      from '@/lib/security/ssrf-protection'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -52,7 +56,7 @@ const PatchModelBody = z.object({
 }).strict()
 
 export async function PATCH(req: NextRequest, { params }: Params) {
-  const { err } = await guardAdminModels(req)
+  const { caller, err } = await guardAdminModels(req)
   if (err) return err
 
   const { id } = await params
@@ -78,6 +82,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 422 })
   }
 
+  // C-01 — SSRF protection: validate base_url if provided in config patch.
+  const patchConfig = parsed.data.config
+  if (patchConfig && typeof patchConfig['base_url'] === 'string') {
+    try {
+      await assertNotPrivateHost(patchConfig['base_url'] as string)
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 422 })
+    }
+  }
+
   const { config, ...rest } = parsed.data
   const model = await db.llmProfile.update({
     where: { id },
@@ -87,13 +101,24 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     },
   })
 
+  // H-01 — AuditLog: every write must be recorded.
+  const actorId = caller?.userId ?? 'system'
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       actorId,
+      action_type: 'admin.llm_profile.updated',
+      payload:     { model_id: id, fields: Object.keys(parsed.data) } as Prisma.InputJsonValue,
+    },
+  })
+
   return NextResponse.json({ model })
 }
 
 // ─── DELETE /api/admin/models/:id ────────────────────────────────────────────
 
 export async function DELETE(req: NextRequest, { params }: Params) {
-  const { err } = await guardAdminModels(req)
+  const { caller, err } = await guardAdminModels(req)
   if (err) return err
 
   const { id } = await params
@@ -118,6 +143,17 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   }
 
   await db.llmProfile.delete({ where: { id } })
+
+  // H-01 — AuditLog: every write must be recorded.
+  const deleteActorId = caller?.userId ?? 'system'
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       deleteActorId,
+      action_type: 'admin.llm_profile.deleted',
+      payload:     { model_id: id, provider: existing.provider, model_string: existing.model_string },
+    },
+  })
 
   return new NextResponse(null, { status: 204 })
 }

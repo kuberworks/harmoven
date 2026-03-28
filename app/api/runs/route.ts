@@ -9,8 +9,11 @@
 //   - Session callers: must supply project_id in the body (POST) or query (GET).
 //   - Requires runs:create (POST) or runs:read (GET) permission on the target project.
 //   - POST rate-limited to 10 requests/min per IP (MISS-12, T1.3).
+//   - C-02: Zod .strict() validation on POST body (no mass-assignment / unknown fields).
+//   - H-04: API key actorId stored as "apikey:<keyId>" — not null — for full audit trail.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z }                         from 'zod'
 import { db }                        from '@/lib/db/client'
 import type { Prisma }               from '@prisma/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
@@ -23,6 +26,20 @@ import {
 import { createRunRateLimit }        from '@/lib/auth/rate-limit'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
+
+// ─── C-02: Zod schema for POST body ──────────────────────────────────────────
+// Spec: "All POST routes: Zod .strict() validation before business logic"
+// project_id is optional here because API key callers derive it from the key.
+
+const CreateRunBody = z.object({
+  project_id:        z.string().uuid().optional(),
+  task_input:        z.union([z.string().min(1), z.record(z.unknown()), z.array(z.unknown())]),
+  domain_profile:    z.string().min(1).max(64),
+  transparency_mode: z.boolean().optional(),
+  confidentiality:   z.string().max(32).optional(),
+  budget_usd:        z.number().positive().optional(),
+  budget_tokens:     z.number().int().positive().optional(),
+}).strict()
 
 export async function GET(req: NextRequest) {
   const caller = await resolveCaller(req)
@@ -97,12 +114,19 @@ export async function POST(req: NextRequest) {
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: Record<string, unknown>
+  // C-02: parse + strict-validate body before touching any business logic.
+  let rawBody: unknown
   try {
-    body = (await req.json()) as Record<string, unknown>
+    rawBody = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  const parsed = CreateRunBody.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
+  }
+  const body = parsed.data
 
   // Determine project_id:
   //   - API key callers → project is the key's project (no user override allowed).
@@ -116,10 +140,10 @@ export async function POST(req: NextRequest) {
     if (!keyRow) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     projectId = keyRow.project_id
   } else {
-    if (typeof body['project_id'] !== 'string' || !body['project_id']) {
+    if (!body.project_id) {
       return NextResponse.json({ error: 'project_id is required' }, { status: 400 })
     }
-    projectId = body['project_id'] as string
+    projectId = body.project_id
   }
 
   // Auth: verify access + permission.
@@ -136,15 +160,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Validate required fields.
-  if (!body['task_input'] && body['task_input'] !== 0) {
-    return NextResponse.json({ error: 'task_input is required' }, { status: 400 })
-  }
-  if (typeof body['domain_profile'] !== 'string' || !body['domain_profile']) {
-    return NextResponse.json({ error: 'domain_profile is required' }, { status: 400 })
-  }
+  // H-04: store a meaningful actor for API key callers ("apikey:<keyId>") so
+  // AuditLog is never null/system for programmatic run creation.
+  const actorId = caller.type === 'session'
+    ? caller.userId
+    : `apikey:${caller.keyId}`
 
-  const actorId = caller.type === 'session' ? caller.userId : null
+  // H-04: created_by stores actorId so any run is traceable to a user or key.
+  const createdBy = caller.type === 'session' ? caller.userId : actorId
 
   // Create PENDING run; DAG is empty until the Planner agent runs.
   // Spec T1.2: all new Run IDs must use UUIDv7 for time-sortable ordering.
@@ -152,29 +175,22 @@ export async function POST(req: NextRequest) {
     data: {
       id:               uuidv7(),
       project_id:       projectId,
-      created_by:       actorId,
+      created_by:       createdBy,
       status:           'PENDING',
-      domain_profile:   body['domain_profile'] as string,
-      task_input:       body['task_input'],
+      domain_profile:   body.domain_profile,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      task_input:       body.task_input as any,
       dag:              { nodes: [], edges: [] },
       run_config:       { providers: [] },
-      transparency_mode: typeof body['transparency_mode'] === 'boolean'
-        ? body['transparency_mode']
-        : false,
-      confidentiality:  typeof body['confidentiality'] === 'string'
-        ? body['confidentiality']
-        : null,
-      budget_usd:       typeof body['budget_usd'] === 'number'
-        ? body['budget_usd']
-        : null,
-      budget_tokens:    typeof body['budget_tokens'] === 'number'
-        ? body['budget_tokens']
-        : null,
+      transparency_mode: body.transparency_mode ?? false,
+      confidentiality:  body.confidentiality ?? null,
+      budget_usd:       body.budget_usd ?? null,
+      budget_tokens:    body.budget_tokens ?? null,
       user_injections:  [],
       metadata:         {},
-      task_input_chars: typeof body['task_input'] === 'string'
-        ? body['task_input'].length
-        : JSON.stringify(body['task_input']).length,
+      task_input_chars: typeof body.task_input === 'string'
+        ? body.task_input.length
+        : JSON.stringify(body.task_input).length,
     },
   })
 
@@ -182,11 +198,11 @@ export async function POST(req: NextRequest) {
   await db.auditLog.create({
     data: {
       id:          uuidv7(),
-      actor:       actorId ?? 'system',
+      actor:       actorId,
       action_type: 'run.created',
       run_id:      run.id,
       payload: {
-        domain_profile: body['domain_profile'],
+        domain_profile: body.domain_profile,
         project_id:     projectId,
       },
     },

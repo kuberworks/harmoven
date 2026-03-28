@@ -29,19 +29,34 @@ export async function GET(
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   const caller = await resolveCaller(req)
-  if (!caller) return new Response('Unauthorized', { status: 401 })
+  if (!caller) return new Response(
+    JSON.stringify({ error: 'Unauthorized' }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } },
+  )
 
   // ─── Project access + permission check ─────────────────────────────────────
   try {
     await assertProjectAccess(caller, projectId)
   } catch (e) {
-    if (e instanceof UnauthorizedError) return new Response('Unauthorized', { status: 401 })
-    if (e instanceof ForbiddenError)    return new Response('Forbidden',     { status: 403 })
-    return new Response('Not Found', { status: 404 })
+    if (e instanceof UnauthorizedError) return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    )
+    if (e instanceof ForbiddenError) return new Response(
+      JSON.stringify({ error: 'Forbidden' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } },
+    )
+    return new Response(
+      JSON.stringify({ error: 'Not Found' }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } },
+    )
   }
 
   const perms = await resolvePermissions(caller, projectId)
-  if (!perms.has('stream:project')) return new Response('Forbidden', { status: 403 })
+  if (!perms.has('stream:project')) return new Response(
+    JSON.stringify({ error: 'Forbidden' }),
+    { status: 403, headers: { 'Content-Type': 'application/json' } },
+  )
 
   // ─── SSE stream ────────────────────────────────────────────────────────────
   const encoder = new TextEncoder()
