@@ -70,9 +70,18 @@ function splitMessages(messages: ChatMessage[]): {
 // ─── Per-profile SDK client cache ────────────────────────────────────────────
 // SDK clients maintain persistent HTTP/2 connections. Recreating them per call
 // defeats connection pooling. We cache by profile.id (stable key).
+//
+// SECURITY: OpenAI cache has a 5-minute TTL to bound the DNS rebinding attack window.
+// Without TTL, validateLLMBaseUrl() runs once at creation — an attacker controlling DNS
+// could change the resolution after the first call and bypass the SSRF check indefinitely.
+// After TTL expiry the client is rebuilt and the URL re-validated against current DNS.
+// Anthropic clients use a fixed public endpoint (no custom base_url) — no rebinding risk.
 
 const _anthropicCache = new Map<string, Anthropic>()
-const _openaiCache    = new Map<string, OpenAI>()
+
+interface OpenAICacheEntry { client: OpenAI; expiresAt: number }
+const _openaiCache       = new Map<string, OpenAICacheEntry>()
+const OPENAI_CACHE_TTL_MS = 5 * 60_000  // 5 min — re-validates base_url DNS on expiry
 
 // ─── Anthropic provider ────────────────────────────────────────────────────────
 
@@ -163,8 +172,9 @@ async function streamAnthropic(
 
 async function buildOpenAIClient(profile: LlmProfileConfig): Promise<OpenAI> {
   const cached = _openaiCache.get(profile.id)
-  if (cached) return cached
+  if (cached && Date.now() < cached.expiresAt) return cached.client
   // SSRF guard: validate admin-supplied base_url before connecting (DoD T1.9, T3.9).
+  // Re-runs on every cache miss (every 5 min) — catches DNS rebinding mid-session.
   if (profile.base_url) {
     await validateLLMBaseUrl(profile.base_url)
   }
@@ -175,7 +185,7 @@ async function buildOpenAIClient(profile: LlmProfileConfig): Promise<OpenAI> {
     apiKey,
     ...(profile.base_url ? { baseURL: profile.base_url } : {}),
   })
-  _openaiCache.set(profile.id, client)
+  _openaiCache.set(profile.id, { client, expiresAt: Date.now() + OPENAI_CACHE_TTL_MS })
   return client
 }
 

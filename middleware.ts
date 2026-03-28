@@ -108,15 +108,26 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     // Note: if twoFactorEnabled is false, the instance_admin can still log in without MFA.
     // Full enforcement (requiring 2FA setup before first admin access) requires a UI setup
     // flow and is deferred — this handles the case where 2FA is configured but not verified.
-    if (
-      body.user?.role === 'instance_admin' &&
-      body.user?.twoFactorEnabled === true &&
-      body.session?.twoFactorVerified !== true &&
-      !isMfaAllowed(pathname)
-    ) {
-      const mfaUrl = new URL('/auth/two-factor', request.url)
-      mfaUrl.searchParams.set('callbackURL', pathname)
-      return NextResponse.redirect(mfaUrl)
+    if (body.user?.role === 'instance_admin') {
+      if (body.user?.twoFactorEnabled !== true && process.env.NODE_ENV === 'production') {
+        // SECURITY WARNING: an instance_admin without 2FA is a misconfiguration.
+        // orchestrator.yaml sets mfa_required_for_admin: true — this admin bypasses that.
+        // The setup wizard should enforce 2FA at account creation; log to aid detection.
+        console.warn(
+          `[harmoven] SECURITY: instance_admin "${(body.user as { email?: string }).email ?? 'unknown'}" `
+          + `is accessing the system without 2FA configured. Enable TOTP or Passkey immediately.`,
+        )
+      }
+
+      if (
+        body.user?.twoFactorEnabled === true &&
+        body.session?.twoFactorVerified !== true &&
+        !isMfaAllowed(pathname)
+      ) {
+        const mfaUrl = new URL('/auth/two-factor', request.url)
+        mfaUrl.searchParams.set('callbackURL', pathname)
+        return NextResponse.redirect(mfaUrl)
+      }
     }
 
     return NextResponse.next()

@@ -22,8 +22,12 @@
 
 import fs   from 'fs'
 import path from 'path'
-import { execSync } from 'child_process'
+import { promisify } from 'util'
+import { execFile } from 'child_process'
 import type { ILLMClient } from '@/lib/llm/interface'
+import { safeBaseEnv } from '@/lib/utils/safe-env'
+
+const execFileAsync = promisify(execFile)
 
 // ─── Framework type ───────────────────────────────────────────────────────────
 
@@ -184,13 +188,16 @@ function findConfigFile(worktree: string, framework: Framework): string | null {
 
 // ─── Rebuild ──────────────────────────────────────────────────────────────────
 
-function rebuild(worktree: string): void {
+// execFileAsync — args as array, no shell interpolation, no injection risk.
+async function rebuild(worktree: string): Promise<void> {
+  // Run build inside the worktree; prefer pnpm then npm.
+  // Explicit timeout (#6) prevents a pathological build from blocking the thread.
+  // SECURITY: never inherit process.env — leaks DATABASE_URL, AUTH_SECRET, etc.
+  // safeBaseEnv() provides only PATH/HOME/TMPDIR/LANG — nothing sensitive.
+  const hasPnpm  = fs.existsSync(path.join(worktree, 'pnpm-lock.yaml'))
+  const [bin, ...args] = hasPnpm ? ['pnpm', 'build'] : ['npm', 'run', 'build']
   try {
-    // Run build inside the worktree; prefer pnpm then npm.
-    // Explicit timeout (#6) prevents a pathological build from blocking the thread.
-    const hasPnpm = fs.existsSync(path.join(worktree, 'pnpm-lock.yaml'))
-    const cmd     = hasPnpm ? 'pnpm build' : 'npm run build'
-    execSync(cmd, { cwd: worktree, stdio: 'pipe', timeout: 120_000 })
+    await execFileAsync(bin!, args, { cwd: worktree, timeout: 120_000, env: safeBaseEnv() })
   } catch (err) {
     // Build failure — treat as repair failure (caller will fall through to screenshots)
     throw new Error(`[RepairAgent] rebuild failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -251,5 +258,5 @@ export async function repairForSubpath(
   fs.writeFileSync(configFile, patched, 'utf8')
 
   // Rebuild the app with the new config
-  rebuild(safeWorktree)
+  await rebuild(safeWorktree)
 }

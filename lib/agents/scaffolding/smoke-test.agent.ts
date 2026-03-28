@@ -16,9 +16,13 @@
 // Output: SmokeTestResult stored as node handoff_out
 // Port:   kept alive — caller must call releasePreviewPort() on gate resolution
 
-import { execSync } from 'child_process'
+import { promisify } from 'util'
+import { execFile } from 'child_process'
 import path from 'path'
 import type { ILLMClient } from '@/lib/llm/interface'
+import { safeBaseEnv } from '@/lib/utils/safe-env'
+
+const execFileAsync = promisify(execFile)
 import { allocatePreviewPort, releasePreviewPort } from './port-allocator'
 import {
   checkRoutes,
@@ -75,15 +79,18 @@ export interface SmokeTestResult {
 
 const POLL_INTERVAL_MS = 2_000
 
-function dockerComposeUp(worktree: string, port: number): void {
+// execFileAsync — args as array, no shell interpolation, no injection risk.
+async function dockerComposeUp(worktree: string, port: number): Promise<void> {
   try {
-    execSync(
-      `docker compose up -d --build`,
+    await execFileAsync(
+      'docker',
+      ['compose', 'up', '-d', '--build'],
       {
-        cwd:    worktree,
-        stdio:  'pipe',
+        cwd:     worktree,
         timeout: 180_000,  // 3 min — build may be slow
-        env: { ...process.env, APP_PORT: String(port) },
+        // SECURITY: never spread process.env — leaks DATABASE_URL, AUTH_SECRET, etc.
+        // Use safeBaseEnv() (whitelist-only) and add only what docker compose needs.
+        env: { ...safeBaseEnv(), APP_PORT: String(port) },
       },
     )
   } catch (err) {
@@ -93,13 +100,13 @@ function dockerComposeUp(worktree: string, port: number): void {
   }
 }
 
-function dockerComposeDown(worktree: string): void {
+async function dockerComposeDown(worktree: string): Promise<void> {
   try {
-    execSync('docker compose down --remove-orphans', {
-      cwd:    worktree,
-      stdio:  'pipe',
-      timeout: 60_000,
-    })
+    await execFileAsync(
+      'docker',
+      ['compose', 'down', '--remove-orphans'],
+      { cwd: worktree, timeout: 60_000, env: safeBaseEnv() },
+    )
   } catch {
     // Best-effort — don't throw if teardown fails
   }
@@ -160,7 +167,7 @@ export async function runSmokeTest(
 
   try {
     // Step 2 — start container
-    dockerComposeUp(worktree, port)
+    await dockerComposeUp(worktree, port)
 
     // Step 3 — wait for healthy
     await waitForHealthy(port, timeoutMs, signal)
@@ -198,8 +205,8 @@ export async function runSmokeTest(
       repairApplied = true
 
       // Restart container with patched code
-      dockerComposeDown(worktree)
-      dockerComposeUp(worktree, port)
+      await dockerComposeDown(worktree)
+      await dockerComposeUp(worktree, port)
       await waitForHealthy(port, timeoutMs, signal)
 
       routesChecked2 = await checkRoutes(localBase, routes)
@@ -226,7 +233,7 @@ export async function runSmokeTest(
     }
   } catch (err) {
     // Fatal error — tear down container and release port
-    dockerComposeDown(worktree)
+    await dockerComposeDown(worktree)
     await releasePreviewPort(run_id)
 
     const message = err instanceof Error ? err.message : String(err)
@@ -249,6 +256,6 @@ export async function runSmokeTest(
  * Must be called when the Human Gate is approved or abandoned.
  */
 export async function teardownPreview(worktree: string, runId: string): Promise<void> {
-  dockerComposeDown(worktree)
+  await dockerComposeDown(worktree)
   await releasePreviewPort(runId)
 }
