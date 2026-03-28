@@ -70,15 +70,15 @@ describe('checkForUpdates', () => {
       const resp = responses[callCount] ?? responses[responses.length - 1]
       callCount++
       return {
-        ok:   resp.ok,
-        json: async () => resp.json,
+        ok:   resp!.ok,
+        json: async () => resp!.json,
       } as Response
     })
   }
 
   it('returns hasUpdate: true when newer version exists (minor bump)', async () => {
     const latestVersion = (() => {
-      const [major, minor, patch] = CURRENT_VERSION.split('.').map(Number)
+      const [major, minor, patch] = CURRENT_VERSION.split('.').map(Number) as [number, number, number]
       return `${major}.${minor + 1}.${patch}`
     })()
 
@@ -98,7 +98,7 @@ describe('checkForUpdates', () => {
   })
 
   it('returns hasUpdate: true for patch bump', async () => {
-    const [major, minor, patch] = CURRENT_VERSION.split('.').map(Number)
+    const [major, minor, patch] = CURRENT_VERSION.split('.').map(Number) as [number, number, number]
     const latestVersion = `${major}.${minor}.${patch + 1}`
 
     mockFetch([
@@ -113,7 +113,7 @@ describe('checkForUpdates', () => {
   })
 
   it('returns hasUpdate: true for major bump', async () => {
-    const [major] = CURRENT_VERSION.split('.').map(Number)
+    const [major] = CURRENT_VERSION.split('.').map(Number) as [number, number, number]
     const latestVersion = `${major + 1}.0.0`
 
     mockFetch([
@@ -159,7 +159,7 @@ describe('checkForUpdates', () => {
   })
 
   it('includes changelog when GitHub release has body text', async () => {
-    const [major, minor, patch] = CURRENT_VERSION.split('.').map(Number)
+    const [major, minor, patch] = CURRENT_VERSION.split('.').map(Number) as [number, number, number]
     const latestVersion = `${major}.${minor}.${patch + 1}`
 
     mockFetch([

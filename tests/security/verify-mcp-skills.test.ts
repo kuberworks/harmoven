@@ -53,7 +53,7 @@ describe('verifyMCPSkills', () => {
     }])
 
     expect(results).toHaveLength(1)
-    expect(results[0].passed).toBe(true)
+    expect(results[0]!.passed).toBe(true)
     expect(mockReport).not.toHaveBeenCalled()
   })
 
@@ -67,10 +67,10 @@ describe('verifyMCPSkills', () => {
       sha256:     sha256hex('original code'),  // wrong hash
     }])
 
-    expect(results[0].passed).toBe(false)
-    expect(results[0].reason).toMatch(/mismatch/i)
+    expect(results[0]!.passed).toBe(false)
+    expect(results[0]!.reason).toMatch(/mismatch/i)
     expect(mockReport).toHaveBeenCalledTimes(1)
-    expect(mockReport.mock.calls[0][0].skillName).toBe('tampered-skill')
+    expect(mockReport.mock.calls[0]![0]!.skillName).toBe('tampered-skill')
   })
 
   it('fails for invalid semver version', async () => {
@@ -81,8 +81,8 @@ describe('verifyMCPSkills', () => {
       entrypoint: ep,
       sha256:     sha256hex('ok'),
     }])
-    expect(results[0].passed).toBe(false)
-    expect(results[0].reason).toMatch(/semver/i)
+    expect(results[0]!.passed).toBe(false)
+    expect(results[0]!.reason).toMatch(/semver/i)
   })
 
   it('fails when entrypoint file is missing', async () => {
@@ -92,8 +92,8 @@ describe('verifyMCPSkills', () => {
       entrypoint: '/nonexistent/path/skill.js',
       sha256:     'a'.repeat(64),
     }])
-    expect(results[0].passed).toBe(false)
-    expect(results[0].reason).toMatch(/not found/i)
+    expect(results[0]!.passed).toBe(false)
+    expect(results[0]!.reason).toMatch(/not found/i)
   })
 
   it('fails for malformed sha256 (not 64 hex chars)', async () => {
@@ -104,8 +104,8 @@ describe('verifyMCPSkills', () => {
       entrypoint: ep,
       sha256:     'short',   // malformed
     }])
-    expect(results[0].passed).toBe(false)
-    expect(results[0].reason).toMatch(/malformed/i)
+    expect(results[0]!.passed).toBe(false)
+    expect(results[0]!.reason).toMatch(/malformed/i)
   })
 
   it('processes all skills and returns a result per skill', async () => {

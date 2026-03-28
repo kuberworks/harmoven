@@ -49,7 +49,8 @@ export async function execFileAsync(
     cwd:     options.cwd,
     timeout: options.timeout ?? 30_000,   // 30 s default — git ops are fast
     // Use caller-supplied env or fall back to git env (never full process.env)
-    env: options.env ?? gitEnv(),
+    // Cast to NodeJS.ProcessEnv: our whitelist-only env is safe to assert here.
+    env: (options.env ?? gitEnv()) as NodeJS.ProcessEnv,
   })
   return { stdout: stdout.toString(), stderr: stderr.toString() }
 }

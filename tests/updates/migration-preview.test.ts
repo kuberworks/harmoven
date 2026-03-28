@@ -70,7 +70,7 @@ describe('migration risk classification', () => {
     // Point module to tmpDir by mocking path.resolve used inside the module
     // Alternative: we'll spy on fs directly
     const fsSpyReaddir = jest.spyOn(fs, 'readdirSync').mockReturnValue(
-      [name] as unknown as fs.Dirent[]
+      [name] as unknown as ReturnType<typeof fs.readdirSync>
     )
     const fsSpyStat = jest.spyOn(fs, 'statSync').mockReturnValue({
       isDirectory: () => true,
@@ -135,7 +135,7 @@ describe('migration risk classification', () => {
   })
 
   it('returns empty pending list when no migration dirs exist', async () => {
-    jest.spyOn(fs, 'readdirSync').mockReturnValue([] as unknown as fs.Dirent[])
+    jest.spyOn(fs, 'readdirSync').mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>)
     jest.spyOn(fs, 'statSync').mockReturnValue({ isDirectory: () => true } as fs.Stats)
 
     const preview = await generateMigrationPreview()

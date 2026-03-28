@@ -171,14 +171,14 @@ describe('loadPreviewConfig', () => {
 
 describe('port allocator', () => {
   beforeEach(() => {
-    previewPortDb.findUnique.mockReset()
-    previewPortDb.create.mockReset()
-    previewPortDb.deleteMany.mockReset()
+    previewPortDb.findUnique!.mockReset()
+    previewPortDb.create!.mockReset()
+    previewPortDb.deleteMany!.mockReset()
   })
 
   it('allocates port 3100 when range is free', async () => {
-    previewPortDb.findUnique.mockResolvedValue(null)   // this run has no port
-    previewPortDb.create.mockResolvedValue({ port: 3100, run_id: 'r1' })
+    previewPortDb.findUnique!.mockResolvedValue(null)   // this run has no port
+    previewPortDb.create!.mockResolvedValue({ port: 3100, run_id: 'r1' })
     const port = await allocatePreviewPort('r1')
     expect(port).toBe(3100)
     expect(previewPortDb.create).toHaveBeenCalledWith({
@@ -187,7 +187,7 @@ describe('port allocator', () => {
   })
 
   it('returns existing port if already allocated for the run', async () => {
-    previewPortDb.findUnique.mockResolvedValue({ port: 3142, run_id: 'r1' })
+    previewPortDb.findUnique!.mockResolvedValue({ port: 3142, run_id: 'r1' })
     const port = await allocatePreviewPort('r1')
     expect(port).toBe(3142)
     expect(previewPortDb.create).not.toHaveBeenCalled()
@@ -196,11 +196,11 @@ describe('port allocator', () => {
   it('skips ports that are already in use', async () => {
     // First findUnique: check if run already has a port → null
     // Then port 3100 scan: occupied | port 3101 scan: free
-    previewPortDb.findUnique
+    previewPortDb.findUnique!
       .mockResolvedValueOnce(null)               // run has no port
       .mockResolvedValueOnce({ port: 3100, run_id: 'other-run' })  // 3100 taken
       .mockResolvedValueOnce(null)               // 3101 free
-    previewPortDb.create.mockResolvedValue({ port: 3101, run_id: 'r2' })
+    previewPortDb.create!.mockResolvedValue({ port: 3101, run_id: 'r2' })
     const port = await allocatePreviewPort('r2')
     expect(port).toBe(3101)
   })
@@ -208,7 +208,7 @@ describe('port allocator', () => {
   it('throws PortExhaustedError when all ports are claimed', async () => {
     // First call: check if run already has a port → no
     // All subsequent calls (port scan): every port is taken
-    previewPortDb.findUnique
+    previewPortDb.findUnique!
       .mockResolvedValueOnce(null)   // run has no existing port
       .mockResolvedValue({ port: 9999, run_id: 'other' })  // all ports occupied
     const { PortExhaustedError } = await import('@/lib/agents/scaffolding/port-allocator')
@@ -216,7 +216,7 @@ describe('port allocator', () => {
   })
 
   it('releases port on teardown', async () => {
-    previewPortDb.deleteMany.mockResolvedValue({ count: 1 })
+    previewPortDb.deleteMany!.mockResolvedValue({ count: 1 })
     await releasePreviewPort('r1')
     expect(previewPortDb.deleteMany).toHaveBeenCalledWith({ where: { run_id: 'r1' } })
   })

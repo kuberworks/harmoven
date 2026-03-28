@@ -12,6 +12,8 @@
 // every module reload in development.
 
 import type { IProjectEventBus } from '@/lib/events/project-event-bus.interface'
+import { InMemoryEventBus } from '@/lib/events/in-memory-event-bus'
+import { PgNotifyEventBus } from '@/lib/events/pg-notify-event-bus'
 
 declare global {
   // eslint-disable-next-line no-var
@@ -20,10 +22,8 @@ declare global {
 
 function createProjectEventBus(): IProjectEventBus {
   if (process.env.DEPLOYMENT_MODE === 'electron' || process.env.NODE_ENV === 'test') {
-    const { InMemoryEventBus } = require('@/lib/events/in-memory-event-bus')
     return new InMemoryEventBus()
   }
-  const { PgNotifyEventBus } = require('@/lib/events/pg-notify-event-bus')
   return new PgNotifyEventBus()
 }
 
