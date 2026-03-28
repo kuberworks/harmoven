@@ -19,14 +19,15 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "demo:rbac": "tsx scripts/rbac-demo.ts"
+    "demo:rbac": "tsx scripts/rbac-demo.ts",
+    "verify:migrations": "node scripts/verify-migration-baseline.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@better-auth/api-key": "^1.5.6",
     "@better-auth/passkey": "^1.5.6",
     "@google/generative-ai": "^0.24.1",
-    "@modelcontextprotocol/sdk": "latest",
+    "@modelcontextprotocol/sdk": "1.28.0",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
     "@types/pg": "^8.20.0",

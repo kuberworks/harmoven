@@ -33,5 +33,5 @@ export function getLanguageName(bcp47: string, displayLocale = 'en'): string {
  * 'zh-Hans-CN' → 'zh'
  */
 export function baseLocale(bcp47: string): string {
-  return bcp47.toLowerCase().split('-')[0]
+  return bcp47.toLowerCase().split('-')[0] ?? bcp47.toLowerCase()
 }

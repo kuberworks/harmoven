@@ -56,7 +56,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const perms = await resolvePermissions(caller, runLookup.project_id)
-  if (!perms.has('gates:approve')) {
+  // Spec: gates:write permission is the entry guard (any gate action requires it).
+  // Individual decisions (approve/modify/replay/abort) are further restricted
+  // at the business logic layer if needed.
+  if (!perms.has('gates:write')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

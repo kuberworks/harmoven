@@ -29,7 +29,9 @@ export function parseAcceptLanguage(header: string): SupportedLocale[] {
   const results: SupportedLocale[] = []
   for (const part of header.split(',')) {
     const [tag] = part.trim().split(';')
-    const base = tag.trim().split('-')[0].toLowerCase()   // 'fr-FR' → 'fr'
+    if (!tag) continue                                  // narrow undefined (strict mode)
+    const base = tag.trim().split('-')[0]?.toLowerCase() ?? ''
+    if (!base) continue
     if (!seen.has(base) && SUPPORTED_LOCALES.includes(base as SupportedLocale)) {
       seen.add(base)
       results.push(base as SupportedLocale)
@@ -70,7 +72,8 @@ export function resolveUILocale(
   // Priority 3 — browser Accept-Language header
   if (acceptLanguageHeader) {
     const fromBrowser = parseAcceptLanguage(acceptLanguageHeader)
-    if (fromBrowser.length > 0) return fromBrowser[0]
+    const first = fromBrowser[0]
+    if (first !== undefined) return first
   }
 
   return DEFAULT_LOCALE

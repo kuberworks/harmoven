@@ -378,9 +378,9 @@ describe('validateApiKey', () => {
 // ─── 9. ALL_PERMISSIONS completeness check ──────────────────────────────────
 
 describe('ALL_PERMISSIONS', () => {
-  it('contains exactly 26 unique permission strings', () => {
+  it('contains exactly 27 unique permission strings', () => {
     const unique = new Set(ALL_PERMISSIONS)
-    expect(unique.size).toBe(26)
+    expect(unique.size).toBe(27)
   })
 
   it('instance_admin permissions are a superset of all other built-in roles', () => {

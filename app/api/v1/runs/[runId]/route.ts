@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   const nodes = await db.node.findMany({
     where:   { run_id: runId },
-    orderBy: { created_at: 'asc' },
+    orderBy: { node_id: 'asc' },
     select: {
       id: true, run_id: true, node_id: true, agent_type: true, status: true,
       cost_usd: true, tokens_in: true, tokens_out: true,

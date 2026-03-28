@@ -53,12 +53,12 @@ describe('recordSupplyChainEvent', () => {
   it('uses actorId=system by default', async () => {
     await recordSupplyChainEvent({ event_type: 'litellm_version_drift', detail: 'drift' })
     const data = lastCall()
-    expect(data.actor_id).toBe('system')
+    expect(data.actor).toBe('system')
   })
 
   it('accepts a custom actorId', async () => {
     await recordSupplyChainEvent({ event_type: 'dependency_version_mismatch', detail: 'd' }, 'ci-bot')
-    expect(lastCall().actor_id).toBe('ci-bot')
+    expect(lastCall().actor).toBe('ci-bot')
   })
 
   it('does not throw if AuditLog write fails (degrades gracefully)', async () => {

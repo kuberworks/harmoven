@@ -200,7 +200,7 @@ export class CriticalReviewer {
           signal,
         },
       ),
-      { maxAttempts: 2, delayMs: 1000, signal },
+      { maxAttempts: 2, delaysMs: [1000], signal },
     )
 
     const durationSeconds = (Date.now() - startMs) / 1000

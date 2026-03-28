@@ -20,6 +20,7 @@ import {
 }                                    from '@/lib/auth/rbac'
 import { createRunRateLimit }        from '@/lib/auth/rate-limit'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 export async function POST(req: NextRequest) {
   // Rate limit: 10 runs/min per IP.
@@ -79,8 +80,10 @@ export async function POST(req: NextRequest) {
   const actorId = caller.type === 'session' ? caller.userId : null
 
   // Create PENDING run; DAG is empty until the Planner agent runs.
+  // Spec T1.2: all new Run IDs must use UUIDv7 for time-sortable ordering.
   const run = await db.run.create({
     data: {
+      id:               uuidv7(),
       project_id:       projectId,
       created_by:       actorId,
       status:           'PENDING',
@@ -105,6 +108,20 @@ export async function POST(req: NextRequest) {
       task_input_chars: typeof body['task_input'] === 'string'
         ? body['task_input'].length
         : JSON.stringify(body['task_input']).length,
+    },
+  })
+
+  // AuditLog: every write operation must be recorded (spec MISS-01).
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       actorId ?? 'system',
+      action_type: 'run.created',
+      run_id:      run.id,
+      payload: {
+        domain_profile: body['domain_profile'],
+        project_id:     projectId,
+      },
     },
   })
 

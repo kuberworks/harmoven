@@ -30,7 +30,10 @@ function isPrivateIPv4(ip: string): boolean {
   if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) {
     return false // can't parse — assume safe (caller should handle separately)
   }
-  const [a, b] = parts
+  // At this point parts has exactly 4 validated elements; use non-null assertion
+  // because TypeScript cannot narrow array access via .length checks.
+  const a = parts[0]!
+  const b = parts[1]!
   return (
     a === 10 ||                            // 10.0.0.0/8   RFC1918
     (a === 172 && b >= 16 && b <= 31) ||   // 172.16.0.0/12 RFC1918
@@ -103,7 +106,7 @@ export async function assertNotPrivateHost(rawUrl: string): Promise<void> {
   // preparation, misconfigured resolver, network partition), we block the request
   // rather than allow it through. An attacker controlling DNS could suppress
   // resolution during validation and then redirect to a private IP at call time.
-  let addresses: dns.LookupAddress[]
+  let addresses: { address: string; family: number }[]
   try {
     addresses = await dns.lookup(parsed.hostname, { all: true })
   } catch {

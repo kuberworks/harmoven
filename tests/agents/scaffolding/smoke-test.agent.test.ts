@@ -4,12 +4,21 @@
 
 import { jest } from '@jest/globals'
 
-// ─── Mock: child_process.execSync ────────────────────────────────────────────
+// ─── Mock: child_process ────────────────────────────────────────────────────
+// repair.agent.ts uses execFileAsync = promisify(execFile) for the rebuild step.\n// promisify() calls fn(...args, callback) — the mock must invoke that callback.
 jest.mock('child_process', () => ({
   execSync: jest.fn(),
+  // promisify(execFile) appends a (err, result) callback as the last argument.
+  // The mock must call it synchronously so the promise resolves.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execFile: jest.fn(function mockExecFile(...args: any[]) {
+    const cb = args[args.length - 1]
+    if (typeof cb === 'function') cb(null, { stdout: '', stderr: '' })
+  }),
 }))
-import { execSync } from 'child_process'
+import { execSync, execFile } from 'child_process'
 const mockExecSync = execSync as jest.MockedFunction<typeof execSync>
+const mockExecFile = execFile as jest.MockedFunction<typeof execFile>
 
 // ─── Mock: fs ────────────────────────────────────────────────────────────────
 jest.mock('fs', () => ({
@@ -241,7 +250,8 @@ describe('repairForSubpath — framework detection + LLM call', () => {
         return JSON.stringify({ dependencies: { next: '^14' } })
       return 'module.exports = {}'
     }) as unknown as typeof fs.readFileSync)
-    mockExecSync.mockReturnValue(Buffer.from(''))   // build succeeds
+    // execFile mock (used by rebuild via execFileAsync) is configured in the
+    // module-level jest.mock() factory to call its callback immediately.
 
     const llm = new MockLLMClient()
     llm.setNextResponse('module.exports = { basePath: "/preview/r1", assetPrefix: "/preview/r1" }')
@@ -252,6 +262,12 @@ describe('repairForSubpath — framework detection + LLM call', () => {
     expect(llm.calls.length).toBe(1)
     expect(llm.calls[0]!.messages[0]!.content).toContain('nextjs')
     expect(mockWriteFileSync).toHaveBeenCalled()
-    expect(mockExecSync).toHaveBeenCalledWith(expect.stringMatching(/build/), expect.any(Object))
+    // rebuild() uses execFileAsync (promisify(execFile)) — not execSync
+    expect(mockExecFile).toHaveBeenCalledWith(
+      expect.stringMatching(/pnpm|npm/),
+      expect.arrayContaining([expect.stringMatching(/build/)]),
+      expect.any(Object),
+      expect.any(Function),
+    )
   })
 })

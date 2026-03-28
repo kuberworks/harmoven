@@ -70,10 +70,8 @@ export async function recordSupplyChainEvent(
   try {
     await db.auditLog.create({
       data: {
-        actor_id:    actorId,
+        actor:       actorId,
         action_type: `supply_chain.${event.event_type}`,
-        target_type: 'system',
-        target_id:   null,
         payload: {
           severity,
           detail:  event.detail,
