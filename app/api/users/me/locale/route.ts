@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { z } from 'zod'
-import { auth } from '@/lib/auth/auth'
+import { auth } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { SUPPORTED_LOCALES } from '@/lib/i18n/types'
 

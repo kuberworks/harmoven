@@ -17,8 +17,8 @@ services:
       # Only relevant when litellm.enabled=true in orchestrator.yaml.
       - LITELLM_GATEWAY_URL=${LITELLM_GATEWAY_URL:-http://litellm:4000}
     networks:
-      - app_net
-      - litellm_internal
+      - app_net          # reaches db + docker-proxy + internet (LLM direct calls)
+      - litellm_net      # reaches litellm sidecar (opt-in)
     depends_on:
       db:
         condition: service_healthy
@@ -37,15 +37,16 @@ services:
     # pass cannot silently lower it without touching this file.
     command: postgres -c synchronous_commit=on
     ports:
-      - "127.0.0.1:${HARMOVEN_DB_PORT:-5432}:5432"  # localhost only — no external exposure
+      # Bind to loopback only — DB must not be reachable from external hosts.
+      - "127.0.0.1:${HARMOVEN_DB_PORT:-5432}:5432"
     networks:
-      - app_net
+      - app_net          # only the app service is on this network
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-harmoven}
       POSTGRES_USER: ${POSTGRES_USER:-harmoven}
       # SECURITY: POSTGRES_PASSWORD must be set in .env — no default is provided.
       # Use: POSTGRES_PASSWORD=$(openssl rand -base64 32)
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (run: openssl rand -base64 32)}"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (run: openssl rand -base64 32)}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -72,8 +73,10 @@ services:
     image: ghcr.io/berriai/litellm@${LITELLM_DIGEST:?LITELLM_DIGEST must be set in .env — use immutable digest, not a tag}
     # No 'ports:' here — accessible only via internal Docker DNS: http://litellm:4000
     # Expose to host ONLY for local development by adding: ports: ["127.0.0.1:4000:4000"]
+    # litellm_net is NOT internal — LiteLLM needs internet to reach provider APIs.
+    # LiteLLM is isolated from app_net (cannot reach the DB).
     networks:
-      - litellm_internal
+      - litellm_net
     environment:
       # LiteLLM receives ONLY its own master key + LLM provider API keys.
       # DATABASE_URL, AUTH_SECRET, and app secrets MUST NOT be in this block.
@@ -129,8 +132,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only mount — proxy enforces further restrictions
     networks:
-      - app_net
-      - docker_proxy_net
+      - app_net          # reachable from app only (no other service is on app_net)
     restart: unless-stopped
     # No ports exposed — app connects via internal Docker network only
 
@@ -139,13 +141,12 @@ volumes:
 
 networks:
   app_net:
-    # Default app network: app ↔ db, app ↔ docker-proxy.
-    internal: true
-  litellm_internal:
-    # Internal-only network between app and LiteLLM sidecar.
-    # No external traffic can reach LiteLLM directly — enforced by Docker.
-    internal: true
-  docker_proxy_net:
-    # Internal network for Docker socket proxy access.
-    # Only the app service and docker-proxy are connected to this network.
-    internal: true
+    # Main application network: app ↔ db, app ↔ docker-proxy, app → internet.
+    # NOT internal — the app needs outbound internet for DirectLLMClient calls
+    # (Anthropic, OpenAI, Google, etc.) when LiteLLM sidecar is not active.
+    driver: bridge
+  litellm_net:
+    # Network between app and LiteLLM sidecar.
+    # NOT internal — LiteLLM needs outbound internet to reach provider APIs.
+    # LiteLLM is isolated from app_net: it CANNOT reach the DB.
+    driver: bridge

@@ -17,6 +17,7 @@
 //     (no extra sanitization needed — it's our own data going back out).
 
 import { db }           from '@/lib/db/client'
+import { Prisma }       from '@prisma/client'
 import { configStore }  from '@/lib/config-git/config-store'
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ export async function updateProjectConfig(
   // 1. Update DB first — this is the source of truth
   await db.project.update({
     where: { id: projectId },
-    data:  { config },
+    data:  { config: config as Prisma.InputJsonValue },
   })
 
   // 2. Auto-commit to config.git — non-blocking, never fails the request

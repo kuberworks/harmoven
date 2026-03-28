@@ -143,3 +143,36 @@ async function verifySingleSkill(skill: MCPSkillConfig): Promise<MCPVerification
 
   return { skill: name, version, passed: true }
 }
+
+// ---------------------------------------------------------------------------
+// Config-aware entry point — called from instrumentation.ts at startup
+// ---------------------------------------------------------------------------
+
+/**
+ * Load MCP skill configs from orchestrator.yaml and verify them.
+ * Reads the `experimental.mcp_server.skills` array if present.
+ * If MCP is disabled or not configured, returns an empty results array (no-op).
+ *
+ * @param strict - Throw on first failure instead of continuing (default false)
+ */
+export async function verifyMCPSkillsFromConfig(strict = false): Promise<MCCVerificationResultArray> {
+  let skills: MCPSkillConfig[] = []
+  try {
+    const { readFile } = await import('node:fs/promises')
+    const { join }     = await import('node:path')
+    const { load }     = await import('js-yaml') as { load: (s: string) => unknown }
+    const configPath   = join(process.cwd(), 'orchestrator.yaml')
+    const raw          = await readFile(configPath, 'utf8')
+    const config       = load(raw) as Record<string, unknown>
+    const exp = config['experimental'] as Record<string, unknown> | undefined
+    const mcp = exp?.['mcp_server'] as Record<string, unknown> | undefined
+    if (mcp?.['enabled'] && Array.isArray(mcp['skills'])) {
+      skills = mcp['skills'] as MCPSkillConfig[]
+    }
+  } catch {
+    // No orchestrator.yaml or YAML parse failure — treat as no configured skills.
+  }
+  return verifyMCPSkills(skills, strict)
+}
+
+type MCCVerificationResultArray = Promise<MCPVerificationResult[]>

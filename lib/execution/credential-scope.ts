@@ -116,8 +116,10 @@ class CredentialVault {
     providers: string[],
     budgetMin  = 60,
   ): Promise<RunCredentialScope> {
-    // Lazy-load db to avoid eager PrismaClient initialization at module load time
-    const { db } = await import('@/lib/db/client')
+    // Lazy-load db to avoid eager PrismaClient initialization at module load time.
+    // Uses require() for CJS/Jest compatibility (babel-jest transforms to CommonJS).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { db } = require('@/lib/db/client') as typeof import('@/lib/db/client')
 
     // Look up project credentials for required providers
     const tokens: Record<string, string> = {}

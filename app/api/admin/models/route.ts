@@ -14,6 +14,8 @@ import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
+import { assertNotPrivateHost }      from '@/lib/security/ssrf-protection'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -72,7 +74,7 @@ const CreateModelBody = z.object({
 }).strict()
 
 export async function POST(req: NextRequest) {
-  const { err } = await guardAdminModels(req)
+  const { err, caller } = await guardAdminModels(req)
   if (err) return err
 
   let body: unknown
@@ -92,6 +94,16 @@ export async function POST(req: NextRequest) {
     context_window, cost_per_1m_input_tokens, cost_per_1m_output_tokens,
     task_type_affinity, enabled, config,
   } = parsed.data
+
+  // BUG-012: SSRF protection — validate custom base_url before persisting (spec Am.92).
+  if (config?.['base_url'] && typeof config['base_url'] === 'string') {
+    try {
+      await assertNotPrivateHost(config['base_url'])
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Invalid base_url'
+      return NextResponse.json({ error: msg }, { status: 422 })
+    }
+  }
 
   // Detect duplicate
   const existing = await db.llmProfile.findUnique({ where: { id } })
@@ -113,6 +125,16 @@ export async function POST(req: NextRequest) {
       task_type_affinity:        task_type_affinity ?? [],
       enabled:                   enabled ?? true,
       ...(config !== undefined && { config: config as Prisma.InputJsonValue }),
+    },
+  })
+
+  // AuditLog: every write operation must be recorded (spec MISS-01).
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       caller?.userId ?? 'system',
+      action_type: 'admin.model.created',
+      payload: { model_id: id, provider, tier },
     },
   })
 

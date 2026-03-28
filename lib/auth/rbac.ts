@@ -16,13 +16,13 @@ import { ALL_PERMISSIONS } from './permissions'
 
 // ─── Permission cache ─────────────────────────────────────────────────────────
 // Short-lived cache keyed by "<callerId>:<projectId>" so repeated calls within
-// the same request (or across calls in the same 60-second window) skip the DB.
+// the same request (or across calls in the same 30-second window) skip the DB.
 // instance_admin is never cached — it returns early before this cache is checked.
-// TTL = 60 s (DoD §T2B.1) — balances DB load with revocation promptness.
+// TTL = 30 s (DoD §T2B.1) — balances DB load with revocation promptness.
 
 interface PermCacheEntry { perms: Set<Permission>; expiresAt: number }
 const _permCache = new Map<string, PermCacheEntry>()
-const PERM_CACHE_TTL_MS = 60_000
+const PERM_CACHE_TTL_MS = 30_000
 
 function cacheKey(caller: Caller, projectId: string): string {
   return caller.type === 'session'

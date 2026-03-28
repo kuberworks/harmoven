@@ -163,6 +163,35 @@ function validateDag(dag: PlannerHandoff['dag']): void {
   const reviewerId = reviewerNode.node_id
   const hasSuccessor = dag.edges.some(e => e.from === reviewerId)
   if (hasSuccessor) throw new Error('Planner: REVIEWER node must be the final node (no outgoing edges)')
+
+  // Depth check: longest path must not exceed 4 levels (spec §lib/dag/validate.ts).
+  // Recompute in-degree from scratch (the Kahn queue above is already consumed).
+  const MAX_DAG_DEPTH = 4
+  const depthInDeg = new Map<string, number>()
+  const depthAdj  = new Map<string, string[]>()
+  for (const id of nodeIds) { depthInDeg.set(id, 0); depthAdj.set(id, []) }
+  for (const edge of dag.edges) {
+    depthAdj.get(edge.from)!.push(edge.to)
+    depthInDeg.set(edge.to, (depthInDeg.get(edge.to) ?? 0) + 1)
+  }
+  // BFS from all roots, tracking depth of each node.
+  const depth = new Map<string, number>()
+  const depthQueue = [...nodeIds].filter(id => depthInDeg.get(id) === 0)
+  for (const root of depthQueue) depth.set(root, 0)
+  const bfsQueue = [...depthQueue]
+  while (bfsQueue.length > 0) {
+    const curr = bfsQueue.shift()!
+    const currDepth = depth.get(curr) ?? 0
+    for (const next of depthAdj.get(curr) ?? []) {
+      const nextDepth = Math.max(depth.get(next) ?? 0, currDepth + 1)
+      depth.set(next, nextDepth)
+      bfsQueue.push(next)
+    }
+  }
+  const maxDepth = Math.max(0, ...[...depth.values()])
+  if (maxDepth > MAX_DAG_DEPTH) {
+    throw new Error(`Planner: DAG depth ${maxDepth} exceeds maximum allowed depth of ${MAX_DAG_DEPTH}`)
+  }
 }
 
 // ─── Planner ─────────────────────────────────────────────────────────────────

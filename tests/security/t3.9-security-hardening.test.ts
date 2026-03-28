@@ -228,9 +228,12 @@ describe('ssrf-protection / assertNotPrivateHost', () => {
     expect(mockLookup).not.toHaveBeenCalled()
   })
 
-  it('passes when DNS resolution fails (fail-open for unresolvable hosts)', async () => {
+  it('blocks when DNS resolution fails (fail-closed: SSRF protection)', async () => {
+    // Spec: fail-closed — if DNS resolution fails for any reason, block the request.
+    // An attacker controlling DNS could suppress resolution during validation
+    // and then redirect to a private IP at call time.
     mockLookup.mockRejectedValueOnce(new Error('ENOTFOUND custom-llm-host'))
-    await expect(assertNotPrivateHost('https://custom-llm-host.private/v1')).resolves.toBeUndefined()
+    await expect(assertNotPrivateHost('https://custom-llm-host.private/v1')).rejects.toThrow(ValidationError)
   })
 })
 
