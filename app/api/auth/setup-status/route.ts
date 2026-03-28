@@ -15,10 +15,20 @@ export async function GET() {
   const userCount = await db.user.count()
   const modelCount = await db.llmProfile.count()
 
-  // Only expose boolean flags — never the raw counts.
+  const hasAdmin      = userCount > 0
+  const hasLlmProfile = modelCount > 0
+  // setup_complete: all mandatory steps are done (admin created).
+  // LLM profile is strongly recommended but not blocking — the wizard
+  // shows has_llm_profile separately so the UI can guide configuration.
+  const setupComplete = hasAdmin
+
+  // WARN-005 FIX: expose both `setup_complete` (canonical) and `setup_required`
+  // (inverse, consumed by some frontend components via types/api.ts generated types).
+  // Both are present so consumers can use whichever reads more naturally.
   return NextResponse.json({
-    setup_complete:  userCount > 0,
-    has_admin:       userCount > 0,
-    has_llm_profile: modelCount > 0,
+    setup_complete:  setupComplete,
+    setup_required:  !setupComplete,   // inverse alias — keeps frontend contract unambiguous
+    has_admin:       hasAdmin,
+    has_llm_profile: hasLlmProfile,
   })
 }

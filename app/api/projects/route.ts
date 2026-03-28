@@ -11,6 +11,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
 }                                    from '@/lib/auth/rbac'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── GET — List accessible projects ──────────────────────────────────────────
 
@@ -157,6 +158,16 @@ export async function POST(req: NextRequest) {
         user:     { connect: { id: caller.userId } },
         role:     { connect: { id: adminRole.id } },
         added_by: caller.userId, // creator is their own adder (bootstrap)
+      },
+    })
+
+    // AuditLog: every write must be recorded (spec MISS-01 — REC-A fix).
+    await tx.auditLog.create({
+      data: {
+        id:          uuidv7(),
+        actor:       caller.userId,
+        action_type: 'project.created',
+        payload:     { name: created.name, domain_profile: created.domain_profile, confidentiality: created.confidentiality },
       },
     })
 

@@ -15,6 +15,7 @@ import { z }                         from 'zod'
 import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // Keys exposed through this endpoint (allowlist — never expose internal keys)
 const SECURITY_KEYS = ['security.mfa_required_for_admin'] as const
@@ -87,6 +88,16 @@ export async function PATCH(req: NextRequest) {
       where:  { key: 'security.mfa_required_for_admin' },
       create: { key: 'security.mfa_required_for_admin', value: JSON.stringify(mfa_required_for_admin), updated_by: userId },
       update: { value: JSON.stringify(mfa_required_for_admin), updated_by: userId },
+    })
+
+    // AuditLog: security setting changes are critical — must always be recorded (spec MISS-01).
+    await db.auditLog.create({
+      data: {
+        id:          uuidv7(),
+        actor:       userId ?? 'system',
+        action_type: 'admin.security.updated',
+        payload:     { mfa_required_for_admin },
+      },
     })
   }
 
