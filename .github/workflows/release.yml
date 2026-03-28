@@ -34,6 +34,7 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
+      - run: npm run generate:types
       - name: Run migrations
         env:
           DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test

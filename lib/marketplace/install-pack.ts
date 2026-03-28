@@ -28,6 +28,7 @@ import {
   reportPackSignatureInvalid,
   reportPackHashMismatch,
 } from '@/lib/security/supply-chain-monitor'
+import { assertNotPrivateHost } from '@/lib/security/ssrf-protection'
 import type { PackManifest } from '@/lib/marketplace/types'
 
 const execFileAsync = promisify(execFile)
@@ -194,6 +195,11 @@ const PackManifestSchema = z.object({
  */
 async function fetchFromRegistry(packId: string, version: string): Promise<PackManifest> {
   const url = `${REGISTRY_BASE}/packs/${encodeURIComponent(packId)}/${encodeURIComponent(version)}`
+  // SSRF guard: only needed when the operator has overridden the registry URL;
+  // the default harmoven.com endpoint is not user-supplied.
+  if (process.env.HARMOVEN_REGISTRY_URL) {
+    await assertNotPrivateHost(REGISTRY_BASE)
+  }
   const res = await fetch(url, {
     headers: { 'User-Agent': 'Harmoven/1.0 (+https://harmoven.com)' },
     // 10 s timeout — registry should be fast

@@ -24,7 +24,7 @@ const LocalePatchSchema = z.object({
   ui_locale: SupportedLocaleSchema.nullable().optional(),
   /** null = follows ui_locale automatically */
   transparency_language: SupportedLocaleSchema.nullable().optional(),
-})
+}).strict()
 
 // ---------------------------------------------------------------------------
 // Route handler

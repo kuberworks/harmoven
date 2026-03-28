@@ -29,6 +29,7 @@ import { HeartbeatManager, ORPHAN_THRESHOLD_MS } from '@/lib/execution/custom/he
 import type { IProjectEventBus, RunSSEEvent, ProjectLifecycleEvent } from '@/lib/events/project-event-bus.interface'
 import { credentialVault } from '@/lib/execution/credential-scope'
 import { PlannerExhaustionError } from '@/lib/agents/planner'
+import { gateTimeoutAt }          from '@/lib/execution/gate-timeout'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -667,8 +668,30 @@ export class CustomExecutor implements IExecutionEngine {
     signal.addEventListener('abort', () => nodeController.abort(), { once: true })
     const nodeSignal = nodeController.signal
 
+    // ─── partial_output 5s flush (spec §DoD) ───────────────────────────────
+    // Declared before try so that clearInterval() in finally block can access it.
+    let _partialBuffer = ''
+    let _partialFlush: ReturnType<typeof setInterval> | undefined
+
     try {
-      const output = await this.agentRunner(node, handoffIn, nodeSignal)
+      // ─── Initialise partial flush interval ────────────────────────────────
+      // Accumulate streaming chunks in memory and flush to DB every 5 s.
+      // This allows the Interrupt Gate (Am.65) accept_partial / resume_from_partial
+      // decisions to work with real content instead of an empty string.
+      _partialFlush = setInterval(() => {
+        if (_partialBuffer.length === 0) return
+        const snapshot = _partialBuffer
+        void this.db.node.update({
+          where: { id: node.id },
+          data:  { partial_output: snapshot, partial_updated_at: new Date() },
+        }).catch((err: unknown) => {
+          console.error(`[executor] partial_output flush failed for node ${node.id}:`, err)
+        })
+      }, 5_000)
+
+      const output = await this.agentRunner(node, handoffIn, nodeSignal, (chunk) => {
+        _partialBuffer += chunk
+      })
 
       // Store handoff (immutable)
       const allNodes = await this.db.node.findMany({ where: { run_id: runId } })
@@ -754,12 +777,13 @@ export class CustomExecutor implements IExecutionEngine {
         try {
           const gate = await this.db.humanGate.create({
             data: {
-              run_id: runId,
-              reason: 'planner_exhausted',
+              run_id:     runId,
+              reason:     'planner_exhausted',
+              timeout_at: gateTimeoutAt(),
               data: {
-                node_id:      node.node_id,
-                error:        message,
-                attempts:     (err as PlannerExhaustionError).attempts,
+                node_id:  node.node_id,
+                error:    message,
+                attempts: (err as PlannerExhaustionError).attempts,
               },
             },
           })
@@ -793,6 +817,7 @@ export class CustomExecutor implements IExecutionEngine {
         },
       })
     } finally {
+      clearInterval(_partialFlush)
       this._heartbeat.stop(node.id)
       this._runningNodeIds.delete(node.id)
       this._nodeRunId.delete(node.id)

@@ -102,6 +102,17 @@ export async function POST(req: NextRequest, { params }: Params) {
         const existing = (runLookup.task_input ?? {}) as Record<string, unknown>
         const merged   = { ...existing, ...body.patch }
         await db.run.update({ where: { id: runId }, data: { task_input: merged as Prisma.InputJsonValue } })
+        await db.auditLog.create({
+          data: {
+            actor:       actorId,
+            action_type: 'gate:modify',
+            payload: {
+              run_id:    runId,
+              input_was: existing as Prisma.InputJsonValue,
+              input_now: merged   as Prisma.InputJsonValue,
+            },
+          },
+        })
         await engine.resumeRun(runId, actorId)
         newStatus = 'running'
         break

@@ -116,11 +116,16 @@ export interface NodeRow {
  * Agent runner function — executes a single agent node.
  * In production: calls IAgentRunner which builds context, calls ILLMClient.
  * In tests: replaced by MockAgentRunner which resolves immediately.
+ *
+ * @param onChunk  Optional streaming callback. Called for every text chunk
+ *                 produced by the LLM. The executor accumulates chunks and
+ *                 flushes to Node.partial_output every 5 s (spec §DoD partial_output).
  */
 export type AgentRunnerFn = (
-  node: NodeRow,
+  node:      NodeRow,
   handoffIn: unknown,
-  signal: AbortSignal,
+  signal:    AbortSignal,
+  onChunk?:  (chunk: string) => void,
 ) => Promise<AgentOutput>
 
 /**
