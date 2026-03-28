@@ -20,15 +20,17 @@ export function getConfigGitRoot(): string {
   if (process.env.DEPLOYMENT_MODE === 'electron') {
     // In tests, app is not available — fall back to os.tmpdir()
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { app } = require('electron') as typeof import('electron')
+      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-assignment
+      const { app } = require('electron') as { app: { getPath: (name: string) => string } }
       return path.join(app.getPath('userData'), 'harmoven', 'config.git')
     } catch {
       return path.join(os.tmpdir(), 'harmoven', 'config.git')
     }
   }
   // Docker / dev
-  return process.env.CONFIG_GIT_PATH ?? '/data/config.git'
+  // CONFIG_GIT_DIR is the legacy alias (used in dev startup scripts);
+  // CONFIG_GIT_PATH is the canonical name. Both are supported for backward compat.
+  return process.env.CONFIG_GIT_PATH ?? process.env.CONFIG_GIT_DIR ?? '/data/config.git'
 }
 
 /**

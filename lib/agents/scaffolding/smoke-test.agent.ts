@@ -16,13 +16,10 @@
 // Output: SmokeTestResult stored as node handoff_out
 // Port:   kept alive — caller must call releasePreviewPort() on gate resolution
 
-import { promisify } from 'util'
-import { execFile } from 'child_process'
 import path from 'path'
 import type { ILLMClient } from '@/lib/llm/interface'
 import { safeBaseEnv } from '@/lib/utils/safe-env'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '@/lib/utils/exec-safe'
 import { allocatePreviewPort, releasePreviewPort } from './port-allocator'
 import {
   checkRoutes,
@@ -79,7 +76,6 @@ export interface SmokeTestResult {
 
 const POLL_INTERVAL_MS = 2_000
 
-// execFileAsync — args as array, no shell interpolation, no injection risk.
 async function dockerComposeUp(worktree: string, port: number): Promise<void> {
   try {
     await execFileAsync(

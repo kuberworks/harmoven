@@ -22,12 +22,9 @@
 
 import fs   from 'fs'
 import path from 'path'
-import { promisify } from 'util'
-import { execFile } from 'child_process'
 import type { ILLMClient } from '@/lib/llm/interface'
 import { safeBaseEnv } from '@/lib/utils/safe-env'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '@/lib/utils/exec-safe'
 
 // ─── Framework type ───────────────────────────────────────────────────────────
 
@@ -188,7 +185,6 @@ function findConfigFile(worktree: string, framework: Framework): string | null {
 
 // ─── Rebuild ──────────────────────────────────────────────────────────────────
 
-// execFileAsync — args as array, no shell interpolation, no injection risk.
 async function rebuild(worktree: string): Promise<void> {
   // Run build inside the worktree; prefer pnpm then npm.
   // Explicit timeout (#6) prevents a pathological build from blocking the thread.

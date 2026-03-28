@@ -31,6 +31,10 @@ const PUBLIC_PATHS = [
   // Route handlers call resolveCaller() which validates the Bearer token.
   // Session redirect here would make v1 unreachable for API key clients.
   '/api/v1',
+  // Webhook endpoints authenticate via HMAC-SHA256 signature (X-Harmoven-Signature header),
+  // not via session cookies. Including here prevents middleware from blocking external
+  // webhook deliveries from CI/CD or third-party services.
+  '/api/webhooks',
 ]
 
 /**
@@ -46,6 +50,11 @@ function isPublic(pathname: string): boolean {
 
 function isMfaAllowed(pathname: string): boolean {
   return MFA_ALLOWED_PATHS.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'))
+}
+
+/** API routes expect JSON 401, not a redirect to /login. */
+function isApiRoute(pathname: string): boolean {
+  return pathname.startsWith('/api/')
 }
 
 /** Shape of the Better Auth get-session response (minimal subset we need). */
@@ -82,11 +91,23 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
       },
     })
   } catch {
-    // Network / cold-start failure — fail closed: redirect to login rather than
-    // silently passing the request through unauthenticated (spec §34: every action traceable).
+    // Network / cold-start failure — fail closed.
+    if (isApiRoute(pathname)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('callbackURL', pathname)
     return NextResponse.redirect(loginUrl)
+  }
+
+  // A 429 from get-session means the auth rate limit was exhausted (common in dev when
+  // the middleware itself triggers counted calls). Return 503 — not 401 — so clients
+  // can distinguish "not authenticated" from "temporarily unavailable".
+  if (sessionRes.status === 429) {
+    return NextResponse.json(
+      { error: 'Service temporarily unavailable, retry shortly' },
+      { status: 503 },
+    )
   }
 
   if (sessionRes.ok) {
@@ -94,12 +115,13 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
     // Better Auth returns null when no session exists.
     if (body === null || typeof body !== 'object') {
+      if (isApiRoute(pathname)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
       const loginUrl = new URL('/login', request.url)
       loginUrl.searchParams.set('callbackURL', pathname)
       return NextResponse.redirect(loginUrl)
     }
-
-    // ── MFA enforcement for instance_admin (orchestrator.yaml: mfa_required_for_admin: true) ──
     // If the account has 2FA enabled but the current session has not yet completed the
     // 2FA challenge (twoFactorVerified !== true), redirect to the 2FA challenge page.
     // This prevents a session hijack from bypassing MFA by stealing the session cookie
@@ -134,6 +156,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
 
   // No valid session — redirect to /login, preserving the intended path as callbackURL.
+  if (isApiRoute(pathname)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   const loginUrl = new URL('/login', request.url)
   loginUrl.searchParams.set('callbackURL', pathname)
   return NextResponse.redirect(loginUrl)

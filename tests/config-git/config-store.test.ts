@@ -35,7 +35,7 @@ jest.mock('fs', () => ({
 jest.mock('@/lib/db/client', () => ({
   db: {
     project: {
-      update: jest.fn().mockResolvedValue({}),
+      update: jest.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
     },
   },
 }))
@@ -72,7 +72,7 @@ beforeEach(() => {
 
 describe('get()', () => {
   it('returns file content when it exists', async () => {
-    mockReadFile.mockResolvedValue('{"budget":10}' as unknown as Buffer)
+    mockReadFile.mockResolvedValue('{"budget":10}' as unknown as string & Buffer<ArrayBuffer>)
     const result = await store.get({ project_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', key: 'project.json' })
     expect(result).toBe('{"budget":10}')
   })
@@ -84,7 +84,7 @@ describe('get()', () => {
   })
 
   it('returns file content for instance project_id', async () => {
-    mockReadFile.mockResolvedValue('version: 1' as unknown as Buffer)
+    mockReadFile.mockResolvedValue('version: 1' as unknown as string & Buffer<ArrayBuffer>)
     const result = await store.get({ project_id: 'instance', key: 'orchestrator.yaml' })
     expect(result).toBe('version: 1')
   })
@@ -174,7 +174,7 @@ describe('restore()', () => {
           : ''
       return { stdout, stderr: '' }
     })
-    mockReadFile.mockResolvedValue('{}' as unknown as Buffer)
+    mockReadFile.mockResolvedValue('{}' as unknown as string & Buffer<ArrayBuffer>)
 
     await store.restore('abc1234', 'user-1')
 
