@@ -16,6 +16,7 @@ import { db }                                   from '@/lib/db/client'
 import { resolveCaller }                        from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
+import { uuidv7 }                               from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ runId: string }> }
 
@@ -80,6 +81,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   // ─── Create independent fork ───────────────────────────────────────────────
   const run = await db.run.create({
     data: {
+      id:             uuidv7(),     // Spec T1.2: Run IDs must be UUIDv7
       project_id:     source.project_id,
       status:         'PENDING',
       dag:            source.dag as Prisma.InputJsonValue,
@@ -89,6 +91,17 @@ export async function POST(req: NextRequest, { params }: Params) {
       budget_usd:     source.budget_usd,
       created_by:     actorId,
       metadata:       { forked_from: runId } as Prisma.InputJsonValue,
+    },
+  })
+
+  // MISS-01: AuditLog on every write
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       actorId,
+      action_type: 'run.forked',
+      run_id:      run.id,
+      payload:     { forked_from: runId, project_id: source.project_id },
     },
   })
 

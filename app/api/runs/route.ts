@@ -26,14 +26,29 @@ import {
 import { createRunRateLimit }        from '@/lib/auth/rate-limit'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
+import { classifyConfidentiality }   from '@/lib/llm/confidentiality'
 
 // ─── C-02: Zod schema for POST body ──────────────────────────────────────────
 // Spec: "All POST routes: Zod .strict() validation before business logic"
 // project_id is optional here because API key callers derive it from the key.
 
+// MAX_TASK_INPUT_CHARS: prevents DoS via oversized prompts and limits LLM token cost exposure.
+// A 100 KB string is ~25 000 tokens — already very large for a task input.
+const MAX_TASK_INPUT_CHARS = 100_000
+
 const CreateRunBody = z.object({
   project_id:        z.string().uuid().optional(),
-  task_input:        z.union([z.string().min(1), z.record(z.unknown()), z.array(z.unknown())]),
+  task_input:        z.union([
+    z.string().min(1).max(MAX_TASK_INPUT_CHARS),
+    z.record(z.unknown()).refine(
+      v => JSON.stringify(v).length <= MAX_TASK_INPUT_CHARS,
+      { message: `task_input exceeds maximum size of ${MAX_TASK_INPUT_CHARS} characters` },
+    ),
+    z.array(z.unknown()).refine(
+      v => JSON.stringify(v).length <= MAX_TASK_INPUT_CHARS,
+      { message: `task_input exceeds maximum size of ${MAX_TASK_INPUT_CHARS} characters` },
+    ),
+  ]),
   domain_profile:    z.string().min(1).max(64),
   transparency_mode: z.boolean().optional(),
   confidentiality:   z.string().max(32).optional(),
@@ -169,14 +184,29 @@ export async function POST(req: NextRequest) {
   // H-04: created_by stores actorId so any run is traceable to a user or key.
   const createdBy = caller.type === 'session' ? caller.userId : actorId
 
+  // Section 18 AGENTS-01 — Local confidentiality classification.
+  // If the caller supplied a confidentiality level, use it as a floor; otherwise
+  // let the classifier determine it. The classifier result is authoritative when
+  // more restrictive than the caller-supplied value.
+  const taskInputStr = typeof body.task_input === 'string'
+    ? body.task_input
+    : JSON.stringify(body.task_input)
+
+  const classificationResult = classifyConfidentiality(taskInputStr)
+  const LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
+  type Level = typeof LEVELS[number]
+  const callerLevel = (body.confidentiality?.toUpperCase() ?? 'LOW') as Level
+  const classifiedLevel = classificationResult.score
+  const effectiveConfidentiality =
+    LEVELS.indexOf(classifiedLevel) > LEVELS.indexOf(callerLevel)
+      ? classifiedLevel
+      : callerLevel
+
   // Bootstrap the DAG with CLASSIFIER (n1) → PLANNER (n2).
   // The CLASSIFIER classifies intent; the PLANNER decomposes into WRITER/REVIEWER nodes.
   // After PLANNER completes, the executor expands the DAG with the plan's nodes.
   const classifierNodeId = 'n1'
   const plannerNodeId    = 'n2'
-  const taskInputStr = typeof body.task_input === 'string'
-    ? body.task_input
-    : JSON.stringify(body.task_input)
   const initialDag = {
     nodes: [
       { id: classifierNodeId, agent_type: 'CLASSIFIER' },
@@ -198,7 +228,8 @@ export async function POST(req: NextRequest) {
       dag:              initialDag,
       run_config:       { providers: [] },
       transparency_mode: body.transparency_mode ?? false,
-      confidentiality:  body.confidentiality ?? null,
+      // Section 18: use the higher of the caller-supplied level and the local classifier result.
+      confidentiality:  effectiveConfidentiality,
       budget_usd:       body.budget_usd ?? null,
       budget_tokens:    body.budget_tokens ?? null,
       user_injections:  [],

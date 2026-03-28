@@ -7,12 +7,23 @@
 // Auth: gates:approve permission required.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z }                         from 'zod'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { db } from '@/lib/db/client'
 import { getExecutionEngine } from '@/lib/execution/engine.factory'
 import type { GateDecision } from '@/lib/execution/engine.interface'
+
+// ─── Zod schema ─────────────────────────────────────────────────────────────
+const GateBodySchema = z.discriminatedUnion('decision', [
+  z.object({
+    decision:       z.literal('resume_from_partial'),
+    edited_partial: z.string().min(1).max(100_000),  // cap partial output size
+  }).strict(),
+  z.object({ decision: z.literal('replay_from_scratch') }).strict(),
+  z.object({ decision: z.literal('accept_partial')     }).strict(),
+])
 
 export async function POST(
   req: NextRequest,
@@ -44,27 +55,19 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // ─── Validate body ────────────────────────────────────────────────────────
-  let body: GateDecision
+  // ─── Validate body (C-02: Zod discriminatedUnion) ───────────────────────
+  let rawBody: unknown
   try {
-    body = await req.json() as GateDecision
+    rawBody = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const VALID_DECISIONS = ['resume_from_partial', 'replay_from_scratch', 'accept_partial'] as const
-  if (!body || !VALID_DECISIONS.includes(body.decision as typeof VALID_DECISIONS[number])) {
-    return NextResponse.json(
-      { error: `decision must be one of: ${VALID_DECISIONS.join(', ')}` },
-      { status: 400 },
-    )
+  const gateResult = GateBodySchema.safeParse(rawBody)
+  if (!gateResult.success) {
+    return NextResponse.json({ error: gateResult.error.flatten() }, { status: 422 })
   }
-
-  if (body.decision === 'resume_from_partial') {
-    if (typeof body.edited_partial !== 'string' || body.edited_partial.trim().length === 0) {
-      return NextResponse.json({ error: 'edited_partial is required for resume_from_partial' }, { status: 400 })
-    }
-  }
+  const body = gateResult.data as GateDecision
 
   // ─── Resolve gate ─────────────────────────────────────────────────────────
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
