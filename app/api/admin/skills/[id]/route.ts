@@ -50,30 +50,7 @@ const PatchSkillBody = z.object({
   content: z.string().max(1_000_000).optional(),
 }).strict()
 
-/**
- * Re-exported from route.ts: validate MCP skill command allowlist.
- * CVE-HARM-005: prevents arbitrary binary execution via the MCP stdio transport.
- */
-const ALLOWED_MCP_COMMANDS = new Set(['npx', 'node', 'nodejs', 'python', 'python3', 'uvx', 'uv', 'deno', 'bun'])
-
-function validateMcpConfig(config: unknown): string | null {
-  if (!config || typeof config !== 'object') return null
-  const c = config as Record<string, unknown>
-  if ('command' in c) {
-    const cmd = String(c['command'] ?? '')
-    const basename = cmd.split('/').pop()?.split('\\').pop() ?? cmd
-    if (!ALLOWED_MCP_COMMANDS.has(basename)) {
-      return `MCP skill command "${cmd}" is not allowed. Allowed: ${[...ALLOWED_MCP_COMMANDS].join(', ')}`
-    }
-  }
-  if ('args' in c && Array.isArray(c['args'])) {
-    if ((c['args'] as unknown[]).length > 32) return 'args array exceeds maximum length of 32'
-    for (const arg of c['args'] as unknown[]) {
-      if (typeof arg !== 'string') return 'all args must be strings'
-    }
-  }
-  return null
-}
+import { validateMcpConfig } from '@/lib/mcp/validate-config'
 
 export async function PATCH(
   req: NextRequest,

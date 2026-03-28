@@ -38,17 +38,9 @@ export class SkillNotApprovedError extends Error {
 }
 
 // ─── Command allowlist (CVE-HARM-005 defense-in-depth) ───────────────────────
+// Imported from the shared allowlist — single source of truth.
 // Also enforced at install time in app/api/admin/skills/route.ts.
-// This check runs at execution time as a belt+suspenders guard in case a record
-// was created before the admin-time validation was in place.
-
-const ALLOWED_MCP_COMMANDS = new Set([
-  'npx', 'node', 'nodejs',
-  'python', 'python3',
-  'uvx', 'uv',
-  'deno',
-  'bun',
-])
+import { ALLOWED_MCP_COMMANDS } from '@/lib/mcp/validate-config'
 
 // ─── Connection cache ─────────────────────────────────────────────────────────
 // One Client instance per skillId — reuses the stdio transport across calls.
