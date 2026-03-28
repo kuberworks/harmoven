@@ -12,11 +12,11 @@ execution_engine:
   max_concurrent_nodes: 4          # per run — respected by CustomExecutor
 
 llm:
-  default_provider: anthropic
+  default_provider: cometapi
   profiles_active:
-    - claude-haiku-4-5-20251001    # fast, low cost — default for most tasks
-    - claude-sonnet-4-6            # balanced — complex tasks
-    # - claude-opus-4-6            # premium — enable explicitly
+    - cometapi                     # balanced — OpenAI-compatible via CometAPI (gpt-4o)
+    # - claude-3-5-haiku-20241022  # fast, low cost — uncomment to use Anthropic directly
+    # - claude-3-7-sonnet-20250219 # balanced — complex tasks (Anthropic direct)
     # - gemini-3-1-pro
     # - gpt-5-4
 

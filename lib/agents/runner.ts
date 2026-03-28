@@ -126,7 +126,9 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
       case 'CLASSIFIER': {
         const input = typeof handoffIn === 'string'
           ? handoffIn
-          : ((handoffIn as Record<string, unknown> | null)?.['input'] as string | undefined) ?? ''
+          : ((handoffIn as Record<string, unknown> | null)?.['input'] as string | undefined)
+            ?? (meta['task_input'] as string | undefined)
+            ?? ''
 
         const result = await new IntentClassifier(contextualLlm).classify(input, signal)
         return { handoffOut: result, costUsd: 0, tokensIn: 0, tokensOut: 0 }

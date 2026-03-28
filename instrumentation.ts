@@ -36,5 +36,14 @@ export async function register(): Promise<void> {
       console.warn('[bootstrap] sweepExpiredGates failed (non-fatal):', err),
     )
     startGateSweep()
+
+    // Pre-initialise the execution engine singleton at server startup so that
+    // the db + LLM client are wired in the instrumentation context (stable module
+    // scope, no HMR interference). Without this, the engine is created lazily on
+    // the first POST /api/runs request where module timing can leave this.db undefined.
+    const { getExecutionEngine } = await import('@/lib/execution/engine.factory')
+    await getExecutionEngine().catch((err: unknown) =>
+      console.warn('[bootstrap] getExecutionEngine pre-init failed (non-fatal):', err),
+    )
   }
 }
