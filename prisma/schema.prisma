@@ -265,6 +265,9 @@ model Project {
   config_git_hash  String?   // hash of last committed orchestrator.yaml version
   config_git_at    DateTime? // timestamp of last git commit
 
+  // Soft-delete — Amendment 40 (DELETE /api/projects/:id)
+  archived_at      DateTime? // null = active; non-null = archived
+
   runs             Run[]
   triggers         Trigger[]
   memory_resources MemoryResource[]
@@ -779,4 +782,24 @@ model CriticalFindingFix {
   status     String               // 'pending' | 'fixed' | 'failed'
   cost_usd   Decimal              @db.Decimal(10, 4)
   created_at DateTime             @default(now())
+}
+
+// ─── LLM Provider Keys (credential vault) — Amendment 40.3 ──────────────────
+// Encrypted with AES-256-GCM (same ENCRYPTION_KEY as ProjectCredential).
+// Used when orchestrator.yaml: llm.credential_storage = vault.
+// Default v1 mode (env) reads from process.env — this table is the migration path.
+
+model LlmProviderKey {
+  id           String    @id @default(uuid())
+  provider     String    // 'anthropic' | 'openai' | 'google' | 'cometapi' | ...
+  label        String    // human label: "Production Anthropic key"
+  key_enc      String    // AES-256-GCM: gcm:<ivHex>:<ciphertextHex>:<tagHex>
+  added_by     String    // user_id
+  added_at     DateTime  @default(now())
+  last_used_at DateTime?
+  active       Boolean   @default(true)
+
+  // One active key per provider — partial unique index in migration SQL.
+  @@index([provider])
+  @@map("LlmProviderKey")
 }

@@ -1,6 +1,7 @@
 // app/api/projects/[id]/route.ts
-// GET  /api/projects/:id  — Fetch project details
-// PATCH /api/projects/:id — Update project metadata; auto-commits config to config.git
+// GET    /api/projects/:id  — Fetch project details
+// PATCH  /api/projects/:id  — Update project metadata; auto-commits config to config.git
+// DELETE /api/projects/:id  — Soft-archive project (spec TECHNICAL.md §8 L.773)
 // Spec: T2B.2 (DoD gap — PATCH missing), TECHNICAL.md §16.
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -105,4 +106,46 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const project = await db.project.findUnique({ where: { id: projectId } })
   return NextResponse.json({ project })
+}
+
+// ─── DELETE (archive) ─────────────────────────────────────────────────────────
+// Soft-delete: sets archived_at timestamp. Active runs are not aborted.
+// Requires project:edit permission (same as PATCH — only members with edit rights).
+
+export async function DELETE(req: NextRequest, { params }: Params) {
+  const { id: projectId } = await params
+
+  const caller = await resolveCaller(req)
+  if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  try {
+    await assertProjectAccess(caller, projectId)
+  } catch (e) {
+    if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (e instanceof ForbiddenError)    return NextResponse.json({ error: 'Forbidden'    }, { status: 403 })
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const perms = await resolvePermissions(caller, projectId)
+  if (!perms.has('project:edit')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  await db.project.update({
+    where: { id: projectId },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data:  { archived_at: new Date() } as any,
+  })
+
+  const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
+  await db.auditLog.create({
+    data: {
+      run_id:      null,
+      actor:       actorId,
+      action_type: 'project.archived',
+      payload:     { project_id: projectId },
+    },
+  })
+
+  return new NextResponse(null, { status: 204 })
 }
