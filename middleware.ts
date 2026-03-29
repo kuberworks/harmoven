@@ -216,7 +216,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
       if (enforceMfa && body.user?.twoFactorEnabled !== true) {
         console.error(
-          `[harmoven] SECURITY: instance_admin "${(body.user as { email?: string }).email ?? 'unknown'}" `
+          `[harmoven] SECURITY: instance_admin user id="${(body.user as { id?: string }).id ?? 'unknown'}" `
           + `is accessing the system without 2FA configured — blocking access until 2FA is enabled.`,
         )
         if (!isMfaAllowed(pathname)) {
@@ -229,9 +229,10 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
       if (!enforceMfa) {
         // MFA enforcement disabled — log a persistent warning on every admin access.
+        // SEC-L-01: log user id, not email — emails are PII and must not appear in logs.
         console.warn(
           `[harmoven] WARNING: MFA enforcement is DISABLED. `
-          + `instance_admin "${(body.user as { email?: string }).email ?? 'unknown'}" `
+          + `instance_admin user id="${(body.user as { id?: string }).id ?? 'unknown'}" `
           + `accessed without confirmed 2FA. `
           + (envOverrideDisables ? '(env var override)' : '(DB setting)'),
         )

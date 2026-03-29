@@ -173,13 +173,16 @@ async function streamAnthropic(
 // ─── OpenAI + OpenAI-compatible providers ─────────────────────────────────────
 
 async function buildOpenAIClient(profile: LlmProfileConfig): Promise<OpenAI> {
-  const cached = _openaiCache.get(profile.id)
-  if (cached && Date.now() < cached.expiresAt) return cached.client
-  // SSRF guard: validate admin-supplied base_url before connecting (DoD T1.9, T3.9).
-  // Re-runs on every cache miss (every 5 min) — catches DNS rebinding mid-session.
+  // SEC-C-01: Re-validate base_url on EVERY call when a custom base_url is set.
+  // The 5-min client cache is kept for connection reuse, but the SSRF check
+  // runs unconditionally so a DNS rebinding attack cannot exploit the cache window.
+  // For fixed public endpoints (no base_url) the check is skipped — no SSRF risk.
   if (profile.base_url) {
     await validateLLMBaseUrl(profile.base_url)
   }
+
+  const cached = _openaiCache.get(profile.id)
+  if (cached && Date.now() < cached.expiresAt) return cached.client
   const envKey = profile.api_key_env
   const apiKey = envKey ? (process.env[envKey] ?? 'no-key') : 'no-key'
   // For Ollama the key is irrelevant — the server accepts any value.

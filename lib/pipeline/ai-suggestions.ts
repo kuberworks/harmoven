@@ -161,14 +161,38 @@ async function generateSuggestion(
   })
 }
 
+/**
+ * SEC-C-02: Sanitize a value intended for use inside a prompt string.
+ * Strips backtick sequences and "ignore/forget previous instructions" patterns
+ * that an adversary could embed in node agent_type or other string fields
+ * to escape the structured data context and inject prompt directives.
+ */
+function sanitizeForPrompt(value: string): string {
+  return value
+    // Remove backtick-fence sequences that could close/reopen code blocks
+    .replace(/`{1,4}/g, "'")
+    // Neutralise common prompt-injection openers
+    .replace(/\b(ignore|forget|disregard|override|cancel)\s+(previous|prior|above|all)\s+(instructions?|rules?|context|prompt)/gi, '[REDACTED]')
+    // Collapse to a safe maximum length — these are node metadata strings, never free-form
+    .slice(0, 128)
+}
+
 function buildPrompt(dag: Dag, outcome: RunOutcome): string {
-  const failedNodes = outcome.nodes.filter((n) => n.status !== 'COMPLETED')
-  const highRetryNodes = outcome.nodes.filter((n) => n.retries > 1)
+  // SEC-C-02: Sanitize all string fields that originate from DB rows (and therefore
+  // from admin/user input) before interpolating them into the prompt.
+  // Numbers (status counters, costs, token counts) are safe — no injection risk.
+  const safeStatus = sanitizeForPrompt(outcome.status)
+  const failedNodes = outcome.nodes
+    .filter((n) => n.status !== 'COMPLETED')
+    .map((n) => ({ agent_type: sanitizeForPrompt(n.agent_type), status: sanitizeForPrompt(n.status), retries: n.retries }))
+  const highRetryNodes = outcome.nodes
+    .filter((n) => n.retries > 1)
+    .map((n) => ({ agent_type: sanitizeForPrompt(n.agent_type), status: sanitizeForPrompt(n.status), retries: n.retries }))
 
   return `You are an AI pipeline optimizer for Harmoven, a multi-agent orchestration platform.
 
 A pipeline run has completed with the following outcome:
-- Status: ${outcome.status}
+- Status: ${safeStatus}
 - User rating: ${outcome.user_rating ?? 'not rated'}/5
 - Cost: $${outcome.cost_actual_usd.toFixed(4)}
 - Total tokens: ${outcome.tokens_actual}

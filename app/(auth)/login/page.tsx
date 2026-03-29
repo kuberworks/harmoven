@@ -25,10 +25,20 @@ type PasskeySignIn = (opts?: Record<string, unknown>) => Promise<{ error?: { mes
  * Strips the callbackURL if it points at /login or /register (loop guard).
  */
 function getSafeCallbackURL(raw: string | null): string {
-  if (raw && raw.startsWith('/') && !raw.startsWith('//')) {
+  if (!raw) return '/dashboard'
+  // SEC-H-03: Percent-decode before validating to prevent bypasses like
+  // callbackURL=/%2F/evil.com which starts with '/' but decodes to '//evil.com'.
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(raw)
+  } catch {
+    // Malformed percent-encoding — reject.
+    return '/dashboard'
+  }
+  if (decoded.startsWith('/') && !decoded.startsWith('//')) {
     const blocked = ['/login', '/register']
-    if (!blocked.some(b => raw === b || raw.startsWith(b + '?'))) {
-      return raw
+    if (!blocked.some(b => decoded === b || decoded.startsWith(b + '?'))) {
+      return decoded
     }
   }
   return '/dashboard'

@@ -6,6 +6,9 @@ import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { getTemplate, updateTemplate, deleteTemplate } from '@/lib/pipeline/templates'
 import type { Dag } from '@/types/dag.types'
 
+// SEC-H-05: Maximum serialised size (bytes) for a DAG payload.
+const MAX_DAG_BYTES = 512_000
+
 type Params = { params: Promise<{ id: string }> }
 
 export async function GET(_req: NextRequest, { params }: Params) {
@@ -40,6 +43,14 @@ export async function PUT(req: NextRequest, { params }: Params) {
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
   const { name, description, is_public, dag, change_note } = body as Record<string, unknown>
+
+  // SEC-H-05: Enforce maximum DAG payload size before writing to DB.
+  if (dag && JSON.stringify(dag).length > MAX_DAG_BYTES) {
+    return NextResponse.json(
+      { error: `DAG payload exceeds maximum allowed size of ${MAX_DAG_BYTES} bytes` },
+      { status: 422 },
+    )
+  }
 
   const updated = await updateTemplate(id, {
     name:        typeof name        === 'string' ? name        : undefined,
