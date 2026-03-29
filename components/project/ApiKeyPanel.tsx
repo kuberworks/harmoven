@@ -141,15 +141,14 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
       const rolesData = await rolesRes.json() as { roles: RoleOption[] }
       setKeys(keysData.keys)
       setRoles(rolesData.roles)
-      if (rolesData.roles.length > 0 && !roleId) {
-        setRoleId(rolesData.roles[0]!.id)
-      }
+      // Only set the default role if none has been selected yet (avoids re-render loop)
+      setRoleId(prev => prev || (rolesData.roles[0]?.id ?? ''))
     } catch {
       setError('Failed to load API keys.')
     } finally {
       setLoading(false)
     }
-  }, [projectId, roleId])
+  }, [projectId])  // roleId intentionally excluded: setRoleId uses functional update
 
   useEffect(() => { void load() }, [load])
 
