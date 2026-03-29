@@ -57,7 +57,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {children}
           </div>
         </main>
-      </div>
-    </TranslationProvider>
+      </div>      </div>    </TranslationProvider>
   )
 }

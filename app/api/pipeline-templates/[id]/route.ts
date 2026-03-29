@@ -1,0 +1,74 @@
+// GET    /api/pipeline-templates/:id          — Get one template with versions
+// PUT    /api/pipeline-templates/:id          — Update (creates new version if dag changes)
+// DELETE /api/pipeline-templates/:id          — Delete template
+import { NextRequest, NextResponse } from 'next/server'
+import { resolveCaller }             from '@/lib/auth/resolve-caller'
+import { getTemplate, updateTemplate, deleteTemplate } from '@/lib/pipeline/templates'
+import type { Dag } from '@/types/dag.types'
+
+type Params = { params: Promise<{ id: string }> }
+
+export async function GET(_req: NextRequest, { params }: Params) {
+  const caller = await resolveCaller(_req)
+  if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  const template = await getTemplate(id)
+  if (!template) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  return NextResponse.json({ template })
+}
+
+export async function PUT(req: NextRequest, { params }: Params) {
+  const caller = await resolveCaller(req)
+  if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const userId = caller.type === 'session' ? caller.userId : null
+  if (!userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const { id } = await params
+  const existing = await getTemplate(id)
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  // Only the creator or an instance_admin can modify
+  const isAdmin = caller.type === 'session' && caller.instanceRole === 'instance_admin'
+  if (!isAdmin && existing.created_by !== userId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  let body: unknown
+  try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
+
+  const { name, description, is_public, dag, change_note } = body as Record<string, unknown>
+
+  const updated = await updateTemplate(id, {
+    name:        typeof name        === 'string' ? name        : undefined,
+    description: typeof description === 'string' ? description : undefined,
+    is_public:   typeof is_public   === 'boolean' ? is_public  : undefined,
+    dag:         dag ? dag as Dag : undefined,
+    change_note: typeof change_note === 'string' ? change_note : undefined,
+    updated_by:  userId,
+  })
+
+  return NextResponse.json({ template: updated })
+}
+
+export async function DELETE(_req: NextRequest, { params }: Params) {
+  const caller = await resolveCaller(_req)
+  if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const userId = caller.type === 'session' ? caller.userId : null
+  if (!userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const { id } = await params
+  const existing = await getTemplate(id)
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const isAdmin = caller.type === 'session' && caller.instanceRole === 'instance_admin'
+  if (!isAdmin && existing.created_by !== userId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  await deleteTemplate(id)
+  return new NextResponse(null, { status: 204 })
+}

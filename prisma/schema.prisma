@@ -129,6 +129,7 @@ model User {
   project_memberships   ProjectMember[]
   user_preferences      UserPreference[]
   installed_packs       InstalledPack[]
+  pipeline_templates    PipelineTemplate[]
 
   @@map("user")
 }
@@ -268,14 +269,15 @@ model Project {
   // Soft-delete — Amendment 40 (DELETE /api/projects/:id)
   archived_at      DateTime? // null = active; non-null = archived
 
-  runs             Run[]
-  triggers         Trigger[]
-  memory_resources MemoryResource[]
-  members          ProjectMember[]
-  roles            ProjectRole[]
-  api_keys         ProjectApiKey[]
-  credentials      ProjectCredential[]
-  git_worktrees    GitWorktree[]
+  runs               Run[]
+  triggers           Trigger[]
+  memory_resources   MemoryResource[]
+  members            ProjectMember[]
+  roles              ProjectRole[]
+  api_keys           ProjectApiKey[]
+  credentials        ProjectCredential[]
+  git_worktrees      GitWorktree[]
+  pipeline_templates PipelineTemplate[]
 }
 
 // ─── Runs ─────────────────────────────────────────────────────────────────────
@@ -318,6 +320,10 @@ model Run {
   business_value_note   String?  // free-text ROI context (optional)
   task_input_chars      Int      @default(0) // computed at creation
 
+  // Pipeline template — optional FK to PipelineTemplate used to seed this run's DAG
+  pipeline_template_id  String?
+  pipeline_template     PipelineTemplate? @relation(fields: [pipeline_template_id], references: [id])
+
   user         User?         @relation(fields: [created_by], references: [id])
   nodes        Node[]
   handoffs     Handoff[]
@@ -330,6 +336,7 @@ model Run {
   @@index([project_id])
   @@index([status])
   @@index([created_by])
+  @@index([pipeline_template_id])
 }
 
 // ─── Nodes ───────────────────────────────────────────────────────────────────
@@ -814,4 +821,56 @@ model SystemSetting {
   value      String             // JSON-encoded value (string, bool, number)
   updated_at DateTime @updatedAt
   updated_by String?            // user_id of last editor (null = seeded/migrated)
+}
+
+// ─── Pipeline Templates ───────────────────────────────────────────────────────
+// User-defined reusable DAG definitions. Persisted, versioned, improvable via
+// AI feedback loop. Instances referenced by Run.pipeline_template_id.
+
+model PipelineTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  // null = global (visible to all instance users); non-null = scoped to project
+  project_id  String?
+  created_by  String
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  is_public   Boolean  @default(false) // global templates only
+  use_count   Int      @default(0)     // incremented on each run using this template
+
+  // The canonical DAG definition: { nodes: DagNode[], edges: DagEdge[] }
+  // Matches the existing Dag interface (types/dag.types.ts).
+  dag         Json
+
+  // Latest AI improvement suggestion (null = none yet)
+  ai_suggestion     Json?    // { nodes, edges, rationale }
+  ai_suggested_at   DateTime?
+
+  creator   User              @relation(fields: [created_by], references: [id])
+  project   Project?          @relation(fields: [project_id], references: [id])
+  versions  PipelineTemplateVersion[]
+  runs      Run[]
+
+  @@index([created_by])
+  @@index([project_id])
+}
+
+// Append-only version history for PipelineTemplate.
+// source = 'user' when the user manually edits the template.
+// source = 'ai_suggestion' when the AI-proposed version is accepted.
+model PipelineTemplateVersion {
+  id          String   @id @default(uuid())
+  template_id String
+  version     Int      // monotonic, starts at 1
+  dag         Json     // snapshot of the DAG at this version
+  change_note String?  // human or AI rationale for the change
+  source      String   @default("user") // 'user' | 'ai_suggestion'
+  created_by  String
+  created_at  DateTime @default(now())
+
+  template    PipelineTemplate @relation(fields: [template_id], references: [id])
+
+  @@unique([template_id, version])
+  @@index([template_id])
 }

@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Play, FolderOpen, ShoppingBag, Settings,
-  BarChart2, Shield, Users, ChevronLeft, ChevronRight,
+  BarChart2, Shield, Users, ChevronLeft, ChevronRight, Workflow,
 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useT } from '@/lib/i18n/client'
@@ -27,6 +27,7 @@ const PRIMARY_NAV: NavItem[] = [
   { labelKey: 'nav.dashboard',   href: '/dashboard',   icon: LayoutDashboard },
   { labelKey: 'nav.runs',        href: '/runs',         icon: Play },
   { labelKey: 'nav.projects',    href: '/projects',     icon: FolderOpen },
+  { labelKey: 'nav.pipelines',   href: '/pipelines',    icon: Workflow },
   { labelKey: 'nav.marketplace', href: '/marketplace',  icon: ShoppingBag },
 ]
 

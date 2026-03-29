@@ -12,7 +12,8 @@
     "logout": "Se déconnecter",
     "back": "Retour",
     "new_run": "Nouvelle exécution",
-    "new_project": "Nouveau projet"
+    "new_project": "Nouveau projet",
+    "pipelines": "Pipelines"
   },
   "auth": {
     "login": "Se connecter",
@@ -260,26 +261,6 @@
     "instance": "Instance",
     "users": "Utilisateurs",
     "audit_log": "Journal d'audit",
-    "skills": "Compétences et packs",
-    "config": "Configuration",
-    "health": "Santé du système",
-    "version": "Version",
-    "users_title": "Gestion des utilisateurs",
-    "users_empty": "Aucun utilisateur",
-    "ban": "Suspendre",
-    "unban": "Réactiver",
-    "promote": "Promouvoir administrateur",
-    "demote": "Retirer les droits admin",
-    "audit": {
-      "title": "Journal d'audit",
-      "actor": "Qui",
-      "action": "Action",
-      "target": "Cible",
-      "timestamp": "Quand",
-      "empty": "Aucun événement d'audit",
-      "loading": "Chargement…",
-      "filter_by": "Filtrer par"
-    },
     "skills": {
       "title": "Compétences installées",
       "install": "Installer un pack",
@@ -301,6 +282,25 @@
         "notify": "Notifier à la mise à jour",
         "manual": "Mises à jour manuelles uniquement"
       }
+    },
+    "config": "Configuration",
+    "health": "Santé du système",
+    "version": "Version",
+    "users_title": "Gestion des utilisateurs",
+    "users_empty": "Aucun utilisateur",
+    "ban": "Suspendre",
+    "unban": "Réactiver",
+    "promote": "Promouvoir administrateur",
+    "demote": "Retirer les droits admin",
+    "audit": {
+      "title": "Journal d'audit",
+      "actor": "Qui",
+      "action": "Action",
+      "target": "Cible",
+      "timestamp": "Quand",
+      "empty": "Aucun événement d'audit",
+      "loading": "Chargement…",
+      "filter_by": "Filtrer par"
     }
   },
   "marketplace": {
