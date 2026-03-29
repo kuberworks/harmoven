@@ -13,36 +13,45 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Play, FolderOpen, Plus } from 'lucide-react'
 import { redirect } from 'next/navigation'
+import { RUN_STATUS_VARIANT } from '@/lib/utils/run-status'
 
 export const metadata: Metadata = { title: 'Dashboard' }
-
-const STATUS_VARIANT: Record<string, 'running' | 'completed' | 'failed' | 'paused' | 'pending' | 'suspended'> = {
-  RUNNING:     'running',
-  COMPLETED:   'completed',
-  FAILED:      'failed',
-  PAUSED:      'paused',
-  PENDING:     'pending',
-  SUSPENDED:   'suspended',
-  INTERRUPTED: 'paused',
-  CANCELLED:   'pending',
-}
 
 export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
 
-  // Fetch active runs the user can see (last 20 across all projects)
+  const instanceRole = ((session.user as Record<string, unknown>).role as string | undefined) ?? 'user'
+  const isAdmin = instanceRole === 'instance_admin'
+
+  // RBAC: instance_admin sees all projects/runs; other users see only their memberships.
+  const memberProjectIds: string[] | undefined = isAdmin
+    ? undefined
+    : (await db.projectMember.findMany({
+        where: { user_id: session.user.id },
+        select: { project_id: true },
+      })).map(m => m.project_id)
+
+  const projectIdFilter = memberProjectIds !== undefined
+    ? { project_id: { in: memberProjectIds } }
+    : {}
+
+  // Fetch active runs the user can see (last 10 across accessible projects)
   const activeRuns = await db.run.findMany({
     where: {
       status: { in: ['RUNNING', 'PAUSED', 'PENDING'] },
+      ...projectIdFilter,
     },
     orderBy: { started_at: 'desc' },
     take: 10,
     include: { project: { select: { name: true } } },
   })
 
-  // Recent projects
+  // Recent projects scoped to user membership
   const recentProjects = await db.project.findMany({
+    where: memberProjectIds !== undefined
+      ? { id: { in: memberProjectIds } }
+      : {},
     orderBy: { updated_at: 'desc' },
     take: 6,
     include: { _count: { select: { runs: true } } },
@@ -52,6 +61,7 @@ export default async function DashboardPage() {
     where: {
       status: 'COMPLETED',
       completed_at: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+      ...projectIdFilter,
     },
   })
 
@@ -91,7 +101,7 @@ export default async function DashboardPage() {
               <Link key={run.id} href={`/projects/${run.project_id}/runs/${run.id}`}>
                 <Card className="hover:bg-surface-hover transition-colors duration-150 cursor-pointer">
                   <CardContent className="flex items-center gap-4 py-3">
-                    <Badge variant={STATUS_VARIANT[run.status] ?? 'pending'}>
+                    <Badge variant={RUN_STATUS_VARIANT[run.status] ?? 'pending'}>
                       {run.status}
                     </Badge>
                     <div className="flex-1 min-w-0">
