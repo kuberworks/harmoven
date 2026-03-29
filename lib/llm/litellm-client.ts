@@ -57,6 +57,7 @@ export class LiteLLMClient implements ILLMClient {
       tokensIn:  completion.usage?.prompt_tokens     ?? 0,
       tokensOut: completion.usage?.completion_tokens ?? 0,
       model:     completion.model,
+      costUsd:   0,
     }
   }
 
@@ -92,6 +93,7 @@ export class LiteLLMClient implements ILLMClient {
       tokensIn:  final.usage?.prompt_tokens     ?? 0,
       tokensOut: final.usage?.completion_tokens ?? 0,
       model:     modelName,
+      costUsd:   0,
     }
   }
 }

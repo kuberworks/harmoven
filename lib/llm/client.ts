@@ -297,6 +297,7 @@ async function callGemini(
     tokensIn:  response.usageMetadata?.promptTokenCount      ?? 0,
     tokensOut: response.usageMetadata?.candidatesTokenCount   ?? 0,
     model:     profile.model_string,
+    costUsd:   0,
   }
 }
 

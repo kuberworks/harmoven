@@ -64,6 +64,7 @@ export class MockLLMClient implements ILLMClient {
       tokensIn: Math.ceil(messages.reduce((s, m) => s + m.content.length, 0) / 4),
       tokensOut: Math.ceil(content.length / 4),
       model: options.model,
+      costUsd: 0,
     }
   }
 
@@ -83,6 +84,7 @@ export class MockLLMClient implements ILLMClient {
       tokensIn: Math.ceil(messages.reduce((s, m) => s + m.content.length, 0) / 4),
       tokensOut: Math.ceil(content.length / 4),
       model: options.model,
+      costUsd: 0,
     }
   }
 

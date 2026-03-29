@@ -719,16 +719,18 @@ model RunActorStats {
 // ─── Eval Results (Amendment 89) ─────────────────────────────────────────────
 
 model EvalResult {
-  id            String   @id @default(uuid())
-  run_id        String
-  run           Run      @relation(fields: [run_id], references: [id])
-  node_id       String
-  attempt       Int      // 1, 2, or 3
-  overall_score Float
-  passed        Boolean
-  criteria      Json     // EvalCriterion[] with individual scores
-  feedback      String?
-  computed_at   DateTime @default(now())
+  id              String   @id @default(uuid())
+  run_id          String
+  run             Run      @relation(fields: [run_id], references: [id])
+  node_id         String
+  attempt         Int      // 1, 2, or 3
+  overall_score   Float
+  passed          Boolean
+  criteria        Json     // EvalCriterion[] with individual scores
+  feedback        String?
+  computed_at     DateTime @default(now())
+  // Populated when parallelEval() is used (Amendment 4.4 — cross-model validation)
+  model_breakdown Json?    // ModelBreakdownItem[] per-model raw results
 
   @@index([run_id])
 }
