@@ -10,6 +10,7 @@ import {
   resolvePermissions,
   ForbiddenError,
   UnauthorizedError,
+  invalidatePermCache,
 } from '@/lib/auth/rbac'
 import { revokeProjectApiKey } from '@/lib/auth/project-api-key'
 import { db } from '@/lib/db/client'
@@ -39,6 +40,11 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   if (!revoked) {
     return NextResponse.json({ error: 'API key not found' }, { status: 404 })
   }
+
+  // SEC-C-03: Immediately invalidate the in-process permission cache for this key.
+  // Without this, the revoked key could still be accepted for up to 60 s (PERM_CACHE_TTL_MS).
+  // We construct an ApiKeyCaller shape to match the cache key format "apikey:<keyId>:<projectId>".
+  invalidatePermCache({ type: 'api_key', keyId }, projectId)
 
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
   await db.auditLog.create({

@@ -2,8 +2,13 @@
 // POST /api/pipeline-templates       — Create a new pipeline template
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
+import { assertProjectAccess }       from '@/lib/auth/ownership'
 import { listTemplates, createTemplate } from '@/lib/pipeline/templates'
 import type { Dag } from '@/types/dag.types'
+
+// SEC-H-05: Maximum serialised size (bytes) for a DAG payload.
+// Prevents unbounded storage and LLM context overflow.
+const MAX_DAG_BYTES = 512_000
 
 export async function GET(req: NextRequest) {
   const caller = await resolveCaller(req)
@@ -14,6 +19,17 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = req.nextUrl
   const project_id = searchParams.get('project_id') ?? undefined
+
+  // SEC-M-01: If filtering by project, verify the caller is a member of that project.
+  // Without this check any authenticated user could enumerate another project's templates
+  // by passing an arbitrary project_id query parameter.
+  if (project_id) {
+    try {
+      await assertProjectAccess(caller, project_id)
+    } catch {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
 
   const templates = await listTemplates({ user_id: userId, project_id })
   return NextResponse.json({ templates })
@@ -34,6 +50,14 @@ export async function POST(req: NextRequest) {
   if (!name || typeof name !== 'string') return NextResponse.json({ error: '`name` is required' }, { status: 422 })
   if (!dag || typeof dag !== 'object' || !Array.isArray((dag as Dag).nodes) || !Array.isArray((dag as Dag).edges)) {
     return NextResponse.json({ error: '`dag` must be { nodes: [], edges: [] }' }, { status: 422 })
+  }
+
+  // SEC-H-05: Enforce maximum DAG payload size before writing to DB.
+  if (JSON.stringify(dag).length > MAX_DAG_BYTES) {
+    return NextResponse.json(
+      { error: `DAG payload exceeds maximum allowed size of ${MAX_DAG_BYTES} bytes` },
+      { status: 422 },
+    )
   }
 
   const template = await createTemplate({

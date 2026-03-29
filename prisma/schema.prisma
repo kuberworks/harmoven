@@ -421,7 +421,10 @@ model HumanGate {
 // actor: user_id | "trigger/{id}" | "system" — NOT a FK (can be non-user values).
 
 model AuditLog {
-  id          String   @id @default(uuid())
+  // SEC-M-04: No schema-level default — all call sites pass `id: uuidv7()` explicitly,
+  // which gives time-sortable IDs for forensic log ordering by primary key.
+  // Removing @default(uuid()) here enforces that no future caller skips the explicit id.
+  id          String   @id
   timestamp   DateTime @default(now())
   run_id      String?
   run         Run?     @relation(fields: [run_id], references: [id])
