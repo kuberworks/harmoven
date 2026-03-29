@@ -102,6 +102,27 @@ services:
     profiles:
       - litellm   # only started when: docker compose --profile litellm up
 
+  # Redis — optional, for distributed rate limiting across app replicas.
+  # Activate with: REDIS_URL=redis://redis:6379 docker compose --profile redis up
+  # When REDIS_URL is NOT set, the app falls back to in-memory rate limiting
+  # (safe for single-instance deployments).
+  #
+  # Redis data is ephemeral by design (rate limit counters don't need persistence).
+  # No password is set here — Redis is on an isolated internal network only.
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - app_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - redis   # only started when: docker compose --profile redis up
+
   # Docker socket proxy (Tecnativa) — Amendment 92 H4.
   # The Smoke Test Agent needs Docker to launch preview containers but must NOT
   # have full Docker socket access. This proxy restricts it to the minimum needed.

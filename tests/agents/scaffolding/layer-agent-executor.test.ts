@@ -9,10 +9,10 @@
 //   ✓ LLMDirectExecutor — LLM returns oversized output → success=false
 //   ✓ LLMDirectExecutor — context files loaded + truncated
 //   ✓ LLMDirectExecutor — tier selection per layer type
-//   ✓ KiloCliExecutor   — isAvailable() = false
-//   ✓ KiloCliExecutor   — execute() throws NotImplementedError
+//   ✓ KiloCliExecutor   — isAvailable() = false (kilocode not in test PATH)
+//   ✓ KiloCliExecutor   — execute() returns error response when kilocode absent
 //   ✓ Factory           — returns LLMDirectExecutor by default
-//   ✓ Factory           — kilo_cli + expert_mode falls back to llm_direct (STUB unavailable)
+//   ✓ Factory           — kilo_cli + expert_mode falls back to llm_direct (unavailable in test env)
 
 import { jest } from '@jest/globals'
 
@@ -31,7 +31,7 @@ const mockMkdirSync     = fs.mkdirSync     as jest.MockedFunction<typeof fs.mkdi
 // ─── Imports after mocks ─────────────────────────────────────────────────────
 import { MockLLMClient }              from '@/lib/llm/mock-client'
 import { LLMDirectExecutor }          from '@/lib/agents/scaffolding/executors/llm-direct.executor'
-import { KiloCliExecutor, NotImplementedError } from '@/lib/agents/scaffolding/executors/kilo-cli.executor'
+import { KiloCliExecutor } from '@/lib/agents/scaffolding/executors/kilo-cli.executor'
 import { createLayerAgentExecutor }   from '@/lib/agents/scaffolding/layer-agent-executor.factory'
 import type { LayerAgentInput }       from '@/lib/agents/scaffolding/layer-agent-executor.interface'
 
@@ -261,11 +261,12 @@ describe('LLMDirectExecutor', () => {
 })
 
 // ═════════════════════════════════════════════════════════════════════════════
-// KiloCliExecutor (STUB)
+// KiloCliExecutor
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('KiloCliExecutor (STUB)', () => {
-  it('isAvailable() returns false', async () => {
+describe('KiloCliExecutor', () => {
+  it('isAvailable() returns false when kilocode is not in PATH', async () => {
+    // In a CI/test environment without kilocode installed, isAvailable() must return false.
     expect(await new KiloCliExecutor().isAvailable()).toBe(false)
   })
 
@@ -273,14 +274,23 @@ describe('KiloCliExecutor (STUB)', () => {
     expect(new KiloCliExecutor().name).toBe('kilo_cli')
   })
 
-  it('execute() throws NotImplementedError', async () => {
+  it('execute() returns a failure result (not throw) when kilocode is absent', async () => {
     const executor = new KiloCliExecutor()
-    await expect(executor.execute(makeInput())).rejects.toBeInstanceOf(NotImplementedError)
+    // Rather than throwing, execute() returns a LayerAgentOutput with success=false
+    // and an error message when kilocode cannot be spawned.
+    const result = await executor.execute(makeInput())
+    expect(result.success).toBe(false)
+    expect(typeof result.error).toBe('string')
+    expect(result.error).toMatch(/kilocode|ENOENT/i)
   })
 
-  it('execute() error message mentions v1.1', async () => {
+  it('execute() result has required LayerAgentOutput shape', async () => {
     const executor = new KiloCliExecutor()
-    await expect(executor.execute(makeInput())).rejects.toThrow(/v1\.1/i)
+    const result   = await executor.execute(makeInput())
+    expect(Array.isArray(result.files_created)).toBe(true)
+    expect(Array.isArray(result.files_modified)).toBe(true)
+    expect(typeof result.duration_ms).toBe('number')
+    expect(typeof result.cost_usd).toBe('number')
   })
 })
 

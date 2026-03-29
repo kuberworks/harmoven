@@ -5,7 +5,7 @@
 // Receives initial state from Server Component, wires up useRunStream for updates.
 // UX spec §3.5 — ExecutingView (Level 1–4), CompletedView, ProblemView.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRunStream, type RunState, type NodeState } from '@/hooks/useRunStream'
 import { Badge } from '@/components/ui/badge'
@@ -14,8 +14,10 @@ import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { PauseControls } from '@/components/run/PauseControls'
 import { ContextInjectionPanel } from '@/components/run/ContextInjectionPanel'
+import { DagView } from '@/components/run/DagView'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink } from 'lucide-react'
+import { useT } from '@/lib/i18n/client'
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star } from 'lucide-react'
 import { RUN_STATUS_VARIANT } from '@/lib/utils/run-status'
 import type { Permission } from '@/lib/auth/permissions'
 import type { Dag } from '@/types/dag.types'
@@ -57,6 +59,135 @@ interface Props {
   initialRun: InitialRun
   initialNodes: InitialNode[]
   permissions: Set<Permission>
+}
+
+// ─── Post-run feedback panel ────────────────────────────────────────────────
+
+function FeedbackPanel({ runId }: { runId: string }) {
+  const t = useT()
+  const [rating,       setRating]       = useState(0)
+  const [hovered,      setHovered]      = useState(0)
+  const [hoursSaved,   setHoursSaved]   = useState('')
+  const [valueNote,    setValueNote]    = useState('')
+  const [submitting,   setSubmitting]   = useState(false)
+  const [submitted,    setSubmitted]    = useState(false)
+  const [skipped,      setSkipped]      = useState(false)
+  const [error,        setError]        = useState<string | null>(null)
+
+  const submit = useCallback(async () => {
+    if (!rating) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const body: Record<string, unknown> = { user_rating: rating }
+      const h = parseFloat(hoursSaved)
+      if (!isNaN(h) && h >= 0) body.estimated_hours_saved = h
+      if (valueNote.trim()) body.business_value_note = valueNote.trim()
+
+      const res = await fetch(`/api/runs/${runId}/feedback`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setSubmitted(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to submit feedback.')
+    } finally {
+      setSubmitting(false)
+    }
+  }, [runId, rating, hoursSaved, valueNote])
+
+  if (skipped || submitted) return (
+    <Card>
+      <CardContent className="py-4 text-center text-sm text-muted-foreground">
+        {submitted ? '✓ ' + t('analytics.feedback.submit') + '!' : t('analytics.feedback.skip') + '.'}
+      </CardContent>
+    </Card>
+  )
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{t('analytics.feedback.prompt')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Star rating */}
+        <div className="flex items-center gap-1" aria-label="Rate this run">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              aria-label={`${n} star${n > 1 ? 's' : ''}`}
+              onMouseEnter={() => setHovered(n)}
+              onMouseLeave={() => setHovered(0)}
+              onClick={() => setRating(n)}
+              className="focus:outline-none"
+            >
+              <Star
+                className={`h-6 w-6 transition-colors ${
+                  n <= (hovered || rating)
+                    ? 'text-amber-400 fill-amber-400'
+                    : 'text-muted-foreground/30'
+                }`}
+              />
+            </button>
+          ))}
+        </div>
+
+        {/* Hours saved (optional) */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">
+            {t('analytics.feedback.hours_saved')}
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            value={hoursSaved}
+            onChange={(e) => setHoursSaved(e.target.value)}
+            placeholder="e.g. 2.5"
+            className="w-32 rounded-md border border-surface-border bg-surface-1 px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
+          />
+        </div>
+
+        {/* Business value note (optional) */}
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">
+            {t('analytics.feedback.value_note')}
+          </label>
+          <textarea
+            value={valueNote}
+            onChange={(e) => setValueNote(e.target.value)}
+            placeholder="Any notes on business value or quality…"
+            rows={2}
+            className="w-full rounded-md border border-surface-border bg-surface-1 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+          />
+        </div>
+
+        {error && <p className="text-xs text-destructive">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={!rating || submitting}
+            onClick={submit}
+            className="inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
+            {t('analytics.feedback.submit')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSkipped(true)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2"
+          >
+            {t('analytics.feedback.skip')}
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 // ─── Status helpers ─────────────────────────────────────────────────────────
@@ -284,6 +415,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
           <Tabs defaultValue="agents">
             <TabsList>
               <TabsTrigger value="agents">Agents ({nodes.length})</TabsTrigger>
+              <TabsTrigger value="dag">DAG</TabsTrigger>
               <TabsTrigger value="activity">Activity ({stream.events.length})</TabsTrigger>
               {initialRun.transparency_mode && (
                 <TabsTrigger value="inject">Inject context</TabsTrigger>
@@ -302,6 +434,19 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                   nodes.map((node) => <NodeCard key={node.id} node={node} />)
                 )}
               </div>
+            </TabsContent>
+
+            <TabsContent value="dag">
+              <DagView
+                dag={initialRun.dag}
+                nodeStates={Object.fromEntries(
+                  nodes.map(n => [n.node_id, {
+                    status:   n.status,
+                    cost_usd: ('cost_usd' in n ? n.cost_usd : undefined),
+                    error:    ('error'    in n ? n.error    : undefined),
+                  }]),
+                )}
+              />
             </TabsContent>
 
             <TabsContent value="activity">
@@ -374,6 +519,10 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               </div>
             </CardContent>
           </Card>
+
+          {run.status === 'COMPLETED' && (
+            <FeedbackPanel runId={run.id} />
+          )}
         </div>
       </div>
     </div>

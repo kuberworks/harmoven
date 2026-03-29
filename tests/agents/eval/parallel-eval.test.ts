@@ -63,7 +63,7 @@ function makeEvalOutput(score: number, attempt = 1): EvalAgentOutput {
 describe('parallelEval()', () => {
   const mockEvaluate = evaluate as jest.MockedFunction<typeof evaluate>
 
-  beforeEach(() => mockEvaluate.mockReset())
+  beforeEach(() => { mockEvaluate.mockReset() })
 
   it('returns PASS when all models agree on a high score', async () => {
     // All three model tiers agree: score = 0.85 → std_dev = 0 → PASS

@@ -1,9 +1,13 @@
 // lib/auth/rate-limit.ts
-// In-process IP-based rate limiting for sensitive endpoints.
+// IP-based rate limiting for sensitive endpoints.
 // DoD T1.3: sign-in 5/15 min | DoD §API: POST /api/runs 10/min (MISS-12).
 //
-// Uses an LRU-style Map with per-key expiry. Falls back to always-allow in
-// test environments. For horizontal scale, replace with @upstash/ratelimit.
+// Two backends — selected at startup:
+//   • Redis  — when REDIS_URL is set (distributed, works across replicas)
+//   • Memory — in-process Map with TTL cleanup (single-instance deployments)
+//
+// Redis backend uses a Lua script for an atomic fixed-window counter, so it is
+// safe under concurrent Node.js processes pointing at the same Redis instance.
 //
 // C-03 — SECURITY: X-Forwarded-For trust model
 // The leftmost IP in XFF is set by the client and is trivially forgeable.
@@ -22,12 +26,73 @@
 import type { NextRequest, NextResponse } from 'next/server'
 import { NextResponse as Response } from 'next/server'
 
+// ─── Redis client (optional) ─────────────────────────────────────────────────
+
+// Used with a dynamic require so the module still loads when ioredis is
+// present but REDIS_URL is unset (client remains null — memory fallback used).
+
+type RedisClient = {
+  defineCommand(name: string, opts: { numberOfKeys: number; lua: string }): void
+  [key: string]: unknown
+}
+
+let _redis: RedisClient | null = null
+
+if (process.env.REDIS_URL && process.env.NODE_ENV !== 'test') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { default: Redis } = require('ioredis') as {
+      default: new (url: string, opts?: Record<string, unknown>) => RedisClient
+    }
+    _redis = new Redis(process.env.REDIS_URL, {
+      maxRetriesPerRequest:   1,
+      enableOfflineQueue:     false,
+      connectTimeout:         2000,
+      lazyConnect:            true,
+    })
+
+    // Atomic Lua script: increment and set TTL if first request in window.
+    // Returns [count, ttlMs] where ttlMs is the remaining TTL in milliseconds.
+    ;(_redis as RedisClient & {
+      rateLimitIncr(key: string, max: string, windowMs: string): Promise<[number, number]>
+    }).defineCommand('rateLimitIncr', {
+      numberOfKeys: 1,
+      lua: `
+        local cur = redis.call('INCR', KEYS[1])
+        if cur == 1 then
+          redis.call('PEXPIRE', KEYS[1], ARGV[2])
+        end
+        local ttl = redis.call('PTTL', KEYS[1])
+        return {cur, ttl}
+      `,
+    })
+  } catch (err) {
+    console.warn('[rate-limit] ioredis init failed — falling back to in-memory:', err)
+    _redis = null
+  }
+}
+
+// ─── In-memory backend ───────────────────────────────────────────────────────
+
 interface RateLimitEntry {
-  count:     number
-  resetAt:   number  // epoch ms
+  count:   number
+  resetAt: number  // epoch ms
 }
 
 const _buckets = new Map<string, RateLimitEntry>()
+
+// Periodic cleanup: remove expired entries every 5 minutes to prevent unbounded
+// Map growth in long-running single-instance deployments.
+if (typeof setInterval !== 'undefined' && process.env.NODE_ENV !== 'test') {
+  setInterval(() => {
+    const now = Date.now()
+    for (const [k, v] of _buckets) {
+      if (now > v.resetAt) _buckets.delete(k)
+    }
+  }, 5 * 60 * 1000).unref()
+}
+
+// ─── IP extraction ───────────────────────────────────────────────────────────
 
 /**
  * Extract the client IP from the request respecting trusted proxy count.
@@ -51,24 +116,94 @@ function getIP(req: NextRequest): string {
 
   if (trustedProxies === 0) {
     // No trusted proxy — XFF is fully untrusted. All traffic shares 'unknown'.
-    // Rate limiting still applies per-instance, not per-IP.
     return 'unknown'
   }
 
-  // Take the entry at index (length - trustedProxies), floor at 0.
-  // This is the IP that the outermost trusted proxy recorded as the client.
   const idx = Math.max(0, parts.length - trustedProxies)
   return parts[idx] ?? 'unknown'
 }
 
+// ─── 429 response builder ────────────────────────────────────────────────────
+
+function tooMany(max: number, retryAfterMs: number): NextResponse {
+  const retryAfterSec = Math.ceil(retryAfterMs / 1000)
+  return Response.json(
+    { error: 'Too many requests', retryAfter: retryAfterSec },
+    {
+      status: 429,
+      headers: {
+        'Retry-After':        String(retryAfterSec),
+        'X-RateLimit-Limit':  String(max),
+        'X-RateLimit-Reset':  String(Math.ceil((Date.now() + retryAfterMs) / 1000)),
+      },
+    },
+  )
+}
+
+// ─── Core check (async) ──────────────────────────────────────────────────────
+
 /**
- * Check whether a request from this IP exceeds the given rate limit.
+ * Async rate-limit check. Uses Redis when REDIS_URL is set, otherwise
+ * falls back to the in-process Map.
  *
  * @param req       The incoming request.
  * @param key       Namespace key (e.g. 'signin', 'create-run').
  * @param max       Max allowed requests in the window.
  * @param windowMs  Window duration in milliseconds.
  * @returns         NextResponse 429 if rate-limited, null if allowed.
+ */
+export async function checkRateLimitAsync(
+  req:      NextRequest,
+  key:      string,
+  max:      number,
+  windowMs: number,
+): Promise<NextResponse | null> {
+  if (process.env.NODE_ENV === 'test') return null
+  // NOTE (WARN-002): rate limiting is intentionally ACTIVE in development.
+  // In dev without a reverse proxy, X-Forwarded-For is unset → all requests
+  // share the 'unknown' IP bucket.
+
+  const ip        = getIP(req)
+  const bucketKey = `rl:${key}:${ip}`
+
+  // ── Redis path ──────────────────────────────────────────────────────────
+  if (_redis) {
+    try {
+      const client = _redis as RedisClient & {
+        rateLimitIncr(key: string, max: string, windowMs: string): Promise<[number, number]>
+      }
+      const [count, ttlMs] = await client.rateLimitIncr(bucketKey, String(max), String(windowMs))
+      if (count > max) return tooMany(max, Math.max(0, ttlMs))
+      return null
+    } catch (redisErr) {
+      // Redis error — degrade gracefully to the in-memory backend.
+      console.warn('[rate-limit] Redis check failed, using memory fallback:', redisErr)
+    }
+  }
+
+  // ── Memory path ─────────────────────────────────────────────────────────
+  const now   = Date.now()
+  const entry = _buckets.get(bucketKey)
+
+  if (!entry || now > entry.resetAt) {
+    _buckets.set(bucketKey, { count: 1, resetAt: now + windowMs })
+    return null
+  }
+
+  if (entry.count >= max) {
+    return tooMany(max, entry.resetAt - now)
+  }
+
+  entry.count++
+  return null
+}
+
+/**
+ * Synchronous in-memory-only check (kept for backward compatibility with
+ * callers that cannot be easily made async). Prefers memory even if Redis
+ * is configured — use checkRateLimitAsync() for distributed correctness.
+ *
+ * @deprecated Use checkRateLimitAsync() instead.
  */
 export function checkRateLimit(
   req:      NextRequest,
@@ -77,49 +212,39 @@ export function checkRateLimit(
   windowMs: number,
 ): NextResponse | null {
   if (process.env.NODE_ENV === 'test') return null
-  // NOTE (WARN-002): rate limiting is intentionally ACTIVE in development (NODE_ENV=development).
-  // In dev without a reverse proxy, X-Forwarded-For is unset → all requests share the
-  // 'unknown' IP bucket. Rate limits are still enforced but per-bucket, not per-real-IP.
-  // To test: make 11 rapid authenticated POST /api/runs requests — the 11th returns 429.
-  // Unauthenticated requests are blocked by middleware before reaching this check.
 
-  const ip = getIP(req)
-  const bucketKey = `${key}:${ip}`
-  const now = Date.now()
-
-  const entry = _buckets.get(bucketKey)
+  const ip        = getIP(req)
+  const bucketKey = `rl:${key}:${ip}`
+  const now       = Date.now()
+  const entry     = _buckets.get(bucketKey)
 
   if (!entry || now > entry.resetAt) {
-    // First request or window expired — open a new window.
     _buckets.set(bucketKey, { count: 1, resetAt: now + windowMs })
     return null
   }
 
-  if (entry.count >= max) {
-    const retryAfterSec = Math.ceil((entry.resetAt - now) / 1000)
-    return Response.json(
-      { error: 'Too many requests', retryAfter: retryAfterSec },
-      {
-        status: 429,
-        headers: {
-          'Retry-After':        String(retryAfterSec),
-          'X-RateLimit-Limit':  String(max),
-          'X-RateLimit-Reset':  String(Math.ceil(entry.resetAt / 1000)),
-        },
-      },
-    )
-  }
+  if (entry.count >= max) return tooMany(max, entry.resetAt - now)
 
   entry.count++
   return null
 }
 
-/** Rate limit preset: sign-in — 5 attempts per 15 minutes. */
+/** Async rate limit preset: sign-in — 5 attempts per 15 minutes. */
+export async function signInRateLimitAsync(req: NextRequest): Promise<NextResponse | null> {
+  return checkRateLimitAsync(req, 'signin', 5, 15 * 60 * 1000)
+}
+
+/** Async rate limit preset: POST /api/runs — 10 requests per minute. */
+export async function createRunRateLimitAsync(req: NextRequest): Promise<NextResponse | null> {
+  return checkRateLimitAsync(req, 'create-run', 10, 60 * 1000)
+}
+
+/** @deprecated Use signInRateLimitAsync() */
 export function signInRateLimit(req: NextRequest): NextResponse | null {
   return checkRateLimit(req, 'signin', 5, 15 * 60 * 1000)
 }
 
-/** Rate limit preset: POST /api/runs — 10 requests per minute. */
+/** @deprecated Use createRunRateLimitAsync() */
 export function createRunRateLimit(req: NextRequest): NextResponse | null {
   return checkRateLimit(req, 'create-run', 10, 60 * 1000)
 }
