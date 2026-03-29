@@ -25,12 +25,12 @@ jest.mock('@/lib/db/client', () => ({
 
 // ─── Mock node-cron ───────────────────────────────────────────────────────────
 
-const mockCronSchedule = jest.fn<() => { stop: () => void }>()
+const mockCronSchedule = jest.fn<(expr: string, fn: () => void) => { stop: () => void }>()
 mockCronSchedule.mockReturnValue({ stop: jest.fn() })
 
 jest.mock('node-cron', () => ({
-  default: { schedule: (...args: unknown[]) => mockCronSchedule(...args) },
-  schedule: (...args: unknown[]) => mockCronSchedule(...args),
+  default: { schedule: (expr: string, fn: () => void) => mockCronSchedule(expr, fn) },
+  schedule: (expr: string, fn: () => void) => mockCronSchedule(expr, fn),
 }))
 
 import { purgeExpiredSessions, startSessionCleanupCron } from '@/lib/maintenance/session-cleanup'

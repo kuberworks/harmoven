@@ -6,6 +6,7 @@
 // physically. This job deletes rows whose expiresAt is in the past.
 //
 // Schedule: daily at 03:00 (low-traffic window).
+// Toggle:   RGPD_MAINTENANCE_ENABLED=false disables the cron at startup (see instrumentation.ts).
 // Note: node-cron runs in-process; in a multi-instance deployment use a
 // distributed lock or move this to a separate worker. For now, the risk of
 // duplicate runs is a double-deletion attempt on the same expired rows — which
