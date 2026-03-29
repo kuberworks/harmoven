@@ -1,80 +1,244 @@
-# Spec-Driven Development (SDD) Plugin: Continuous Learning + LLM-as-Judge + Agent Swarm
+# Harmoven
 
-Comprehensive specification-driven development workflow plugin that transforms prompts into production-ready implementations through structured planning, architecture design, and quality-gated execution.
+**Multi-tenant AI agent orchestration platform.** Submit a prompt, Harmoven runs it through a multi-LLM pipeline (Classifier → Planner → Writer → Reviewer), enforces human-gate approvals, tracks every token and dollar, and exposes the entire flow over a versioned REST API.
 
-This plugin is designed to consistently and reproducibly produce working code. It was tested on real-life production projects by our team, and in 100% of cases it generated working code aligned with the initial prompt. If you find a use case it cannot handle, please report it as an issue.
+Self-host on Docker Compose in minutes. Built for teams that cannot send sensitive data to third-party SaaS services.
 
-## Key Features
+---
 
-- **Development as compilation** — The plugin functions like a "compilation" or "nightly build" for your development process: `task specs → run /sdd:implement → working code`. After writing your prompt, you can launch the plugin and expect a functional result when you return. The completion time depends on task complexity — simple tasks may finish within 30 minutes, while complex ones can take several days.
-- **Benchmark-level quality in real life** — Model benchmarks improve with each release, yet real-world results often stagnate. This is because benchmarks reflect the best possible output a model can achieve, whereas in practice LLMs tend to drift toward sub-optimal, non-functional solutions. This plugin uses a variety of patterns to keep the model operating at peak performance.
-- **Customizable** — Balance result quality and process speed by adjusting command parameters. Learn more in the [Customization](customization.md) section.
-- **Developer time-efficiency** — The overall process is designed to minimize developer time and reduce the number of interactions, while still producing results superior to what a model can generate from scratch. However, overall quality is proportional to the time invested in iterating on and refining the specification.
-- **Industry-standard** — The plugin's specification template is based on the arc42 standard, adjusted for LLM capabilities. Arc42 is a widely adopted, high-quality standard for software development documentation used by many organizations.
-- **Works best in complex or large codebases** — While most other frameworks work best for new projects and greenfield development, this plugin is designed to perform better as your codebase grows and your architecture becomes more structured. Each planning phase includes a **codebase impact analysis** step that evaluates which files may be affected and which patterns to follow to achieve the desired result.
-- **Simple** — This plugin avoids unnecessary complexity by primarily using only three commands, offloading process complexity to the model via multi-agent orchestration. `/sdd:implement` is a single command that produces functional code from a task specification. To create that specification, you run `/sdd:add-task` and `/sdd:plan`, which analyze your prompt and iteratively refine the specification until it meets the required quality standards.
+## What it does
 
-## Quick Start
+| Feature | Detail |
+|---|---|
+| **Multi-agent pipeline** | CLASSIFIER → PLANNER → WRITER → REVIEWER, parallelisable via a DAG engine |
+| **Human-in-the-loop gates** | Pause any run at a defined checkpoint for human approval before continuing |
+| **Multi-LLM routing** | Per-node LLM selection based on confidentiality level, jurisdiction, estimated tokens |
+| **RBAC** | 7 roles, 27 permissions, per-project membership — enforced at API and UI layer |
+| **Audit log** | Immutable PostgreSQL-level log (UPDATE/DELETE blocked by DB rules) |
+| **REST API** | Versioned OpenAPI v1, suitable for CI/CD integration |
+| **Marketplace** | Install skill packs; run `GET /api/marketplace` for available packs |
+| **i18n** | English and French, switchable per user |
 
-```bash
-/plugin marketplace add NeoLabHQ/context-engineering-kit
-```
+---
 
-Enable the `sdd` plugin in the installed plugins list:
+## Requirements
 
-```bash
-/plugin
-# Installed -> sdd -> Space to enable
-```
+| Dependency | Version |
+|---|---|
+| Node.js | ≥ 22 |
+| Docker + Docker Compose | v2+ |
+| PostgreSQL | 16 (included in Compose) |
+| Anthropic API key | Required — [console.anthropic.com](https://console.anthropic.com) |
 
-Then run the following commands:
+---
 
-```bash
-# Create the .specs/tasks/draft/design-auth-middleware.feature.md file with the initial prompt
-/sdd:add-task "Design and implement authentication middleware with JWT support"
+## Quick start (Docker Compose — 5 minutes)
 
-# Write a detailed specification for the task
-/sdd:plan
-# Moves the task to the .specs/tasks/todo/ folder
-```
-
-Run `/clear` (or re-open Claude Code) to clear context and start fresh. Then run the following command:
+### 1. Clone and copy env template
 
 ```bash
-# Implement the task
-/sdd:implement @.specs/tasks/todo/design-auth-middleware.feature.md
-# Produces a working implementation and moves the task to the .specs/tasks/done/ folder
+git clone https://github.com/your-org/harmoven.git
+cd harmoven
+cp .env.example .env
 ```
 
-- [Detailed guide](../../guides/spec-driven-development.md)
-- [Refining specifications and code](refine.md)
-- [Usage Examples](usage-examples.md)
+### 2. Fill in the required secrets in `.env`
 
-## Overall Flow
+```bash
+# Mandatory
+DATABASE_URL=postgresql://harmoven:CHANGE_ME@db:5432/harmoven
+AUTH_SECRET=$(openssl rand -base64 32)       # Windows: see CONTRIBUTING.md
+ANTHROPIC_API_KEY=sk-ant-...
 
-End-to-end task implementation process from initial prompt to pull request, including commands from the [git](../git/README.md) plugin:
+# Optional — only if you want a second LLM provider
+# OPENAI_API_KEY=sk-...
+```
 
-- `/sdd:add-task` → Creates a `.specs/tasks/draft/<task-name>.<type>.md` file with the initial task description.
-- `/sdd:plan` → Generates a `.claude/skills/<skill-name>/SKILL.md` file with the skills needed to implement the task (by analyzing the library and framework documentation used in the codebase), then updates the task file with a refined specification and moves it to `.specs/tasks/todo/`.
-- `/sdd:implement` → Produces a working implementation, verifies it, then moves the task to `.specs/tasks/done/`.
-- `/git:commit` → Commits changes.
-- `/git:create-pr` → Creates a pull request.
+> All variables are documented inline in `.env.example`. Never commit `.env`.
+
+### 3. Start
+
+```bash
+docker compose up -d
+```
+
+The app starts at **http://localhost:3000**.
+
+On first boot, a **setup token** is printed in Docker logs. Navigate to `/setup`, enter the token, and complete the 4-step wizard (admin account + LLM profile).
+
+```bash
+# See the token
+docker compose logs app | grep "setup token"
+```
+
+### 4. Verify
+
+```bash
+curl http://localhost:3000/api/health
+# → {"status":"ok"}
+```
+
+---
+
+## Development setup (local, no Docker)
+
+```bash
+# Install dependencies
+npm install
+
+# Run DB via Docker, app locally
+docker compose up db -d
+cp .env.example .env   # fill in DATABASE_URL pointing to localhost
+
+# Generate Prisma client and run migrations
+npm run db:generate
+npm run db:migrate
+
+# Start dev server
+CONFIG_GIT_DIR=/tmp/harmoven-config-git npm run dev
+```
+
+> `CONFIG_GIT_DIR` tells the config-git module where to store the local git mirror of `orchestrator.yaml`. Any writable path works in development.
+
+---
+
+## Configuration
+
+Two files control runtime behaviour — keep them in version control (no secrets in either):
+
+| File | Purpose |
+|---|---|
+| `orchestrator.yaml` | Org name, preset, LLM profiles, security policy, rate limits |
+| `.env` | Secrets only — never committed |
+
+### Presets (`orchestrator.yaml → organization.preset`)
+
+| Preset | Description |
+|---|---|
+| `small_business` | Low concurrency, cost cap $10/day, memory rate limiter |
+| `enterprise` | Higher concurrency, Upstash rate limiter, Presidio PII detection opt-in |
+| `developer` | Relaxed limits, MFA optional for non-admins |
+
+---
+
+## Optional: LiteLLM gateway (multi-provider routing)
+
+To use OpenAI, Mistral, or local models alongside Anthropic, enable the LiteLLM sidecar:
+
+```bash
+docker compose --profile litellm up -d
+```
+
+Then set `LITELLM_GATEWAY_URL=http://litellm:4000` in `.env` (already the default in Compose).
+
+---
+
+## npm scripts
+
+```bash
+npm run dev              # Start local dev server (Next.js)
+npm run build            # Production build
+npm run test             # All tests (unit + integration)
+npm run test:unit        # Unit tests only
+npm run test:integration # Integration tests (requires live DB)
+npm run test:e2e         # E2E tests (Playwright — scaffold pending)
+npm run lint             # ESLint
+npm run typecheck        # tsc --noEmit
+npm run db:migrate       # Run pending Prisma migrations
+npm run db:seed          # Seed DB with demo data
+npm run db:studio        # Open Prisma Studio
+npm run generate:openapi # Regenerate openapi/v1.yaml
+```
+
+---
+
+## REST API
+
+OpenAPI spec: [`openapi/v1.yaml`](openapi/v1.yaml)
+
+Base URL: `http://localhost:3000/api/v1`
+
+Authentication: `Authorization: Bearer <project-api-key>` (prefix `hv1_`)
+
+Key endpoints:
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/runs` | Submit a prompt, start a pipeline run |
+| `GET` | `/v1/runs/:id` | Get run status + node outputs |
+| `GET` | `/v1/runs/:id/stream` | SSE stream of run events |
+| `POST` | `/v1/runs/:id/gate/:nodeId/approve` | Approve a human gate |
+| `GET` | `/v1/projects` | List accessible projects |
+
+---
+
+## Architecture
 
 ```
-  1. Create        2. Plan         3. Implement           4. Ship
-+-------------+  +-----------+  +---------------+  +-----------------+
-|/sdd:add-task|  | /sdd:plan |  |/sdd:implement |  |  /git:commit    |
-+------+------+  +-----+-----+  +------+--------+  |       |         |
-       |                |               |           |       v         |
-       v                v               v           |/git:create-pr   |
-                                                    +-------+---------+
-                                                            |
-                     Task Lifecycle                         |
- +----------+   +----------+   +--------------+   +---------+
- | draft/   +-->| todo/    +-->| in-progress/ +-->| done/   |
- |   *.md   |   |   *.md   |   |     *.md     |   |  *.md   |
- +----------+   +----------+   +--------------+   +---------+
+Browser / API client
+        │
+        ▼
+  Next.js App Router (Server Components + API routes)
+        │
+        ▼
+  Execution Engine (lib/execution/)
+  ┌─────────────────────────────────────┐
+  │  DAG  →  Node queue                 │
+  │  CLASSIFIER → PLANNER → WRITER      │
+  │           → REVIEWER                │
+  │  HumanGate (pause / resume)         │
+  └─────────────────────────────────────┘
+        │
+        ▼
+  LLM Router (lib/llm/)
+  ┌──────────────────────────────────┐
+  │ selectLlm(confidentiality,       │
+  │           jurisdiction, tokens)  │
+  │ → Anthropic direct               │
+  │ → LiteLLM gateway (opt-in)       │
+  └──────────────────────────────────┘
+        │
+        ▼
+  PostgreSQL 16  (via Prisma)
+  ┌──────────────────────────────────┐
+  │ Projects · Runs · Nodes          │
+  │ AuditLog (immutable, DB-enforced)│
+  │ ProjectMember · RBAC roles       │
+  └──────────────────────────────────┘
 ```
+
+---
+
+## Security highlights
+
+- Argon2id password hashing, timing-safe API key comparison
+- MFA (TOTP + Passkey) enforced for `instance_admin`
+- SSRF protection: DNS + private IP block, fails closed
+- CSP without `unsafe-eval` in production, HSTS 2 years
+- Docker images pinned by SHA256 digest
+- Immutable audit log (PostgreSQL-level, UPDATE/DELETE blocked)
+- Rate limiting: 20 sign-in attempts / 15 min, 200 global
+- Zero secrets in Docker images
+
+See [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) for the full security audit.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `/setup` shows blank page | `SETUP_TOKEN` not set | Check `docker compose logs app \| grep token` |
+| `PrismaClientInitializationError` | DB not ready | Run `docker compose up db -d`, wait 5s, retry |
+| `AUTH_SECRET` error on startup | Missing or short secret | `openssl rand -base64 32` → paste into `.env` |
+| Dev server crashes instantly | `CONFIG_GIT_DIR` not set | Prefix command with `CONFIG_GIT_DIR=/tmp/hv-cfg` |
+| LLM calls fail with 401 | Wrong API key | Verify `ANTHROPIC_API_KEY` in `.env`, no trailing space |
+
+---
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Branch naming: `feat/*`, `fix/*`, `docs/*`. All PRs target `develop`.
 
 ## Commands
 
