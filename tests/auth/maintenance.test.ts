@@ -33,6 +33,14 @@ jest.mock('node-cron', () => ({
   schedule: (expr: string, fn: () => void) => mockCronSchedule(expr, fn),
 }))
 
+// ─── Mock rgpd-config ────────────────────────────────────────────────────────
+
+const mockGetRgpdConfig = jest.fn<() => Promise<{ maintenance_enabled: boolean; data_retention_days: number; env_override_active: boolean }>>()
+
+jest.mock('@/lib/maintenance/rgpd-config', () => ({
+  getRgpdConfig: () => mockGetRgpdConfig(),
+}))
+
 import { purgeExpiredSessions, startSessionCleanupCron } from '@/lib/maintenance/session-cleanup'
 import { purgeExpiredRunData, computeDataExpiresAt, DATA_RETENTION_DAYS } from '@/lib/maintenance/run-data-ttl'
 
@@ -63,7 +71,11 @@ describe('purgeExpiredSessions()', () => {
 })
 
 describe('startSessionCleanupCron()', () => {
-  beforeEach(() => { jest.clearAllMocks(); mockSessionDeleteMany.mockResolvedValue({ count: 0 }) })
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockSessionDeleteMany.mockResolvedValue({ count: 0 })
+    mockGetRgpdConfig.mockResolvedValue({ maintenance_enabled: true, data_retention_days: 90, env_override_active: false })
+  })
 
   it('schedules a cron at 03:00 daily', () => {
     startSessionCleanupCron()
@@ -76,6 +88,14 @@ describe('startSessionCleanupCron()', () => {
   it('returns a task handle with a stop() method', () => {
     const task = startSessionCleanupCron()
     expect(task).toHaveProperty('stop')
+  })
+
+  it('skips purge at startup when maintenance_enabled is false', async () => {
+    mockGetRgpdConfig.mockResolvedValue({ maintenance_enabled: false, data_retention_days: 90, env_override_active: false })
+    startSessionCleanupCron()
+    // Allow the startup async call to resolve
+    await new Promise(r => setTimeout(r, 10))
+    expect(mockSessionDeleteMany).not.toHaveBeenCalled()
   })
 })
 

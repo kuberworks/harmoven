@@ -48,18 +48,11 @@ export async function register(): Promise<void> {
 
     // RGPD-03: purge expired sessions (contains IP + UA — personal data).
     // RGPD-04: purge personal data content from expired runs (task_input, injections, Node LLM text).
-    // Both crons are disabled when RGPD_MAINTENANCE_ENABLED=false (e.g. dev / non-EU deployments).
-    // Default: enabled. Set RGPD_MAINTENANCE_ENABLED=false to disable.
-    if (process.env.RGPD_MAINTENANCE_ENABLED !== 'false') {
-      const { startSessionCleanupCron } = await import('@/lib/maintenance/session-cleanup')
-      const { startRunDataTtlCron }     = await import('@/lib/maintenance/run-data-ttl')
-      startSessionCleanupCron()
-      startRunDataTtlCron()
-    } else {
-      console.warn(
-        '[rgpd] RGPD_MAINTENANCE_ENABLED=false — session purge and run-data TTL crons are DISABLED. ' +
-        'Ensure this is intentional (non-EU deployment or development environment).',
-      )
-    }
+    // Crons always start; they check the live admin config (PATCH /api/admin/rgpd) at each sweep.
+    // Admin toggle: maintenance_enabled (DB via SystemSetting) — env var RGPD_MAINTENANCE_ENABLED=false overrides.
+    const { startSessionCleanupCron } = await import('@/lib/maintenance/session-cleanup')
+    const { startRunDataTtlCron }     = await import('@/lib/maintenance/run-data-ttl')
+    startSessionCleanupCron()
+    startRunDataTtlCron()
   }
 }

@@ -6,16 +6,18 @@
 // physically. This job deletes rows whose expiresAt is in the past.
 //
 // Schedule: daily at 03:00 (low-traffic window).
-// Toggle:   RGPD_MAINTENANCE_ENABLED=false disables the cron at startup (see instrumentation.ts).
+// Toggle:   configurable at runtime via PATCH /api/admin/rgpd (instance_admin).
+//           Env var RGPD_MAINTENANCE_ENABLED=false overrides the DB setting.
 // Note: node-cron runs in-process; in a multi-instance deployment use a
 // distributed lock or move this to a separate worker. For now, the risk of
 // duplicate runs is a double-deletion attempt on the same expired rows — which
 // is idempotent and harmless.
 
 import cron from 'node-cron'
-import { db } from '@/lib/db/client'
+import { db }             from '@/lib/db/client'
+import { getRgpdConfig } from '@/lib/maintenance/rgpd-config'
 
-/** How many rows are purged per sweep — used for logging. */
+/** Purge expired sessions. Returns the number of rows deleted. */
 export async function purgeExpiredSessions(): Promise<number> {
   const result = await db.session.deleteMany({
     where: { expiresAt: { lt: new Date() } },
@@ -25,27 +27,33 @@ export async function purgeExpiredSessions(): Promise<number> {
 
 /**
  * Starts the daily session-cleanup cron job.
- * Runs immediately once at startup, then every day at 03:00.
+ * The cron itself always starts; it checks the live admin config at each sweep.
  * Returns the cron task handle (call .stop() to cancel in tests).
  */
 export function startSessionCleanupCron(): cron.ScheduledTask {
-  // Run once at startup to catch any backlog from server downtime.
-  void purgeExpiredSessions().then(count => {
-    if (count > 0) {
-      console.info(`[session-cleanup] Purged ${count} expired session(s) at startup.`)
+  async function sweep(context: 'startup' | 'daily') {
+    const { maintenance_enabled } = await getRgpdConfig()
+    if (!maintenance_enabled) {
+      if (context === 'startup') {
+        console.warn('[session-cleanup] Maintenance disabled (admin config) — session purge skipped.')
+      }
+      return
     }
-  }).catch((err: unknown) => {
-    console.warn('[session-cleanup] Startup sweep failed (non-fatal):', err)
-  })
+    const count = await purgeExpiredSessions()
+    if (count > 0 || context === 'startup') {
+      console.info(`[session-cleanup] ${context} sweep: purged ${count} expired session(s).`)
+    }
+  }
+
+  // Run once at startup to catch any backlog from server downtime.
+  void sweep('startup').catch((err: unknown) =>
+    console.warn('[session-cleanup] Startup sweep failed (non-fatal):', err),
+  )
 
   // Schedule daily at 03:00 server time.
-  const task = cron.schedule('0 3 * * *', () => {
-    void purgeExpiredSessions().then(count => {
-      console.info(`[session-cleanup] Daily sweep: purged ${count} expired session(s).`)
-    }).catch((err: unknown) => {
-      console.warn('[session-cleanup] Daily sweep failed:', err)
-    })
+  return cron.schedule('0 3 * * *', () => {
+    void sweep('daily').catch((err: unknown) =>
+      console.warn('[session-cleanup] Daily sweep failed:', err),
+    )
   })
-
-  return task
 }
