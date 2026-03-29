@@ -1556,6 +1556,52 @@ components:
           additionalProperties:
             type: string
 
+    # ── PipelineTemplate ──────────────────────────────────────────────────────
+    PipelineTemplate:
+      type: object
+      description: "A reusable pipeline template consisting of a DAG definition with optional version history."
+      required: [id, name, dag, is_public, created_by, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: "Unique template identifier."
+        name:
+          type: string
+          description: "Human-readable template name."
+        description:
+          type: string
+          nullable: true
+          description: "Optional description of the template's purpose."
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: "Project scope. Null for personal or public templates."
+        is_public:
+          type: boolean
+          description: "When true the template is visible to all instance users."
+        dag:
+          type: object
+          description: "DAG definition (`{ nodes: [], edges: [] }`)."
+        change_note:
+          type: string
+          nullable: true
+          description: "Description of the most recent change."
+        created_by:
+          type: string
+          format: uuid
+          description: "User ID of the template creator."
+        created_at:
+          type: string
+          format: date-time
+          description: "ISO 8601 UTC timestamp of template creation."
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: "ISO 8601 UTC timestamp of the most recent update."
+
     # ── User ──────────────────────────────────────────────────────────────────
     User:
       type: object
@@ -1759,6 +1805,20 @@ components:
                 field: task_input
                 issue: missing_required_field
 
+    UnprocessableEntity:
+      description: |
+        The request is syntactically valid JSON but a required field is missing or
+        a field value violates a business rule (e.g. missing `run_id` when recording
+        template feedback). Inspect `error.details` for field-level messages.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: unprocessable_entity
+              message: "`run_id` is required."
+
     Conflict:
       description: |
         The operation is syntactically valid but the resource is in a state that makes
@@ -1925,6 +1985,67 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimit'
+
+  /auth/setup-status:
+    get:
+      operationId: getSetupStatus
+      summary: Instance setup status
+      description: |
+        Public endpoint (no auth required). Returns boolean flags used by the
+        `/setup` wizard to determine whether initial configuration is complete.
+
+        Returns `setup_complete: true` once at least one admin user has been
+        created. `has_llm_profile` is advisory — the wizard shows an extra step
+        but does not block. Only boolean flags are returned; user counts or other
+        potentially sensitive metrics are intentionally excluded.
+      security: []
+      tags: [auth]
+      responses:
+        '200':
+          description: "Current setup state of the instance."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setup_complete:
+                    type: boolean
+                    description: "True when all mandatory setup steps are done (at least one admin user created)."
+                  setup_required:
+                    type: boolean
+                    description: "Inverse of `setup_complete`. Provided as a convenience alias for frontend consumers."
+                  has_admin:
+                    type: boolean
+                    description: "True if at least one user account exists."
+                  has_llm_profile:
+                    type: boolean
+                    description: "True if at least one LLM profile has been configured. Not required to complete setup but strongly recommended."
+
+  /instance/policy:
+    get:
+      operationId: getInstancePolicy
+      summary: Public instance policy flags
+      description: |
+        Public endpoint (no auth required). Returns non-sensitive boolean policy
+        flags consumed by the middleware and frontend to enforce instance-level
+        rules (e.g. MFA enforcement for admin accounts).
+
+        Response is cacheable for up to 60 seconds (`Cache-Control: private, max-age=60`).
+        Only boolean flags are exposed — no secrets or user data.
+      security: []
+      tags: [system]
+      responses:
+        '200':
+          description: "Active instance policy configuration."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mfa_required_for_admin:
+                    type: boolean
+                    description: "When true, instance_admin accounts must complete MFA on every sign-in. Controlled via `PATCH /admin/security` or the `HARMOVEN_ENFORCE_ADMIN_MFA` environment variable."
+
   # ══════════════════════════════════════════════════════════════════════════
   # RUNS
   # ══════════════════════════════════════════════════════════════════════════
@@ -2729,6 +2850,254 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimit'
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PIPELINE TEMPLATES
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /pipeline-templates:
+    get:
+      operationId: listPipelineTemplates
+      summary: List pipeline templates visible to caller
+      description: |
+        Returns templates created by the calling user, public templates, and
+        templates scoped to projects the caller has access to.
+        Optionally filtered by `project_id`. API key callers are not allowed.
+      tags: [pipeline-templates]
+      parameters:
+        - in: query
+          name: project_id
+          schema:
+            type: string
+            format: uuid
+          description: "Filter templates to a specific project."
+      responses:
+        '200':
+          description: "List of pipeline templates."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PipelineTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createPipelineTemplate
+      summary: Create a new pipeline template
+      description: |
+        Creates a reusable pipeline template from a DAG definition.
+        API key callers are not allowed — session auth required.
+      tags: [pipeline-templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, dag]
+              properties:
+                name:
+                  type: string
+                  description: "Human-readable template name."
+                description:
+                  type: string
+                  description: "Optional description of the template's purpose."
+                project_id:
+                  type: string
+                  format: uuid
+                  description: "Optional project scope. If omitted the template is personal."
+                is_public:
+                  type: boolean
+                  default: false
+                  description: "When true, the template is visible to all users on the instance."
+                dag:
+                  type: object
+                  required: [nodes, edges]
+                  description: "DAG definition (`{ nodes: [], edges: [] }`)."
+              additionalProperties: false
+      responses:
+        '201':
+          description: "Template created successfully."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template:
+                    $ref: '#/components/schemas/PipelineTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /pipeline-templates/{id}:
+    get:
+      operationId: getPipelineTemplate
+      summary: Get a pipeline template
+      tags: [pipeline-templates]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: "Pipeline template with its version history."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template:
+                    $ref: '#/components/schemas/PipelineTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: updatePipelineTemplate
+      summary: Update a pipeline template
+      description: |
+        Updates the template. If `dag` changes, a new version is created automatically.
+        Only the creator or an `instance_admin` can modify a template.
+      tags: [pipeline-templates]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                is_public:
+                  type: boolean
+                dag:
+                  type: object
+                  description: "New DAG definition. Providing this creates a new version."
+                change_note:
+                  type: string
+                  description: "Optional human-readable note describing what changed."
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Updated template."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template:
+                    $ref: '#/components/schemas/PipelineTemplate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deletePipelineTemplate
+      summary: Delete a pipeline template
+      description: "Only the creator or an `instance_admin` can delete a template."
+      tags: [pipeline-templates]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: "Template deleted."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /pipeline-templates/{id}/feedback:
+    post:
+      operationId: recordPipelineTemplateFeedback
+      summary: Record run feedback or accept AI suggestion for a template
+      description: |
+        Two actions in one endpoint controlled by the request body:
+        - **Record feedback** (`run_id` required): associates a run outcome with
+          the template and may trigger an async AI improvement suggestion.
+        - **Accept suggestion** (`accept_suggestion: true`): promotes the pending
+          AI-generated DAG suggestion into a new template version.
+
+        Only session-authenticated callers are allowed.
+      tags: [pipeline-templates]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                run_id:
+                  type: string
+                  format: uuid
+                  description: "Required when recording feedback. The run whose outcome is being reported."
+                user_rating:
+                  type: number
+                  description: "Optional numeric quality rating for the run."
+                change_note:
+                  type: string
+                  description: "Optional human-readable note about what should change."
+                accept_suggestion:
+                  type: boolean
+                  description: "When `true`, accepts the pending AI suggestion and creates a new template version. Omit or set `false` to record feedback instead."
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Feedback recorded or suggestion accepted."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded:
+                    type: boolean
+                  accepted:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
   # ══════════════════════════════════════════════════════════════════════════
   # PROJECTS
   # ══════════════════════════════════════════════════════════════════════════
@@ -4391,6 +4760,84 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /admin/security:
+    get:
+      operationId: getSecurityConfig
+      x-required-permissions: [admin:instance]
+      summary: Read instance security settings
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Returns current instance security configuration stored in `SystemSetting`.
+        `env_override_active: true` means the operator has set
+        `HARMOVEN_ENFORCE_ADMIN_MFA=false` (with the acknowledgement env var), which
+        takes precedence over the DB value and disables MFA enforcement.
+      tags: [admin]
+      responses:
+        '200':
+          description: "Current security configuration."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mfa_required_for_admin:
+                    type: boolean
+                    description: "When true, instance_admin accounts must complete MFA on every sign-in."
+                  env_override_active:
+                    type: boolean
+                    description: "True when the `HARMOVEN_ENFORCE_ADMIN_MFA=false` operator escape hatch is active. The DB setting is ignored while this is true."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      operationId: updateSecurityConfig
+      x-required-permissions: [admin:instance]
+      summary: Update instance security settings
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Updates security settings in `SystemSetting` and writes an
+        `admin.security.updated` audit log entry. All fields are optional — only
+        supplied fields are updated.
+
+        **Note:** If `HARMOVEN_ENFORCE_ADMIN_MFA=false` is set in the environment
+        (with the acknowledgement var), it takes precedence over this setting
+        regardless of the value stored here.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mfa_required_for_admin:
+                  type: boolean
+                  description: "Enable or disable mandatory MFA for instance_admin accounts."
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Security configuration updated."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          description: "Invalid request payload."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   # ── Analytics (internal) ───────────────────────────────────────────────────
   /analytics:
     get:
@@ -5448,6 +5895,11 @@ tags:
     description: |
       User preference endpoints. Allow the authenticated user to update their own
       locale and UI settings without requiring any elevated permission.
+  - name: pipeline-templates
+    description: |
+      Reusable pipeline templates: create, retrieve, update, delete, and collect
+      run feedback. Templates support automatic versioning when the DAG changes and
+      optional AI-generated improvement suggestions based on run outcomes.
   - name: v1
     description: |
       Public API v1 — stable, versioned contract for third-party integrators and the
@@ -5459,7 +5911,7 @@ tags:
 x-tagGroups:
   - name: Core API
     description: The primary API surface for running and monitoring AI task executions.
-    tags: [runs, sse, projects]
+    tags: [runs, sse, projects, pipeline-templates]
   - name: Authentication
     tags: [auth, users]
   - name: System & Observability
