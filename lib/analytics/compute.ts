@@ -285,7 +285,7 @@ export async function computeUserBreakdown(
       user_rating: true,
       estimated_hours_saved: true,
       actor_stats: { select: { stats: true } },
-      user: { select: { id: true, name: true, email: true } },
+      user: { select: { id: true, name: true } },
     },
   })
 
@@ -304,7 +304,7 @@ export async function computeUserBreakdown(
     const uid = run.created_by
     if (!users.has(uid)) {
       users.set(uid, {
-        display_name: run.user?.name ?? run.user?.email ?? uid,
+        display_name: run.user?.name ?? `user:${uid.slice(0, 8)}`,
         runs: 0,
         contribution_pcts: [],
         ratings: [],

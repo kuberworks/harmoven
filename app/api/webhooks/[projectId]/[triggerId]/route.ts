@@ -190,6 +190,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       user_injections:  [],
       metadata:         { webhook_trigger_id: triggerId, delivery_id: deliveryId ?? null },
       task_input_chars: JSON.stringify(taskInput).length,
+      data_expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(process.env.DATA_RETENTION_DAYS ?? '90', 10)); return d })(),
     },
   })
 

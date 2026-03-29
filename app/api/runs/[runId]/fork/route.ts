@@ -91,6 +91,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       budget_usd:     source.budget_usd,
       created_by:     actorId,
       metadata:       { forked_from: runId } as Prisma.InputJsonValue,
+      data_expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(process.env.DATA_RETENTION_DAYS ?? '90', 10)); return d })(),
     },
   })
 
