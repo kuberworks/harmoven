@@ -100,7 +100,7 @@ export default async function AnalyticsPage({
 
   try {
     const hdrs = await headers()
-    const baseUrl = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
+    const baseUrl = process.env.AUTH_URL ?? 'http://localhost:3000'
     const res = await fetch(`${baseUrl}/api/analytics?${params.toString()}`, {
       headers: {
         Cookie:         hdrs.get('cookie') ?? '',
