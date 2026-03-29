@@ -20,8 +20,27 @@ export default async function ProjectsPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
 
+  const userId      = session.user.id
+  const instanceRole = (session.user as Record<string, unknown>).role as string | null
+  const isAdmin     = instanceRole === 'instance_admin'
+
+  // Security: non-admin users see only projects they are members of.
+  // instance_admin sees all (no membership filter applied).
+  // Two-query pattern avoids a cross-join; ProjectMember.user_id is indexed.
+  const memberProjectIds = isAdmin
+    ? undefined
+    : (
+        await db.projectMember.findMany({
+          where: { user_id: userId },
+          select: { project_id: true },
+        })
+      ).map((m) => m.project_id)
+
   const projects = await db.project.findMany({
-    where: { archived_at: null },
+    where: {
+      archived_at: null,
+      ...(memberProjectIds !== undefined ? { id: { in: memberProjectIds } } : {}),
+    },
     orderBy: { updated_at: 'desc' },
     include: {
       _count: { select: { runs: true } },
