@@ -1,0 +1,130 @@
+// app/(app)/admin/instance/page.tsx
+// Admin — Instance configuration: security settings, RGPD policy, health.
+// Fixes dead link from admin dashboard quick-nav (ARCHITECTURE_REVIEW.md §3.4).
+// instance_admin only.
+
+import type { Metadata } from 'next'
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/auth'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { InstanceSecurityClient } from './security-client'
+
+export const metadata: Metadata = { title: 'Instance — Admin' }
+
+async function fetchJson<T>(url: string, hdrs: Headers): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { Cookie: hdrs.get('cookie') ?? '' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    return res.json() as Promise<T>
+  } catch {
+    return null
+  }
+}
+
+export default async function AdminInstancePage() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) redirect('/login')
+  const instanceRole = (session.user as Record<string, unknown>).role as string | null
+  if (instanceRole !== 'instance_admin') redirect('/dashboard')
+
+  const hdrs   = await headers()
+  const base   = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+  const [security, health] = await Promise.all([
+    fetchJson<{
+      mfa_required_for_admin: boolean
+      env_override_active: boolean
+    }>(`${base}/api/admin/security`, hdrs),
+    fetchJson<{ status: string; version?: string; db?: string; uptime?: number }>(
+      `${base}/api/health`,
+      hdrs,
+    ),
+  ])
+
+  return (
+    <div className="space-y-8 animate-stagger max-w-3xl">
+      <div>
+        <h1 className="text-xl font-semibold text-foreground">Instance settings</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Security policies and system health for this Harmoven instance.
+        </p>
+      </div>
+
+      {/* Health */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">System health</h2>
+        <Card>
+          <CardContent className="pt-4 pb-4 divide-y divide-surface-border">
+            <div className="flex items-center justify-between py-2 text-sm">
+              <span className="text-muted-foreground">Status</span>
+              <Badge variant={health?.status === 'ok' ? 'completed' : 'failed'}>
+                {health?.status ?? 'unknown'}
+              </Badge>
+            </div>
+            {health?.version && (
+              <div className="flex items-center justify-between py-2 text-sm">
+                <span className="text-muted-foreground">Version</span>
+                <span className="font-mono text-foreground">{health.version}</span>
+              </div>
+            )}
+            {health?.db && (
+              <div className="flex items-center justify-between py-2 text-sm">
+                <span className="text-muted-foreground">Database</span>
+                <Badge variant={health.db === 'ok' ? 'completed' : 'failed'}>{health.db}</Badge>
+              </div>
+            )}
+            {health?.uptime !== undefined && (
+              <div className="flex items-center justify-between py-2 text-sm">
+                <span className="text-muted-foreground">Uptime</span>
+                <span className="font-mono text-foreground">
+                  {Math.floor(health.uptime / 3600)}h {Math.floor((health.uptime % 3600) / 60)}m
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Security settings */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Security policy</h2>
+        {security?.env_override_active && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
+            Environment variable override active — HARMOVEN_ENFORCE_ADMIN_MFA=false is set.
+            DB settings are ignored for MFA enforcement.
+          </div>
+        )}
+        <InstanceSecurityClient
+          mfaRequiredForAdmin={security?.mfa_required_for_admin ?? true}
+          envOverrideActive={security?.env_override_active ?? false}
+        />
+      </section>
+
+      {/* Instance info */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Instance info</h2>
+        <Card>
+          <CardContent className="pt-4 pb-4 divide-y divide-surface-border text-sm">
+            <div className="flex items-center justify-between py-2">
+              <span className="text-muted-foreground">URL</span>
+              <span className="font-mono text-foreground text-xs">{base}</span>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-muted-foreground">Deployment mode</span>
+              <span className="text-foreground">{process.env.DEPLOYMENT_MODE ?? 'docker'}</span>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-muted-foreground">Node.js</span>
+              <span className="font-mono text-foreground text-xs">{process.version}</span>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+    </div>
+  )
+}

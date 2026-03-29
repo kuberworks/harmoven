@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/components/ui/use-toast'
+import { useT } from '@/lib/i18n/client'
 import { Loader2, User, Globe, Sliders } from 'lucide-react'
 
 interface Props {
@@ -34,8 +35,7 @@ export function PreferencesClient({
   initialExpertMode,
   initialUiLevel,
 }: Props) {
-  const { toast } = useToast()
-  const [name, setName] = useState(initialName)
+  const { toast } = useToast()  const t = useT()  const [name, setName] = useState(initialName)
   const [locale, setLocale] = useState<'en' | 'fr'>(initialLocale)
   const [expertMode, setExpertMode] = useState(initialExpertMode)
   const [uiLevel, setUiLevel] = useState(initialUiLevel)
@@ -52,7 +52,7 @@ export function PreferencesClient({
         body: JSON.stringify({ name }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      toast({ title: 'Profile updated' })
+      toast({ title: t('settings.profile') + ' — saved' })
     } catch {
       toast({ title: 'Failed to update profile', variant: 'destructive' })
     } finally {
@@ -76,7 +76,7 @@ export function PreferencesClient({
         }),
       ])
       if (!localeRes.ok || !prefsRes.ok) throw new Error('Save failed')
-      toast({ title: 'Preferences saved' })
+      toast({ title: t('settings.saved') })
     } catch {
       toast({ title: 'Failed to save preferences', variant: 'destructive' })
     } finally {
@@ -91,13 +91,13 @@ export function PreferencesClient({
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <User className="h-4 w-4 text-muted-foreground" />
-            Profile
+            {t('settings.profile')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={saveProfile} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">{t('settings.name')}</Label>
               <Input
                 id="name"
                 value={name}
@@ -107,13 +107,13 @@ export function PreferencesClient({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Email</Label>
+              <Label>{t('settings.email')}</Label>
               <Input value={initialEmail} disabled className="opacity-60" />
               <p className="text-xs text-muted-foreground">Email cannot be changed here.</p>
             </div>
             <Button type="submit" size="sm" disabled={savingProfile}>
               {savingProfile && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Save profile
+              {t('common.save')}
             </Button>
           </form>
         </CardContent>
@@ -124,7 +124,7 @@ export function PreferencesClient({
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Sliders className="h-4 w-4 text-muted-foreground" />
-            Preferences
+            {t('settings.preferences')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -132,7 +132,7 @@ export function PreferencesClient({
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
               <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-              <Label>Language</Label>
+              <Label>{t('settings.display_language')}</Label>
             </div>
             <div className="flex gap-2">
               {(['en', 'fr'] as const).map((l) => (
@@ -146,7 +146,7 @@ export function PreferencesClient({
                       : 'border-surface-border bg-surface-raised text-muted-foreground hover:border-muted-foreground'
                   }`}
                 >
-                  {l === 'en' ? '🇬🇧 English' : '🇫🇷 Français'}
+                  {l === 'en' ? '🇬🇧 ' + t('settings.display_language_en') : '🇫🇷 ' + t('settings.display_language_fr')}
                 </button>
               ))}
             </div>
@@ -212,7 +212,7 @@ export function PreferencesClient({
 
           <Button size="sm" onClick={savePreferences} disabled={savingPrefs}>
             {savingPrefs && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Save preferences
+            {t('settings.save')}
           </Button>
         </CardContent>
       </Card>

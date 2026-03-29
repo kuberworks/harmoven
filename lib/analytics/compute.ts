@@ -493,8 +493,33 @@ export async function computeUserPeriodStats(
     gates_decided: gatesDecided.length,
     gates_approved_direct: gatesDirect,
     gates_modified: gatesModified,
-    critical_findings_fixed: 0,    // requires CriticalFindingFix model query — deferred
-    critical_findings_ignored: 0,
+  // Critical findings fixed and ignored by this user in the period
+  const critFixes = await (db as any).criticalFindingFix?.count?.({
+    where: {
+      result: {
+        run: {
+          ...(project_ids ? { project_id: { in: project_ids } } : {}),
+        },
+      },
+      // CriticalFindingFix records are authored by the user who triggered the fix
+      // via POST /api/runs/:runId/critical-fix — tracked in audit_log.
+      // Approximate: count fix records created in the period (no direct actor field).
+      created_at: { gte: from, lte: to },
+    },
+  }).catch(() => 0) as number ?? 0
+
+  const critIgnores = await (db as any).criticalFindingIgnore?.count?.({
+    where: {
+      ignored_by: user_id,
+      ignored_at: { gte: from, lte: to },
+      ...(project_ids ? {
+        result: { run: { project_id: { in: project_ids } } },
+      } : {}),
+    },
+  }).catch(() => 0) as number ?? 0
+
+    critical_findings_fixed: critFixes,
+    critical_findings_ignored: critIgnores,
     context_injections: contextInjections,
     runs_rated: ratedRuns.length,
     avg_rating: avgRating,

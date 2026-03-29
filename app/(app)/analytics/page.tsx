@@ -14,7 +14,8 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
-import { getInstanceRole } from '@/lib/auth/session-helpers'
+import { getInstanceRole, getSessionLocale } from '@/lib/auth/session-helpers'
+import { createT } from '@/lib/i18n/t'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { AnalyticsResponse } from '@/lib/analytics/types'
@@ -81,6 +82,8 @@ export default async function AnalyticsPage({
   if (!session?.user) redirect('/login')
 
   const instanceRole = getInstanceRole(session.user as Record<string, unknown>)
+  const locale       = getSessionLocale(session.user as Record<string, unknown>)
+  const t            = createT(locale)
   const isAdmin      = instanceRole === 'instance_admin'
 
   const { project_id } = await searchParams
@@ -126,7 +129,7 @@ export default async function AnalyticsPage({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Analytics</h1>
+          <h1 className="text-xl font-semibold text-foreground">{t('analytics.title')}</h1>
           {data && (
             <p className="text-sm text-muted-foreground mt-0.5">
               {new Date(data.period.from).toLocaleDateString('en')}
@@ -153,39 +156,39 @@ export default async function AnalyticsPage({
       {s && (
         <>
           <section>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Runs</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('runs.labels.status')}</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <KpiCard label="Total runs"        value={fmt(s.runs_total)} />
-              <KpiCard label="Completed"         value={fmt(s.runs_completed)} />
-              <KpiCard label="Completion rate"   value={fmtPct(s.completion_rate_pct)} />
-              <KpiCard label="Avg cost / run"    value={fmtUsd(s.cost_per_run_usd)} />
+              <KpiCard label={t('analytics.kpis.runs_completed')} value={fmt(s.runs_total)} />
+              <KpiCard label={t('analytics.kpis.runs_completed')} value={fmt(s.runs_completed)} />
+              <KpiCard label={t('analytics.kpis.retention')}     value={fmtPct(s.completion_rate_pct)} />
+              <KpiCard label={t('runs.labels.cost')}             value={fmtUsd(s.cost_per_run_usd)} />
             </div>
           </section>
 
           <section>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Users</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('members.title')}</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <KpiCard label="Active users"      value={fmt(s.users_active)} />
-              <KpiCard label="Retention"         value={fmtPct(s.retention_rate_pct)} />
-              <KpiCard label="Avg rating"        value={s.avg_user_rating ? fmt(s.avg_user_rating, '/5') : '—'} />
-              <KpiCard label="Direct approval"   value={fmtPct(s.approval_direct_rate_pct)} />
+              <KpiCard label={t('analytics.kpis.active_users')} value={fmt(s.users_active)} />
+              <KpiCard label={t('analytics.kpis.retention')}    value={fmtPct(s.retention_rate_pct)} />
+              <KpiCard label={t('analytics.kpis.quality')}      value={s.avg_user_rating ? fmt(s.avg_user_rating, '/5') : '—'} />
+              <KpiCard label={t('analytics.kpis.roi')}          value={fmtPct(s.approval_direct_rate_pct)} />
             </div>
           </section>
 
           <section>
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Cost & value</h2>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('analytics.kpis.roi')}</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <KpiCard label="Total cost"        value={fmtUsd(s.cost_total_usd)} />
-              <KpiCard label="Cost / user"       value={fmtUsd(s.cost_per_active_user_usd)} />
-              <KpiCard label="Hours saved"       value={s.estimated_hours_saved_total !== null ? fmt(s.estimated_hours_saved_total, 'h') : '—'} />
-              <KpiCard label="ROI"               value={s.roi_multiplier !== null ? `${s.roi_multiplier.toFixed(1)}×` : '—'} goodWhen="up" />
+              <KpiCard label={t('analytics.kpis.roi')}      value={fmtUsd(s.cost_total_usd)} />
+              <KpiCard label={t('analytics.kpis.roi')}      value={fmtUsd(s.cost_per_active_user_usd)} />
+              <KpiCard label={t('analytics.kpis.roi')}      value={s.estimated_hours_saved_total !== null ? fmt(s.estimated_hours_saved_total, 'h') : '—'} />
+              <KpiCard label={t('analytics.kpis.roi')}      value={s.roi_multiplier !== null ? `${s.roi_multiplier.toFixed(1)}×` : '—'} goodWhen="up" />
             </div>
           </section>
 
           {/* By-profile breakdown */}
           {data!.by_profile.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">By profile</h2>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('analytics.by_profile')}</h2>
               <Card>
                 <CardContent className="p-0 divide-y divide-surface-border">
                   {data!.by_profile.map((p) => (

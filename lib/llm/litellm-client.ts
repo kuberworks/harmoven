@@ -42,22 +42,26 @@ export class LiteLLMClient implements ILLMClient {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const client = await this.getClient()
 
-    const completion = await client.chat.completions.create(
+    // Use .withResponse() to access the x-litellm-cost HTTP response header.
+    // LiteLLM proxies track per-call cost server-side and return it in this header.
+    // Falls back to 0 if the header is absent (e.g. LiteLLM not configured with pricing).
+    const { data: completion, response } = await client.chat.completions.create(
       {
         model:      options.model,
         max_tokens: options.maxTokens ?? 4096,
         messages:   messages.map(m => ({ role: m.role, content: m.content })),
       },
       { signal: options.signal },
-    )
+    ).withResponse()
 
-    const content = completion.choices[0]?.message?.content ?? ''
+    const costUsd  = Number(response.headers.get('x-litellm-cost') ?? '0') || 0
+    const content  = completion.choices[0]?.message?.content ?? ''
     return {
       content,
       tokensIn:  completion.usage?.prompt_tokens     ?? 0,
       tokensOut: completion.usage?.completion_tokens ?? 0,
       model:     completion.model,
-      costUsd:   0,
+      costUsd,
     }
   }
 
@@ -69,31 +73,43 @@ export class LiteLLMClient implements ILLMClient {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const client = await this.getClient()
 
-    const stream = await client.chat.completions.stream(
+    // Use create({ stream: true }).withResponse() so we can read the x-litellm-cost
+    // response header (sent with the opening HTTP frame, before any chunks).
+    // stream_options.include_usage ensures the final chunk contains token counts.
+    const { data: stream, response } = await client.chat.completions.create(
       {
-        model:      options.model,
-        max_tokens: options.maxTokens ?? 4096,
-        messages:   messages.map(m => ({ role: m.role, content: m.content })),
-        stream:     true,
+        model:          options.model,
+        max_tokens:     options.maxTokens ?? 4096,
+        messages:       messages.map(m => ({ role: m.role, content: m.content })),
+        stream:         true,
+        stream_options: { include_usage: true },
       },
       { signal: options.signal },
-    )
+    ).withResponse()
 
-    let fullText  = ''
-    let modelName = options.model
+    const costUsd  = Number(response.headers.get('x-litellm-cost') ?? '0') || 0
+    let fullText   = ''
+    let modelName  = options.model
+    let tokensIn   = 0
+    let tokensOut  = 0
+
     for await (const chunk of stream) {
       const text = chunk.choices[0]?.delta?.content ?? ''
       if (text) { onChunk(text); fullText += text }
       if (chunk.model) modelName = chunk.model
+      // stream_options.include_usage → last chunk carries usage
+      if (chunk.usage) {
+        tokensIn  = chunk.usage.prompt_tokens     ?? 0
+        tokensOut = chunk.usage.completion_tokens ?? 0
+      }
     }
 
-    const final = await stream.finalChatCompletion()
     return {
       content:   fullText,
-      tokensIn:  final.usage?.prompt_tokens     ?? 0,
-      tokensOut: final.usage?.completion_tokens ?? 0,
+      tokensIn,
+      tokensOut,
       model:     modelName,
-      costUsd:   0,
+      costUsd,
     }
   }
 }

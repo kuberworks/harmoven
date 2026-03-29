@@ -23,7 +23,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
 }                                    from '@/lib/auth/rbac'
-import { createRunRateLimit }        from '@/lib/auth/rate-limit'
+import { createRunRateLimitAsync }    from '@/lib/auth/rate-limit'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
 import { classifyConfidentiality }   from '@/lib/llm/confidentiality'
@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   // Rate limit: 10 runs/min per IP.
-  const rateLimitResponse = createRunRateLimit(req)
+  const rateLimitResponse = await createRunRateLimitAsync(req)
   if (rateLimitResponse) return rateLimitResponse
 
   const caller = await resolveCaller(req)
