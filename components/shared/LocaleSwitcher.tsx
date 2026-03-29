@@ -6,6 +6,7 @@
 // Spec: TECHNICAL.md §35, lib/i18n, UX.md §13.
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 
 const SUPPORTED_LOCALES = ['en', 'fr'] as const
@@ -20,6 +21,7 @@ interface LocaleSwitcherProps {
 export function LocaleSwitcher({ currentLocale }: LocaleSwitcherProps) {
   const [locale, setLocale] = useState<Locale>(currentLocale)
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
   function switchLocale(next: Locale) {
     if (next === locale) return
@@ -31,8 +33,11 @@ export function LocaleSwitcher({ currentLocale }: LocaleSwitcherProps) {
           body: JSON.stringify({ locale: next }),
         })
         setLocale(next)
-        // Reload to apply new locale (SSR-rendered strings)
-        window.location.reload()
+        // Use router.refresh() instead of window.location.reload():
+        // - preserves Next.js client cache and scroll position
+        // - re-fetches Server Component data (new locale from cookie)
+        // - does not reload JS bundles / static assets
+        router.refresh()
       } catch {
         // Non-fatal — locale stays unchanged
       }

@@ -7,6 +7,7 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
+import { getInstanceRole } from '@/lib/auth/session-helpers'
 import { db } from '@/lib/db/client'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,7 +22,7 @@ export default async function DashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
 
-  const instanceRole = ((session.user as Record<string, unknown>).role as string | undefined) ?? 'user'
+  const instanceRole = getInstanceRole(session.user as Record<string, unknown>)
   const isAdmin = instanceRole === 'instance_admin'
 
   // RBAC: instance_admin sees all projects/runs; other users see only their memberships.
@@ -36,34 +37,34 @@ export default async function DashboardPage() {
     ? { project_id: { in: memberProjectIds } }
     : {}
 
-  // Fetch active runs the user can see (last 10 across accessible projects)
-  const activeRuns = await db.run.findMany({
-    where: {
-      status: { in: ['RUNNING', 'PAUSED', 'PENDING'] },
-      ...projectIdFilter,
-    },
-    orderBy: { started_at: 'desc' },
-    take: 10,
-    include: { project: { select: { name: true } } },
-  })
-
-  // Recent projects scoped to user membership
-  const recentProjects = await db.project.findMany({
-    where: memberProjectIds !== undefined
-      ? { id: { in: memberProjectIds } }
-      : {},
-    orderBy: { updated_at: 'desc' },
-    take: 6,
-    include: { _count: { select: { runs: true } } },
-  })
-
-  const completedToday = await db.run.count({
-    where: {
-      status: 'COMPLETED',
-      completed_at: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
-      ...projectIdFilter,
-    },
-  })
+  // Parallelize all three DB queries — they have no inter-dependency.
+  // Previously sequential (sum of latencies); now concurrent (max of latencies).
+  const [activeRuns, recentProjects, completedToday] = await Promise.all([
+    db.run.findMany({
+      where: {
+        status: { in: ['RUNNING', 'PAUSED', 'PENDING'] },
+        ...projectIdFilter,
+      },
+      orderBy: { started_at: 'desc' },
+      take: 10,
+      include: { project: { select: { name: true } } },
+    }),
+    db.project.findMany({
+      where: memberProjectIds !== undefined
+        ? { id: { in: memberProjectIds } }
+        : {},
+      orderBy: { updated_at: 'desc' },
+      take: 6,
+      include: { _count: { select: { runs: true } } },
+    }),
+    db.run.count({
+      where: {
+        status: 'COMPLETED',
+        completed_at: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        ...projectIdFilter,
+      },
+    }),
+  ])
 
   return (
     <div className="space-y-6 animate-stagger">

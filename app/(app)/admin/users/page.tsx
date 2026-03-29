@@ -7,6 +7,7 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { getInstanceRole } from '@/lib/auth/session-helpers'
 import { db } from '@/lib/db/client'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -17,7 +18,7 @@ export const metadata: Metadata = { title: 'Users — Admin' }
 export default async function AdminUsersPage() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
-  const instanceRole = (session.user as Record<string, unknown>).role as string | null
+  const instanceRole = getInstanceRole(session.user as Record<string, unknown>)
   if (instanceRole !== 'instance_admin') redirect('/dashboard')
 
   const users = await db.user.findMany({

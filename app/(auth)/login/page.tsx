@@ -6,7 +6,7 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, Fingerprint } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -16,9 +16,30 @@ import { Separator } from '@/components/ui/separator'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 
+/** Passkey runtime type — added by passkeyClient at runtime, not in base typings. */
+type PasskeySignIn = (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } | null }>
+
+/**
+ * Return a safe landing URL after login.
+ * Only accepts same-origin relative paths (starts with '/') to prevent open redirect.
+ * Strips the callbackURL if it points at /login or /register (loop guard).
+ */
+function getSafeCallbackURL(raw: string | null): string {
+  if (raw && raw.startsWith('/') && !raw.startsWith('//')) {
+    const blocked = ['/login', '/register']
+    if (!blocked.some(b => raw === b || raw.startsWith(b + '?'))) {
+      return raw
+    }
+  }
+  return '/dashboard'
+}
+
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
+
+  const callbackURL = getSafeCallbackURL(searchParams.get('callbackURL'))
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -31,7 +52,7 @@ export default function LoginPage() {
       const { error } = await authClient.signIn.email({
         email,
         password,
-        callbackURL: '/dashboard',
+        callbackURL,
       })
       if (error) {
         toast({
@@ -40,7 +61,7 @@ export default function LoginPage() {
           description: error.message ?? 'Invalid email or password',
         })
       } else {
-        router.push('/dashboard')
+        router.push(callbackURL)
       }
     })
   }
@@ -48,8 +69,6 @@ export default function LoginPage() {
   // ── Passkey ───────────────────────────────────────────────────────
   function handlePasskey() {
     startTransition(async () => {
-      // passkeyClient adds signIn.passkey at runtime; cast for TypeScript
-      type PasskeySignIn = (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } | null }>
       const signInPasskey = (authClient.signIn as Record<string, unknown>).passkey as PasskeySignIn | undefined
       if (!signInPasskey) {
         toast({ variant: 'destructive', title: 'Passkey not available', description: 'Configure @better-auth/passkey on the server.' })
@@ -59,7 +78,7 @@ export default function LoginPage() {
       if (error) {
         toast({ variant: 'destructive', title: 'Passkey sign in failed', description: error.message })
       } else {
-        router.push('/dashboard')
+        router.push(callbackURL)
       }
     })
   }

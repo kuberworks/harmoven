@@ -136,14 +136,14 @@ export function RoleBuilder({ projectId, onCreated }: RoleBuilderProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-5 rounded-lg border border-zinc-700 bg-zinc-900 p-5"
+      className="space-y-5 rounded-lg border border-surface-border bg-surface-base p-5"
       aria-label="Create custom role"
     >
-      <h3 className="text-base font-semibold text-zinc-100">New custom role</h3>
+      <h3 className="text-base font-semibold text-foreground">New custom role</h3>
 
       {/* Name / slug */}
       <div className="space-y-1">
-        <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide" htmlFor="role-name">
+        <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="role-name">
           Role name (slug)
         </label>
         <input
@@ -154,13 +154,13 @@ export function RoleBuilder({ projectId, onCreated }: RoleBuilderProps) {
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. senior_reviewer"
           pattern="^[a-z0-9_]{1,64}$"
-          className="w-full rounded-md bg-zinc-800 border border-zinc-600 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          className="w-full rounded-md bg-surface-raised border border-surface-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
 
       {/* Display name */}
       <div className="space-y-1">
-        <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide" htmlFor="role-display">
+        <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="role-display">
           Display name
         </label>
         <input
@@ -171,20 +171,20 @@ export function RoleBuilder({ projectId, onCreated }: RoleBuilderProps) {
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="e.g. Senior Reviewer"
           maxLength={128}
-          className="w-full rounded-md bg-zinc-800 border border-zinc-600 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          className="w-full rounded-md bg-surface-raised border border-surface-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
 
       {/* Extends */}
       <div className="space-y-1">
-        <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide" htmlFor="role-extends">
+        <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="role-extends">
           Extends (inherits all permissions from)
         </label>
         <select
           id="role-extends"
           value={extendsRole}
           onChange={(e) => setExtendsRole(e.target.value)}
-          className="w-full rounded-md bg-zinc-800 border border-zinc-600 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          className="w-full rounded-md bg-surface-raised border border-surface-border px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           {BUILTIN_ROLE_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -194,12 +194,12 @@ export function RoleBuilder({ projectId, onCreated }: RoleBuilderProps) {
 
       {/* Extra permissions */}
       <div className="space-y-3">
-        <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Additional permissions (on top of extended role)
         </p>
         {PERMISSION_GROUPS.map((group) => (
           <div key={group.label}>
-            <p className="text-xs text-zinc-500 mb-1">{group.label}</p>
+            <p className="text-xs text-muted-foreground mb-1">{group.label}</p>
             <div className="flex flex-wrap gap-2">
               {group.perms.map((perm) => {
                 const checked = extraPerms.has(perm)
@@ -208,8 +208,8 @@ export function RoleBuilder({ projectId, onCreated }: RoleBuilderProps) {
                     key={perm}
                     className={`flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 text-xs border transition-colors ${
                       checked
-                        ? 'border-amber-600 bg-amber-900/40 text-amber-200'
-                        : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500'
+                        ? 'border-[var(--accent-amber-9)] bg-[var(--accent-amber-3)] text-[var(--accent-amber-9)]'
+                        : 'border-surface-border bg-surface-raised text-muted-foreground hover:border-muted-foreground'
                     }`}
                   >
                     <input
@@ -228,7 +228,7 @@ export function RoleBuilder({ projectId, onCreated }: RoleBuilderProps) {
       </div>
 
       {error && (
-        <p className="rounded-md bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-300">
+        <p className="rounded-md bg-destructive/10 border border-destructive/50 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -236,7 +236,7 @@ export function RoleBuilder({ projectId, onCreated }: RoleBuilderProps) {
       <button
         type="submit"
         disabled={submitting}
-        className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors"
+        className="rounded-md bg-[var(--accent-amber-9)] hover:bg-[var(--accent-amber-10)] disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-semibold text-[var(--text-inverse)] transition-colors"
       >
         {submitting ? 'Creating…' : 'Create role'}
       </button>

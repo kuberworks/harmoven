@@ -1,12 +1,7 @@
 // app/(auth)/layout.tsx
 // Auth shell — centered card layout, dark mesh background, no nav.
 // Used by: /login, /register, /login/check-email
-
-import type { Metadata } from 'next'
-
-export const metadata: Metadata = {
-  title: 'Sign in — Harmoven',
-}
+// Note: no shared metadata here — each child page defines its own title.
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (

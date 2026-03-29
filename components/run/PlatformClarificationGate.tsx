@@ -43,7 +43,7 @@ function RadioOption({
       className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors
         ${checked
           ? 'border-amber-500 bg-amber-500/10 text-white'
-          : 'border-zinc-700 bg-zinc-800/60 text-zinc-300 hover:border-zinc-500'}
+          : 'border-surface-border bg-surface-raised/60 text-foreground hover:border-muted-foreground'}
         ${className}`}
     >
       <input
@@ -58,7 +58,7 @@ function RadioOption({
       <span className="flex flex-col gap-1">
         <span className="font-medium text-white">{label}</span>
         {sublabel && (
-          <span className="text-sm text-zinc-400">{sublabel}</span>
+          <span className="text-sm text-muted-foreground">{sublabel}</span>
         )}
         {warning && (
           <span className="text-sm text-amber-400">{warning}</span>
@@ -76,8 +76,8 @@ function ContinueButton({ onClick, disabled = false }: { onClick: () => void; di
       onClick={onClick}
       className={`mt-6 self-end rounded-lg px-6 py-2.5 text-sm font-semibold transition-colors
         ${disabled
-          ? 'cursor-not-allowed bg-zinc-700 text-zinc-500'
-          : 'bg-amber-500 text-zinc-900 hover:bg-amber-400'}`}
+          ? 'cursor-not-allowed bg-surface-hover text-muted-foreground'
+          : 'bg-amber-500 text-[var(--text-inverse)] hover:bg-amber-400'}`}
     >
       Continue →
     </button>
@@ -133,7 +133,7 @@ function MobileClarificationGate({ mobileTarget = 'both', onConfirm }: Omit<Mobi
     <div className="flex flex-col gap-4">
       <div className="mb-2">
         <h2 className="text-lg font-semibold text-white">{title}</h2>
-        <p className="mt-1 text-sm text-zinc-400">What matters most to you?</p>
+        <p className="mt-1 text-sm text-muted-foreground">What matters most to you?</p>
       </div>
 
       <RadioOption
@@ -157,9 +157,9 @@ function MobileClarificationGate({ mobileTarget = 'both', onConfirm }: Omit<Mobi
           <>
             React Native — one codebase, two stores
             <br />
-            <span className="text-zinc-400">✓ Android: no Mac needed — Google Play $25 one-time</span>
+            <span className="text-muted-foreground">✓ Android: no Mac needed — Google Play $25 one-time</span>
             <br />
-            <span className="text-zinc-500 text-xs">ℹ You can publish Android first while waiting for a Mac</span>
+            <span className="text-muted-foreground text-xs">ℹ You can publish Android first while waiting for a Mac</span>
           </>
         }
         warning="⚠ iPhone: Apple account ($99/year) + Mac + Xcode"
@@ -232,7 +232,7 @@ function HardwareClarificationGate({
     <div className="flex flex-col gap-4">
       <div className="mb-2">
         <h2 className="text-lg font-semibold text-white">What hardware are you building for?</h2>
-        <p className="mt-1 text-sm text-zinc-400">{familyLabel[family] ?? family} boards</p>
+        <p className="mt-1 text-sm text-muted-foreground">{familyLabel[family] ?? family} boards</p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -248,7 +248,7 @@ function HardwareClarificationGate({
               <>
                 {profile.display_name}
                 {profile.is_default && (
-                  <span className="ml-2 text-xs font-normal text-zinc-500">[default]</span>
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">[default]</span>
                 )}
               </>
             }
@@ -282,13 +282,13 @@ function ClosedPlatformBlock({
         <h2 className="text-lg font-semibold text-white">
           {platformName} development isn&apos;t available
         </h2>
-        <p className="mt-2 text-sm text-zinc-300">{reason}</p>
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-2 text-sm text-foreground">{reason}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
           This is not a Harmoven limitation — the platform controls access.
         </p>
       </div>
 
-      <p className="text-sm font-medium text-zinc-300">
+      <p className="text-sm font-medium text-foreground">
         What Harmoven can build instead:
       </p>
 
@@ -327,7 +327,7 @@ function ClosedPlatformBlock({
  */
 export function PlatformClarificationGate(props: PlatformClarificationGateProps) {
   return (
-    <div className="w-full max-w-xl rounded-xl border border-zinc-700 bg-zinc-900 p-6 shadow-lg">
+    <div className="w-full max-w-xl rounded-xl border border-surface-border bg-surface-base p-6 shadow-lg">
       {props.variant === 'mobile' && (
         <MobileClarificationGate
           mobileTarget={props.mobileTarget}

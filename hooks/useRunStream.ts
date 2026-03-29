@@ -107,6 +107,7 @@ export function useRunStream(runId: string) {
     let es: EventSource
     let reconnectTimer: ReturnType<typeof setTimeout>
     let destroyed = false
+    let attempt = 0
 
     function connect() {
       if (destroyed) return
@@ -115,7 +116,10 @@ export function useRunStream(runId: string) {
         + (lastEventIdRef.current ? `?lastEventId=${lastEventIdRef.current}` : '')
       es = new EventSource(url)
 
-      es.onopen = () => dispatch({ type: 'CONNECTED' })
+      es.onopen = () => {
+        attempt = 0 // reset backoff on successful connection
+        dispatch({ type: 'CONNECTED' })
+      }
 
       es.onmessage = (evt) => {
         try {
@@ -138,7 +142,13 @@ export function useRunStream(runId: string) {
         dispatch({ type: 'ERROR' })
         es.close()
         if (!destroyed) {
-          reconnectTimer = setTimeout(connect, 2000)
+          // Exponential backoff with full jitter to avoid thundering herd
+          // when many clients reconnect simultaneously after a server restart.
+          // Formula: random(0, min(30_000, 500 * 2^attempt)) ms
+          const cap = Math.min(30_000, 500 * Math.pow(2, attempt))
+          const delay = Math.floor(Math.random() * cap)
+          attempt++
+          reconnectTimer = setTimeout(connect, delay)
         }
       }
     }

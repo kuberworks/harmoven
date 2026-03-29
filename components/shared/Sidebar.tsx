@@ -13,9 +13,10 @@ import {
   BarChart2, Shield, Users, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { useT } from '@/lib/i18n/client'
 
 interface NavItem {
-  label: string
+  labelKey: string
   href: string
   icon: typeof LayoutDashboard
   /** Permission required to show the link (undefined = always visible) */
@@ -23,17 +24,17 @@ interface NavItem {
 }
 
 const PRIMARY_NAV: NavItem[] = [
-  { label: 'Dashboard',   href: '/dashboard',   icon: LayoutDashboard },
-  { label: 'Runs',        href: '/runs',         icon: Play },
-  { label: 'Projects',    href: '/projects',     icon: FolderOpen },
-  { label: 'Marketplace', href: '/marketplace',  icon: ShoppingBag },
+  { labelKey: 'nav.dashboard',   href: '/dashboard',   icon: LayoutDashboard },
+  { labelKey: 'nav.runs',        href: '/runs',         icon: Play },
+  { labelKey: 'nav.projects',    href: '/projects',     icon: FolderOpen },
+  { labelKey: 'nav.marketplace', href: '/marketplace',  icon: ShoppingBag },
 ]
 
 const SECONDARY_NAV: NavItem[] = [
-  { label: 'Settings',  href: '/settings',  icon: Settings },
-  { label: 'Members',   href: '/members',   icon: Users,   requiresRole: 'admin' },
-  { label: 'Analytics', href: '/analytics', icon: BarChart2, requiresRole: 'admin' },
-  { label: 'Admin',     href: '/admin',     icon: Shield,  requiresRole: 'instance_admin' },
+  { labelKey: 'nav.settings',  href: '/settings',  icon: Settings },
+  { labelKey: 'nav.members',   href: '/members',   icon: Users,   requiresRole: 'admin' },
+  { labelKey: 'nav.analytics', href: '/analytics', icon: BarChart2, requiresRole: 'admin' },
+  { labelKey: 'nav.admin',     href: '/admin',     icon: Shield,  requiresRole: 'instance_admin' },
 ]
 
 interface SidebarProps {
@@ -44,6 +45,7 @@ interface SidebarProps {
 export function Sidebar({ instanceRole }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const t = useT()
 
   function isVisible(item: NavItem) {
     if (!item.requiresRole) return true
@@ -78,13 +80,13 @@ export function Sidebar({ instanceRole }: SidebarProps) {
       {/* Primary nav */}
       <nav className="flex flex-col gap-0.5 p-2 flex-1" aria-label="Main navigation">
         {PRIMARY_NAV.map(item => (
-          <NavLink key={item.href} item={item} collapsed={collapsed} active={isActive(item.href)} />
+          <NavLink key={item.href} item={item} label={t(item.labelKey)} collapsed={collapsed} active={isActive(item.href)} />
         ))}
 
         <div className="my-1 h-px bg-border" />
 
         {SECONDARY_NAV.filter(isVisible).map(item => (
-          <NavLink key={item.href} item={item} collapsed={collapsed} active={isActive(item.href)} />
+          <NavLink key={item.href} item={item} label={t(item.labelKey)} collapsed={collapsed} active={isActive(item.href)} />
         ))}
       </nav>
 
@@ -101,13 +103,13 @@ export function Sidebar({ instanceRole }: SidebarProps) {
 }
 
 function NavLink({
-  item, collapsed, active,
-}: { item: NavItem; collapsed: boolean; active: boolean }) {
+  item, label, collapsed, active,
+}: { item: NavItem; label: string; collapsed: boolean; active: boolean }) {
   const Icon = item.icon
   return (
     <Link
       href={item.href}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? label : undefined}
       className={cn(
         'flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors duration-150',
         active
@@ -118,7 +120,7 @@ function NavLink({
       aria-current={active ? 'page' : undefined}
     >
       <Icon className="h-4 w-4 shrink-0" />
-      {!collapsed && <span>{item.label}</span>}
+      {!collapsed && <span>{label}</span>}
     </Link>
   )
 }

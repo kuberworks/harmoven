@@ -1,11 +1,13 @@
 {
   "nav": {
+    "dashboard": "Dashboard",
     "runs": "Runs",
     "projects": "Projects",
     "marketplace": "Marketplace",
     "analytics": "Analytics",
     "admin": "Admin",
     "settings": "Settings",
+    "members": "Members",
     "help": "Help",
     "logout": "Log out",
     "back": "Back",
