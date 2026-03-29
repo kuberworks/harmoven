@@ -33,7 +33,9 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>('dark')
 
   useEffect(() => {
-    const stored = (localStorage.getItem('harmoven-theme') ?? 'dark') as Theme
+    const VALID_THEMES: Theme[] = ['dark', 'light', 'auto']
+    const raw = localStorage.getItem('harmoven-theme') ?? 'dark'
+    const stored: Theme = VALID_THEMES.includes(raw as Theme) ? (raw as Theme) : 'dark'
     setTheme(stored)
     applyTheme(stored)
   }, [])
