@@ -10,6 +10,7 @@
 // Calls POST /api/runs/:id/inject with { content: string }.
 
 import React, { useState, useRef, useId } from 'react'
+import { useT } from '@/lib/i18n/client'
 
 interface ContextInjectionPanelProps {
   runId: string
@@ -29,6 +30,7 @@ export function ContextInjectionPanel({ runId, runStatus, onInjected }: ContextI
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const labelId = useId()
+  const t = useT()
 
   const isActive = runStatus === 'RUNNING' || runStatus === 'PAUSED'
   if (!isActive) return null
@@ -59,7 +61,7 @@ export function ContextInjectionPanel({ runId, runStatus, onInjected }: ContextI
       const { injection } = await res.json() as { injection: { id: string; content: string; created_at: string } }
       setContent('')
       setExpanded(false)
-      setSuccessMsg('Note ajoutée — elle sera transmise aux agents en attente.')
+      setSuccessMsg(t('context.inject_success'))
       onInjected?.(injection)
       setTimeout(() => setSuccessMsg(null), 4000)
     } catch (err) {
@@ -79,11 +81,9 @@ export function ContextInjectionPanel({ runId, runStatus, onInjected }: ContextI
             setError(null)
             setTimeout(() => textareaRef.current?.focus(), 50)
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-zinc-600
-            bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300
-            hover:border-zinc-400 hover:bg-zinc-700 transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-1.5 text-sm text-foreground hover:border-muted-foreground hover:bg-surface-hover transition-colors"
         >
-          + Ajouter un contexte
+          + {t('runs.actions.inject_context')}
         </button>
         {successMsg && (
           <p role="status" className="text-xs text-emerald-400">{successMsg}</p>
@@ -96,13 +96,13 @@ export function ContextInjectionPanel({ runId, runStatus, onInjected }: ContextI
     <form
       onSubmit={handleSubmit}
       aria-labelledby={labelId}
-      className="flex flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-800/60 p-4"
+      className="flex flex-col gap-2 rounded-lg border border-surface-border bg-surface-raised/60 p-4"
     >
-      <label id={labelId} className="text-sm font-medium text-zinc-200">
-        Contexte additionnel pour les agents
+      <label id={labelId} className="text-sm font-medium text-foreground">
+        {t('context.inject_title')}
       </label>
-      <p className="text-xs text-zinc-400">
-        Cette note sera transmise aux agents dont le contrôle n'a pas encore démarré.
+      <p className="text-xs text-muted-foreground">
+        {t('context.inject_hint')}
       </p>
 
       <textarea
@@ -111,28 +111,28 @@ export function ContextInjectionPanel({ runId, runStatus, onInjected }: ContextI
         onChange={e => setContent(e.target.value)}
         rows={4}
         maxLength={MAX_CHARS + 1} // allow one extra char so overLimit triggers
-        placeholder="Ex. : le client a confirmé vouloir du TypeScript strict uniquement…"
+        placeholder={t('context.inject_placeholder')}
         aria-describedby={overLimit ? `${labelId}-limit` : undefined}
-        className={`w-full resize-y rounded-md border bg-zinc-900 p-2 text-sm text-zinc-100
-          placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-amber-500
-          ${overLimit ? 'border-red-500' : 'border-zinc-700'}`}
+        className={`w-full resize-y rounded-md border bg-surface-base p-2 text-sm text-foreground
+          placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring
+          ${overLimit ? 'border-destructive' : 'border-surface-border'}`}
       />
 
       <div className="flex items-center justify-between gap-2">
         <span
           id={overLimit ? `${labelId}-limit` : undefined}
-          className={`text-xs ${overLimit ? 'text-red-400' : 'text-zinc-500'}`}
+          className={`text-xs ${overLimit ? 'text-destructive' : 'text-muted-foreground'}`}
         >
-          {charCount} / {MAX_CHARS} caractères
+          {charCount} / {MAX_CHARS}
         </span>
 
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => { setExpanded(false); setError(null); setContent('') }}
-            className="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            Annuler
+            {t('common.cancel')}
           </button>
           <button
             type="submit"
@@ -145,10 +145,10 @@ export function ContextInjectionPanel({ runId, runStatus, onInjected }: ContextI
               <>
                 <span className="inline-block h-3 w-3 animate-spin rounded-full
                   border-2 border-current border-t-transparent" />
-                Envoi…
+                {t('common.saving')}
               </>
             ) : (
-              'Envoyer'
+              t('context.inject_submit')
             )}
           </button>
         </div>

@@ -54,29 +54,29 @@ function shortHash(hash: string): string {
 function DiffView({ diff, onClose }: { diff: ConfigDiff; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+      <div className="bg-surface-overlay rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="font-semibold text-gray-800">Config diff</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+          <h3 className="font-semibold text-foreground">Config diff</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Close diff view">✕</button>
         </div>
         <div className="flex flex-1 overflow-hidden divide-x">
           <div className="flex-1 overflow-auto p-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">Before</p>
-            <pre className="text-xs font-mono whitespace-pre-wrap text-gray-700">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Before</p>
+            <pre className="text-xs font-mono whitespace-pre-wrap text-foreground">
               {diff.before || '(empty)'}
             </pre>
           </div>
           <div className="flex-1 overflow-auto p-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">After</p>
-            <pre className="text-xs font-mono whitespace-pre-wrap text-gray-700">
+            <p className="text-xs font-medium text-muted-foreground mb-2">After</p>
+            <pre className="text-xs font-mono whitespace-pre-wrap text-foreground">
               {diff.after || '(empty)'}
             </pre>
           </div>
         </div>
         <div className="p-4 border-t">
-          <details className="text-xs text-gray-500">
+          <details className="text-xs text-muted-foreground">
             <summary className="cursor-pointer">Raw unified diff</summary>
-            <pre className="mt-2 font-mono whitespace-pre-wrap bg-gray-50 p-2 rounded">
+            <pre className="mt-2 font-mono whitespace-pre-wrap bg-surface-base p-2 rounded">
               {diff.patch || '(no changes)'}
             </pre>
           </details>
@@ -99,23 +99,23 @@ function RestoreConfirmModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-        <h3 className="font-semibold text-gray-800 mb-2">Restore config?</h3>
-        <p className="text-sm text-gray-600 mb-4">
+      <div className="bg-surface-overlay rounded-lg shadow-xl max-w-md w-full p-6">
+        <h3 className="font-semibold text-foreground mb-2">Restore config?</h3>
+        <p className="text-sm text-muted-foreground mb-4">
           Restore config from{' '}
           <strong>{formatDate(version.timestamp)}</strong>?
           <br />
           This will create a new commit reverting to that version.
           Current config will not be lost — it stays in history.
         </p>
-        <p className="text-xs text-gray-400 mb-6 font-mono">
+        <p className="text-xs text-muted-foreground mb-6 font-mono">
           Commit: {shortHash(version.hash)} — {version.message}
         </p>
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
             disabled={loading}
-            className="px-4 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+            className="px-4 py-2 text-sm rounded border border-surface-border hover:bg-surface-base disabled:opacity-50"
           >
             Cancel
           </button>
@@ -204,7 +204,7 @@ export default function ConfigHistory({ projectId }: ConfigHistoryProps) {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) {
-    return <div className="text-sm text-gray-400 py-8 text-center">Loading history…</div>
+    return <div className="text-sm text-muted-foreground py-8 text-center">Loading history…</div>
   }
 
   if (error) {
@@ -218,7 +218,7 @@ export default function ConfigHistory({ projectId }: ConfigHistoryProps) {
 
   return (
     <div className="space-y-2">
-      <h2 className="text-base font-semibold text-gray-800 mb-4">Config History</h2>
+      <h2 className="text-base font-semibold text-foreground mb-4">Config History</h2>
 
       {successMsg && (
         <div className="text-sm text-green-600 bg-green-50 px-3 py-2 rounded mb-4 flex justify-between">
@@ -228,25 +228,25 @@ export default function ConfigHistory({ projectId }: ConfigHistoryProps) {
       )}
 
       {versions.length === 0 && (
-        <p className="text-sm text-gray-400">No config changes recorded yet.</p>
+        <p className="text-sm text-muted-foreground">No config changes recorded yet.</p>
       )}
 
       <div className="divide-y rounded border">
         {versions.map(version => (
-          <div key={version.hash} className="flex items-start gap-3 p-3 hover:bg-gray-50">
+          <div key={version.hash} className="flex items-start gap-3 p-3 hover:bg-surface-hover">
             {/* Dot */}
             <div className="mt-1.5 h-2 w-2 rounded-full bg-blue-400 flex-shrink-0" />
 
             {/* Content */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-xs text-gray-400">{shortHash(version.hash)}</span>
-                <span className="text-sm text-gray-700 truncate">{version.message}</span>
+                <span className="font-mono text-xs text-muted-foreground">{shortHash(version.hash)}</span>
+                <span className="text-sm text-foreground truncate">{version.message}</span>
               </div>
-              <div className="text-xs text-gray-400 mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 {formatDate(version.timestamp)}
                 {version.changed.length > 0 && (
-                  <span className="ml-2 text-gray-300">
+                  <span className="ml-2 text-muted-foreground">
                     · {version.changed.join(', ')}
                   </span>
                 )}

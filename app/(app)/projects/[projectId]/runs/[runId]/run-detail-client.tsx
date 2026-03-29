@@ -222,13 +222,13 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               {run.status}
             </Badge>
             {stream.connected && isLive && (
-              <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400" aria-live="polite" aria-atomic="true">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
                 Live
               </span>
             )}
             {stream.error && (
-              <span className="text-xs text-amber-400">{stream.error}</span>
+              <span className="text-xs text-amber-400" role="status" aria-live="assertive" aria-atomic="true">{stream.error}</span>
             )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground font-mono">{run.id}</p>
@@ -326,7 +326,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                           : ev.type === 'completed'
                           ? 'Run completed'
                           : ev.type
-                      return <ActivityEntry key={i} type={ev.type} label={label} />
+                      return <ActivityEntry key={`${ev.type}-${i}`} type={ev.type} label={label} />
                     })
                   )}
                 </CardContent>

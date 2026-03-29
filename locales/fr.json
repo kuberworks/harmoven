@@ -1,11 +1,13 @@
 {
   "nav": {
+    "dashboard": "Tableau de bord",
     "runs": "Exécutions",
     "projects": "Projets",
     "marketplace": "Marketplace",
     "analytics": "Analyses",
     "admin": "Administration",
     "settings": "Paramètres",
+    "members": "Membres",
     "help": "Aide",
     "logout": "Se déconnecter",
     "back": "Retour",

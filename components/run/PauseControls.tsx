@@ -12,6 +12,7 @@
 // which will update the run status in the parent store.
 
 import React, { useState } from 'react'
+import { useT } from '@/lib/i18n/client'
 
 interface PauseControlsProps {
   runId: string
@@ -24,6 +25,7 @@ interface PauseControlsProps {
 export function PauseControls({ runId, runStatus, disabled = false }: PauseControlsProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const t = useT()
 
   const isPaused  = runStatus === 'PAUSED'
   const isRunning = runStatus === 'RUNNING'
@@ -60,25 +62,25 @@ export function PauseControls({ runId, runStatus, disabled = false }: PauseContr
         type="button"
         onClick={handleToggle}
         disabled={disabled || loading}
-        aria-label={isPaused ? 'Reprendre le run' : 'Mettre en pause le run'}
+        aria-label={isPaused ? t('runs.actions.resume') : t('runs.actions.pause')}
         className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
           transition-colors focus-visible:outline focus-visible:outline-2
           focus-visible:outline-offset-2 focus-visible:outline-amber-500
           disabled:cursor-not-allowed disabled:opacity-50
           ${isPaused
             ? 'bg-amber-500 text-black hover:bg-amber-400 active:bg-amber-600'
-            : 'border border-zinc-600 bg-zinc-800 text-zinc-200 hover:border-zinc-400 hover:bg-zinc-700'
+            : 'border border-surface-border bg-surface-raised text-foreground hover:border-muted-foreground hover:bg-surface-hover'
           }`}
       >
         {loading ? (
           <>
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            {isPaused ? 'Reprise…' : 'Pause…'}
+            {isPaused ? t('runs.actions.resume') + '…' : t('runs.actions.pause') + '…'}
           </>
         ) : isPaused ? (
-          <>▶ Reprendre</>
+          <>▶ {t('runs.actions.resume')}</>
         ) : (
-          <>⏸ Pause</>
+          <>⏸ {t('runs.actions.pause')}</>
         )}
       </button>
 

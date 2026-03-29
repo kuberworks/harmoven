@@ -6,9 +6,11 @@
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
+import { getInstanceRole, getSessionLocale } from '@/lib/auth/session-helpers'
 import { Sidebar } from '@/components/shared/Sidebar'
 import { Topbar } from '@/components/shared/Topbar'
 import { UpdateBannerAsync } from '@/components/admin/UpdateBannerAsync'
+import { TranslationProvider } from '@/lib/i18n/client'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -17,13 +19,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/login')
   }
 
-  const user = session.user
-  // role field is added by the better-auth admin plugin
-  const instanceRole = ((user as Record<string, unknown>).role as string | undefined) ?? 'user'
-  const locale = ((user as Record<string, unknown>).ui_locale as 'en' | 'fr' | undefined) ?? 'en'
+  const user = session.user as Record<string, unknown>
+  const instanceRole = getInstanceRole(user)
+  const locale = getSessionLocale(user)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-base">
+    <TranslationProvider locale={locale}>
+      <div className="flex h-screen overflow-hidden bg-surface-base">
+      {/* A11Y: skip-navigation link — visible on focus for keyboard users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:left-2 focus:top-2 focus:rounded-md focus:bg-surface-overlay focus:px-4 focus:py-2 focus:text-sm focus:text-foreground focus:ring-2 focus:ring-ring"
+      >
+        Skip to main content
+      </a>
+
       {/* Left sidebar */}
       <Sidebar instanceRole={instanceRole} />
 
@@ -36,18 +46,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
         {/* Topbar */}
         <Topbar
-          userName={user.name ?? undefined}
-          userEmail={user.email}
+          userName={user.name as string | undefined}
+          userEmail={user.email as string}
           locale={locale}
         />
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main id="main-content" className="flex-1 overflow-y-auto p-6" tabIndex={-1}>
           <div className="mx-auto max-w-[1200px]">
             {children}
           </div>
         </main>
       </div>
-    </div>
+    </TranslationProvider>
   )
 }

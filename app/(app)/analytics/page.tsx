@@ -14,6 +14,7 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { getInstanceRole } from '@/lib/auth/session-helpers'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { AnalyticsResponse } from '@/lib/analytics/types'
@@ -79,7 +80,7 @@ export default async function AnalyticsPage({
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
 
-  const instanceRole = (session.user as Record<string, unknown>).role as string | null
+  const instanceRole = getInstanceRole(session.user as Record<string, unknown>)
   const isAdmin      = instanceRole === 'instance_admin'
 
   const { project_id } = await searchParams

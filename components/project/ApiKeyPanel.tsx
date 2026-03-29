@@ -64,36 +64,36 @@ function KeyRow({
   }
 
   return (
-    <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm ${inactive ? 'border-zinc-700 bg-zinc-800/50 opacity-60' : 'border-zinc-700 bg-zinc-800'}`}>
+    <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm ${inactive ? 'border-surface-border bg-surface-raised/50 opacity-60' : 'border-surface-border bg-surface-raised'}`}>
       <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="font-medium text-zinc-100 truncate">{k.name}</span>
-        <span className="text-xs text-zinc-500">
-          Role: <span className="text-zinc-400">{k.role.display_name}</span>
+        <span className="font-medium text-foreground truncate">{k.name}</span>
+        <span className="text-xs text-muted-foreground">
+          Role: <span className="text-muted-foreground">{k.role.display_name}</span>
           {k.expires_at && (
-            <> · Expires: <span className={expired ? 'text-red-400' : 'text-zinc-400'}>{new Date(k.expires_at).toLocaleDateString()}</span></>
+            <> · Expires: <span className={expired ? 'text-destructive' : 'text-muted-foreground'}>{new Date(k.expires_at).toLocaleDateString()}</span></>
           )}
           {k.last_used && (
-            <> · Last used: <span className="text-zinc-400">{new Date(k.last_used).toLocaleDateString()}</span></>
+            <> · Last used: <span className="text-muted-foreground">{new Date(k.last_used).toLocaleDateString()}</span></>
           )}
-          {revoked && <> · <span className="text-red-400">Revoked</span></>}
-          {expired && !revoked && <> · <span className="text-amber-400">Expired</span></>}
+          {revoked && <> · <span className="text-destructive">Revoked</span></>}
+          {expired && !revoked && <> · <span className="text-[var(--accent-amber-9)]">Expired</span></>}
         </span>
       </div>
 
       {!inactive && (
         confirming ? (
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-xs text-red-400">Revoke this key?</span>
+            <span className="text-xs text-destructive">Revoke this key?</span>
             <button
               onClick={handleRevoke}
               disabled={revoking}
-              className="rounded px-2 py-1 text-xs bg-red-700 hover:bg-red-600 text-white disabled:opacity-50"
+              className="rounded px-2 py-1 text-xs bg-destructive hover:bg-destructive/80 text-destructive-foreground disabled:opacity-50"
             >
               {revoking ? 'Revoking…' : 'Yes, revoke'}
             </button>
             <button
               onClick={() => setConfirming(false)}
-              className="rounded px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+              className="rounded px-2 py-1 text-xs bg-surface-hover hover:bg-surface-selected text-muted-foreground"
             >
               Cancel
             </button>
@@ -101,7 +101,7 @@ function KeyRow({
         ) : (
           <button
             onClick={() => setConfirming(true)}
-            className="flex-shrink-0 rounded px-2 py-1 text-xs border border-red-700/50 text-red-400 hover:bg-red-900/30 transition-colors"
+            className="flex-shrink-0 rounded px-2 py-1 text-xs border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
           >
             Revoke
           </button>
@@ -224,24 +224,24 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
     <div className="space-y-6">
       {/* One-time key reveal */}
       {newRawKey && (
-        <div className="rounded-lg border border-amber-600 bg-amber-900/20 p-4 space-y-2">
-          <p className="text-sm font-semibold text-amber-300">
+        <div className="rounded-lg border border-[var(--accent-amber-9)] bg-[var(--accent-amber-3)] p-4 space-y-2">
+          <p className="text-sm font-semibold text-[var(--accent-amber-9)]">
             ⚠ Copy your API key now — it will not be shown again.
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 rounded bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm font-mono text-zinc-100 break-all select-all">
+            <code className="flex-1 rounded bg-surface-base border border-surface-border px-3 py-2 text-sm font-mono text-foreground break-all select-all">
               {newRawKey}
             </code>
             <button
               onClick={copyKey}
-              className="flex-shrink-0 rounded px-3 py-2 text-xs bg-amber-700 hover:bg-amber-600 text-white transition-colors"
+              className="flex-shrink-0 rounded px-3 py-2 text-xs bg-[var(--accent-amber-9)] hover:bg-[var(--accent-amber-10)] text-[var(--text-inverse)] transition-colors"
             >
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
           <button
             onClick={() => setNewRawKey(null)}
-            className="text-xs text-zinc-500 hover:text-zinc-300 underline"
+            className="text-xs text-muted-foreground hover:text-foreground underline"
           >
             I have saved it, dismiss
           </button>
@@ -251,14 +251,14 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
       {/* Create new key form */}
       <form
         onSubmit={handleCreate}
-        className="rounded-lg border border-zinc-700 bg-zinc-900 p-4 space-y-4"
+        className="rounded-lg border border-surface-border bg-surface-base p-4 space-y-4"
         aria-label="Create API key"
       >
-        <h3 className="text-sm font-semibold text-zinc-100">Create new API key</h3>
+        <h3 className="text-sm font-semibold text-foreground">Create new API key</h3>
 
         <div className="grid sm:grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="block text-xs text-zinc-400 uppercase tracking-wide" htmlFor="key-name">
+            <label className="block text-xs text-muted-foreground uppercase tracking-wide" htmlFor="key-name">
               Label
             </label>
             <input
@@ -269,19 +269,19 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
               onChange={(e) => setKeyName(e.target.value)}
               placeholder="e.g. CI pipeline"
               maxLength={128}
-              className="w-full rounded-md bg-zinc-800 border border-zinc-600 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-md bg-surface-raised border border-surface-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs text-zinc-400 uppercase tracking-wide" htmlFor="key-role">
+            <label className="block text-xs text-muted-foreground uppercase tracking-wide" htmlFor="key-role">
               Role
             </label>
             <select
               id="key-role"
               value={roleId}
               onChange={(e) => setRoleId(e.target.value)}
-              className="w-full rounded-md bg-zinc-800 border border-zinc-600 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-md bg-surface-raised border border-surface-border px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             >
               {roles.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -292,7 +292,7 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
           </div>
 
           <div className="space-y-1 sm:col-span-2">
-            <label className="block text-xs text-zinc-400 uppercase tracking-wide" htmlFor="key-expires">
+            <label className="block text-xs text-muted-foreground uppercase tracking-wide" htmlFor="key-expires">
               Expires (optional)
             </label>
             <input
@@ -301,13 +301,13 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
               value={expiresAt}
               onChange={(e) => setExpiresAt(e.target.value)}
               min={new Date(Date.now() + 86_400_000).toISOString().split('T')[0]}
-              className="w-full rounded-md bg-zinc-800 border border-zinc-600 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full rounded-md bg-surface-raised border border-surface-border px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
         </div>
 
         {createErr && (
-          <p className="rounded-md bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-300">
+          <p className="rounded-md bg-destructive/10 border border-destructive/50 px-3 py-2 text-sm text-destructive">
             {createErr}
           </p>
         )}
@@ -315,7 +315,7 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
         <button
           type="submit"
           disabled={creating}
-          className="rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors"
+          className="rounded-md bg-[var(--accent-amber-9)] hover:bg-[var(--accent-amber-10)] disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-semibold text-[var(--text-inverse)] transition-colors"
         >
           {creating ? 'Creating…' : 'Create key'}
         </button>
@@ -323,13 +323,13 @@ export function ApiKeyPanel({ projectId }: ApiKeyPanelProps) {
 
       {/* Key list */}
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-zinc-300">Existing keys</h3>
+        <h3 className="text-sm font-semibold text-foreground">Existing keys</h3>
 
-        {loading && <p className="text-sm text-zinc-500">Loading…</p>}
-        {error   && <p className="text-sm text-red-400">{error}</p>}
+        {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {error   && <p className="text-sm text-destructive">{error}</p>}
 
         {!loading && keys.length === 0 && (
-          <p className="text-sm text-zinc-500">No API keys yet.</p>
+          <p className="text-sm text-muted-foreground">No API keys yet.</p>
         )}
 
         {keys.map((k) => (
