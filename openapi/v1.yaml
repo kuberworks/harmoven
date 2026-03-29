@@ -186,6 +186,24 @@ components:
   # ─── Reusable schemas ──────────────────────────────────────────────────────
   schemas:
 
+    # ── RGPD ──────────────────────────────────────────────────────────────────
+    RgpdConfig:
+      type: object
+      required: [maintenance_enabled, data_retention_days, env_override_active]
+      properties:
+        maintenance_enabled:
+          type: boolean
+          description: "Whether the automated RGPD maintenance crons (session cleanup and run-data TTL) are currently enabled. Controlled via `PATCH /admin/rgpd` or the `RGPD_MAINTENANCE_ENABLED` environment variable."
+        data_retention_days:
+          type: integer
+          description: "Number of days after which run content (LLM input/output) is nullified by the TTL cron. Applies to new runs. Range: 7–3650."
+          minimum: 7
+          maximum: 3650
+          example: 90
+        env_override_active:
+          type: boolean
+          description: "True when the `RGPD_MAINTENANCE_ENABLED=false` environment variable is set. In this case the DB setting is ignored and maintenance is forcibly disabled. Update the environment variable (not the DB) to re-enable."
+
     # ── Error ─────────────────────────────────────────────────────────────────
     ApiError:
       type: object
@@ -442,10 +460,28 @@ components:
 
     GateDecision:
       type: string
+      description: |
+        Decision submitted by the operator at a human review gate.
+        - `approve`: the output is accepted as-is; the run transitions back to RUNNING immediately.
+        - `modify`: the operator supplies a `patch` map applied to `task_input`; the Planner
+          regenerates the DAG with the new input and resumes.
+        - `replay_node`: the specified `node_id` is replayed from scratch with its original inputs;
+          downstream nodes that depend on it are reset to PENDING.
+        - `abort`: the run is transitioned to FAILED immediately; no further nodes are dispatched.
       enum: [approve, modify, replay_node, abort]
 
     InterruptGateDecision:
       type: string
+      description: |
+        Decision submitted by the user after manually interrupting an in-flight node via
+        `POST /runs/{id}/nodes/{nid}/interrupt`. The partial LLM output accumulated before
+        the interrupt is preserved and displayed in the gate panel for review.
+        - `resume_from_partial`: mark the node COMPLETED using the partial output as its
+          `handoff_out`; downstream nodes proceed with what was generated.
+        - `replay_from_scratch`: discard the partial output and restart the node from the
+          beginning with its original inputs.
+        - `accept_partial`: alias for `resume_from_partial`, kept for SDK compatibility.
+        - `abort`: discard the output and transition the entire run to FAILED.
       enum: [resume_from_partial, replay_from_scratch, accept_partial, abort]
 
     # ── DAG ───────────────────────────────────────────────────────────────────
@@ -538,7 +574,7 @@ components:
           description: "Identifier of the project this resource belongs to. All IDOR checks gate access based on project membership."
         status:
           $ref: '#/components/schemas/RunStatus'
-          description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+          description: "Current lifecycle state of the run. See `RunStatus` for the full state machine, valid transitions, and terminal states (`COMPLETED`, `FAILED`)."
         domain_profile:
           $ref: '#/components/schemas/DomainProfile'
           description: "Domain profile applied to this run, determining the safety preset, LLM tier defaults, and Human Gate threshold."
@@ -650,7 +686,7 @@ components:
           description: "Type of AI agent assigned to this node. Determines the system prompt, available tools, and LLM tier selection."
         status:
           $ref: '#/components/schemas/NodeStatus'
-          description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+          description: "Current lifecycle state of this DAG node. See `NodeStatus` for the full state machine, valid transitions, and terminal states (`COMPLETED`, `SKIPPED`, `DEADLOCKED`)."
         handoff_in:      {}
         handoff_out:     {}
         cost_usd:
@@ -705,7 +741,7 @@ components:
           description: "Human-readable display label. Used in the administration panel and developer-facing API key listings."
         description:
           type: [string, 'null']
-          description: "Human-readable description of this node's purpose or the resource's content."
+          description: "Optional human-readable description of this project's purpose, scope, or domain context. Displayed in the project list and admin panel. Max suggested length: 500 characters."
         domain_profile:
           $ref: '#/components/schemas/DomainProfile'
           description: "Domain profile applied to this run, determining the safety preset, LLM tier defaults, and Human Gate threshold."
@@ -760,7 +796,7 @@ components:
           type: integer
           minimum: 1
           maximum: 3
-          description: "1=trusted, 2=vetted, 3=CN/unvetted"
+          description: "Trust classification used to gate data routing against project confidentiality. `1` = fully trusted providers (Anthropic, OpenAI direct, Google Gemini) — eligible at all confidentiality levels. `2` = vetted providers (Mistral, GitHub Copilot, CometAPI) — blocked at `CRITICAL`. `3` = unvetted or CN-jurisdiction providers (DeepSeek, Qwen, MiniMax) — blocked at `HIGH`, `CRITICAL`, and when `no_cn_jurisdiction` is set."
         jurisdiction:
           description: "Primary geographic jurisdiction of the provider's data processing infrastructure. Used by the LLM selector to enforce `eu_only` and `no_cn_jurisdiction` routing constraints defined on the run."
           type: string
@@ -1186,7 +1222,7 @@ components:
           description: "Unique, immutable identifier assigned by the system at creation. Used as the primary key for all subsequent API interactions with this resource."
         status:
           type: string
-          description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+          description: "New status of the entity after the state change. For `entity_type: run`, one of the `RunStatus` values. For `entity_type: node`, one of the `NodeStatus` values. Clients should update their local state and re-render affected components."
 
     RunSSEEventCostUpdate:
       type: object
@@ -1199,7 +1235,7 @@ components:
           description: "SSE event type discriminator. Determines the structure of the event payload."
         cost_usd:
           type: number
-          description: "Cost in USD of LLM calls attributed to this node. Populated when the node completes. Null while the node is still running."
+          description: "Cumulative cost in USD of all LLM calls made so far in this run, at the moment this event was emitted. Monotonically increasing. Sent after each node completes a billable LLM call. Use `percent_of_budget` to assess proximity to the budget ceiling."
         tokens:
           type: integer
           description: "Token count for this data point."
@@ -1335,7 +1371,7 @@ components:
               description: "Identifier of the parent run. Used to associate this resource with its execution context and to route SSE events."
             status:
               $ref: '#/components/schemas/RunStatus'
-              description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+              description: "Terminal status of the run: `COMPLETED` (all nodes succeeded) or `FAILED` (an unrecoverable error occurred). Used by the Kanban board to move the card to the correct column."
         - type: object
           required: [type, gate_id, reason]
           properties:
@@ -1551,7 +1587,7 @@ components:
   parameters:
     ProjectId:
       name: projectId
-      description: "Project identifier scoping this webhook endpoint. Only triggers registered to this project will accept deliveries."
+      description: "UUID of the project to operate on. Used as the primary routing key for all project-scoped endpoints. IDOR checks verify the caller holds a valid membership in this project. Returned by `GET /projects` and in every `Project` object."
       in: path
       required: true
       schema:
@@ -1559,6 +1595,7 @@ components:
         format: uuid
     RunId:
       name: runId
+      description: "UUID of the run to operate on. Returned by `POST /runs` in the `run_id` field and in every `Run` object. Access is IDOR-gated to the project the run belongs to."
       in: path
       required: true
       schema:
@@ -1566,18 +1603,21 @@ components:
         format: uuid
     NodeId:
       name: nodeId
+      description: "DAG node identifier string (e.g. `n1`, `n_writer`). Matches the `node_id` field in the `DagNode` schema — not a UUID. Visible in `GET /runs/{runId}` nodes array and in SSE `state_change` events."
       in: path
       required: true
       schema:
         type: string
     UserId:
       name: userId
+      description: "UUID of the target user account. Returned in the `User` schema from `GET /admin/users`. For ban/unban operations the target must not be the calling admin's own account."
       in: path
       required: true
       schema:
         type: string
     RoleId:
       name: roleId
+      description: "UUID of the project role to operate on. Returned by `GET /projects/{projectId}/roles`. Built-in roles (`viewer`, `operator`, `user`, `developer`, `admin`) cannot be deleted."
       in: path
       required: true
       schema:
@@ -1585,6 +1625,7 @@ components:
         format: uuid
     KeyId:
       name: keyId
+      description: "UUID of the API key to operate on. Returned in the `id` field of each entry from `GET /projects/{projectId}/api-keys`. The raw key value is never returned by GET — only this ID is safe to store client-side."
       in: path
       required: true
       schema:
@@ -1592,7 +1633,7 @@ components:
         format: uuid
     SkillId:
       name: id
-      description: "Unique identifier of the resource to operate on."
+      description: "UUID of the MCP skill pack to operate on. Returned by `GET /admin/skills`."
       in: path
       required: true
       schema:
@@ -1600,6 +1641,7 @@ components:
         format: uuid
     CredentialId:
       name: credId
+      description: "UUID of the project credential to operate on. Returned by `GET /admin/credentials`. Credential values (secrets) are write-only and never returned by any GET endpoint."
       in: path
       required: true
       schema:
@@ -1607,7 +1649,7 @@ components:
         format: uuid
     TriggerId:
       name: triggerId
-      description: "Trigger identifier. The incoming webhook payload is validated against this trigger's `webhook_secret` before a run is created."
+      description: "UUID of the automation trigger to operate on. Returned by `GET /admin/triggers`. For WEBHOOK triggers the `id` also identifies the delivery endpoint path segment."
       in: path
       required: true
       schema:
@@ -1762,7 +1804,7 @@ paths:
                   status:
                     type: string
                     example: ok
-                    description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+                    description: "Always `ok` when all system components (database, executor, LLM connector, SSE bus) are healthy and reachable. Any value other than `ok` indicates the service is degraded."
 
   /metrics:
     get:
@@ -1939,10 +1981,10 @@ paths:
                           type:
                             type: string
                             enum: [url, file_ref]
-                            description: "SSE event type discriminator. Determines the structure of the event payload."
+                            description: "Type of input attachment. `url`: a publicly accessible web URL — the agent fetches and reads the content at runtime. `file_ref`: a UUID referencing a previously uploaded file in the instance's file storage."
                           value:
                             type: string
-                            description: "Raw secret value. Encrypted at rest with AES-256-GCM. Never returned by any GET endpoint — write-once on creation or update."
+                            description: "Content of the input: a full URL string (when `type = url`) or a file storage UUID (when `type = file_ref`). For `file_ref`, the UUID is returned at upload time."
                           filename:
                             type: string
                             description: "Original filename of the uploaded attachment. Used for display in the Human Gate panel and for MIME type detection fallback."
@@ -1959,6 +2001,7 @@ paths:
                       type: number
                       minimum: 0
                       maximum: 100
+                      description: "Maximum allowed LLM spend in USD for this run. When `cost_actual_usd` reaches this threshold, the executor suspends the run with `suspended_reason: budget_exceeded`. Useful to cap costs for exploratory tasks. Maximum: $100. Omit for no budget limit."
                     budget_tokens:
                       type: integer
                       minimum: 0
@@ -1993,7 +2036,7 @@ paths:
                   status:
                     type: string
                     enum: [PENDING]
-                    description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+                    description: "Always `PENDING` immediately after a successful submission. The executor picks up the run within seconds and transitions it to `RUNNING`. Subscribe to the SSE stream at `stream_url` for live progress."
                   estimated_cost_usd:
                     type: number
                     description: "Pre-run cost estimate computed by the Planner from DAG node weights and LLM tier pricing. Displayed to the user before confirming the run."
@@ -2209,16 +2252,7 @@ paths:
                     description: "Identifier of the parent run. Used to associate this resource with its execution context and to route SSE events."
                   status:
                     $ref: '#/components/schemas/RunStatus'
-                    description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
+                    description: "Updated run status reflecting the applied gate decision. `approve` → `RUNNING`. `modify` → `SUSPENDED` (Planner is re-running). `replay_node` → `RUNNING`. `abort` → `FAILED`."
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimit'
@@ -2297,7 +2331,7 @@ paths:
                   status:
                     type: string
                     enum: [PAUSED]
-                    description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+                    description: "Always `PAUSED` after a successful pause. In-progress nodes complete their current LLM call before the executor halts. Use `POST /runs/{runId}/resume` to continue execution."
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2336,7 +2370,7 @@ paths:
                   status:
                     type: string
                     enum: [RUNNING]
-                    description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+                    description: "Always `RUNNING` immediately after a successful resume. The executor re-enters the dispatch loop and picks up PENDING nodes whose upstream dependencies are satisfied. `paused_at` is cleared."
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2768,7 +2802,7 @@ paths:
                 description:
                   type: string
                   maxLength: 500
-                  description: "Human-readable description of this node's purpose or the resource's content."
+                  description: "Optional human-readable description of this project's purpose, scope, or domain context. Max 500 characters. Displayed in the project list and admin panel."
                 domain_profile:
                   $ref: '#/components/schemas/DomainProfile'
                   description: "Domain profile applied to this run, determining the safety preset, LLM tier defaults, and Human Gate threshold."
@@ -2861,7 +2895,7 @@ paths:
                   description: "Human-readable display label. Used in the administration panel and developer-facing API key listings."
                 description:
                   type: string
-                  description: "Human-readable description of this node's purpose or the resource's content."
+                  description: "Optional human-readable description of this project's purpose, scope, or context. Updates are written to `config.git` alongside other config changes when `config` is also supplied."
                 domain_profile:
                   $ref: '#/components/schemas/DomainProfile'
                   description: "Domain profile applied to this run, determining the safety preset, LLM tier defaults, and Human Gate threshold."
@@ -4079,7 +4113,7 @@ paths:
                 config:
                   type: object
                   additionalProperties: true
-                  description: "Node-level or skill-level configuration overrides. Contents are schema-free and interpreted by the agent at runtime."
+                  description: "Trigger-type-specific configuration object. For `CRON`: `{ schedule: '0 9 * * 1-5', timezone: 'Europe/Paris' }`. For `FILE_WATCHER`: `{ watch_path: '/data/inbox', debounce_seconds: 5 }`. For `WEBHOOK`: leave empty — the `webhook_secret` is generated automatically and returned in the created `Trigger` object."
       responses:
         '201':
           description: "Trigger created and active if `enabled: true`. CRON triggers are registered with the system scheduler (UTC by default). FILE_WATCHER triggers register an inotify watch on the server filesystem. WEBHOOK triggers expose a signed delivery endpoint using the generated `webhook_secret`."
@@ -4123,7 +4157,7 @@ paths:
                 config:
                   type: object
                   additionalProperties: true
-                  description: "Node-level or skill-level configuration overrides. Contents are schema-free and interpreted by the agent at runtime."
+                  description: "Partial update of the trigger-type-specific configuration. For `CRON`: update `schedule` or `timezone`. For `FILE_WATCHER`: update `watch_path` or `debounce_seconds`. For `WEBHOOK`: rotation of `webhook_secret` is done via a dedicated rotate endpoint (not yet implemented). Omit to leave existing config unchanged."
       responses:
         '200':
           description: "Trigger configuration updated. If `enabled` changed to `false`: CRON and FILE_WATCHER events stop dispatching immediately. In-flight webhook deliveries that arrived before this call are still accepted, but no new run is created."
@@ -4279,6 +4313,84 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimit'
+  # ── RGPD admin config ─────────────────────────────────────────────────────
+  /admin/rgpd:
+    get:
+      operationId: getRgpdConfig
+      x-required-permissions: [admin:instance]
+      summary: Read RGPD maintenance configuration
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Returns the current RGPD maintenance settings stored in `SystemSetting`.
+        `env_override_active: true` means the operator has set
+        `RGPD_MAINTENANCE_ENABLED=false` in the environment, which takes precedence
+        over the DB value and disables automated maintenance regardless of the DB setting.
+
+        **Note:** the user-facing statutory rights (`DELETE /api/users/me`,
+        `GET /api/users/me/data`) are always active and are NOT controlled by this endpoint.
+      tags: [admin]
+      responses:
+        '200':
+          description: "Current RGPD maintenance configuration."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RgpdConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      operationId: updateRgpdConfig
+      x-required-permissions: [admin:instance]
+      summary: Update RGPD maintenance configuration
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Persists one or both RGPD settings to `SystemSetting` and writes an
+        `admin.rgpd.config.updated` audit log entry. All fields are optional — only
+        the supplied fields are updated. Returns the full configuration after the update.
+
+        **Constraints:**
+        - `data_retention_days`: 7–3650 (1 week to ~10 years)
+        - If `RGPD_MAINTENANCE_ENABLED=false` is set in the environment, the DB setting
+          is ignored and `env_override_active: true` is returned.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                maintenance_enabled:
+                  type: boolean
+                  description: "When `false`, the automated session-cleanup and run-data-TTL crons are disabled. Statutory user rights (account deletion, data export) remain active regardless."
+                data_retention_days:
+                  type: integer
+                  minimum: 7
+                  maximum: 3650
+                  description: "Number of days before run content (LLM input/output) is nullified by the TTL cron. Applies to new runs at creation time. Minimum: 7 days. Maximum: 3650 days (~10 years)."
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Updated RGPD configuration. Returns the full config (same shape as `GET /admin/rgpd`) after applying the changes."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RgpdConfig'
+        '400':
+          description: "Request body is invalid or a field constraint is violated (e.g. `data_retention_days` outside the 7–3650 range)."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   # ── Analytics (internal) ───────────────────────────────────────────────────
   /analytics:
     get:
@@ -4459,6 +4571,222 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimit'
   # ── User settings ──────────────────────────────────────────────────────────
+  /users/me:
+    patch:
+      operationId: updateMyProfile
+      x-required-permissions: [runs:read]
+      summary: Update current user profile
+      description: |
+        > **Required permission:** `runs:read` — minimum role: `viewer` (any authenticated user)
+
+        Updates one or more profile fields for the authenticated user. All fields are optional;
+        only the supplied fields are updated. Email changes are **not** accepted here — use the
+        dedicated email-change flow with verification instead.
+      tags: [users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  description: "Display name shown in the UI and audit log entries."
+                expert_mode:
+                  type: boolean
+                  description: "When `true`, advanced controls (e.g. manual gate overrides, raw cost breakdowns) are surfaced in the UI."
+                ui_level:
+                  type: string
+                  enum: [GUIDED, STANDARD, ADVANCED]
+                  description: "Interface complexity level. `GUIDED` hides advanced options, `STANDARD` is the default, `ADVANCED` exposes all controls."
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Profile fields updated successfully."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    description: "True if the operation completed successfully."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+    delete:
+      operationId: deleteMyAccount
+      summary: Permanently delete own account (RGPD Art.17)
+      description: |
+        **RGPD Article 17 — Right to erasure ("right to be forgotten")**
+
+        Permanently and irreversibly deletes the authenticated user's account.
+        This operation cannot be undone.
+
+        **Pseudonymization strategy (runs before deletion):**
+        - FK-nullable fields (`Run.created_by`, `PipelineTemplate.created_by`, …) → `NULL`
+        - Non-nullable identity fields in linked records → sentinel `"__deleted__"`
+        - `AuditLog` actor fields are intentionally left unchanged (legal retention obligation)
+
+        **Security requirements (double-confirmation pattern):**
+        - Requires an active **session** — API keys are not accepted.
+        - `password` must be the user's current password (re-authentication, Art.7 consent).
+        - `confirm` must be the exact string `"DELETE MY ACCOUNT"` (typed confirmation to
+          prevent accidental deletion — same UX as GitHub, Vercel, Stripe).
+
+        **After deletion:** all sessions are invalidated immediately. The response includes
+        `redirect: "/login"` so the client can clear local state and redirect.
+
+        > **Note:** This endpoint is always active regardless of the RGPD maintenance
+        > configuration (`PATCH /admin/rgpd`), as it implements a statutory right.
+      tags: [users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, confirm]
+              properties:
+                password:
+                  type: string
+                  description: "User's current password. Required to prove unambiguous informed consent (RGPD Art.7). Verified via scrypt before any data is modified."
+                confirm:
+                  type: string
+                  enum: ["DELETE MY ACCOUNT"]
+                  description: "Must be the exact string `DELETE MY ACCOUNT`. Case-sensitive. Deliberate friction to prevent accidental account deletion."
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Account deleted. All user data has been pseudonymized or removed. All active sessions are invalidated. The client should clear local state and redirect the user to the login page."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    description: "True if the operation completed successfully."
+                  message:
+                    type: string
+                    description: "Human-readable confirmation of the deletion."
+                    example: "Your account has been permanently deleted."
+                  redirect:
+                    type: string
+                    description: "Suggested redirect path for the client after clearing local session state."
+                    example: "/login"
+        '401':
+          description: "No active session, or `password` does not match the user's stored credential."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: "`confirm` is not exactly `\"DELETE MY ACCOUNT\"`, or the account uses passkey/social login only (no password to verify). See `hint` in the response body for guidance."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+  /users/me/data:
+    get:
+      operationId: exportMyData
+      summary: Export personal data archive (RGPD Art.20)
+      description: |
+        **RGPD Article 20 — Right to data portability**
+
+        Returns a JSON file containing all personal data held by the platform for the
+        authenticated user (profile, projects, runs, templates, installed packs,
+        preferences, API key metadata, audit activity).
+
+        The response uses `Content-Disposition: attachment` so browsers download the file
+        directly. The payload is never cached (`Cache-Control: private, no-store`).
+
+        **Schema version:** `1.0` — the `schema_version` field in the JSON can be used
+        by data-migration scripts when the export format is updated.
+
+        > **Note:** This endpoint is always active regardless of the RGPD maintenance
+        > configuration (`PATCH /admin/rgpd`), as it implements a statutory right.
+      tags: [users]
+      responses:
+        '200':
+          description: "JSON data archive. Contains all personal data for the authenticated user as a structured, machine-readable object."
+          headers:
+            Content-Disposition:
+              description: "`attachment; filename=\"harmoven-data-export-YYYY-MM-DD.json\"`"
+              schema:
+                type: string
+            Cache-Control:
+              description: "`private, no-store` — PII must never be cached by a CDN or shared cache."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                description: "Full personal data export. Top-level keys correspond to data categories. `schema_version` can be used to detect format changes."
+                properties:
+                  schema_version:
+                    type: string
+                    example: "1.0"
+                  exported_at:
+                    type: string
+                    format: date-time
+                  user:
+                    type: object
+                    description: "Core user profile (id, name, email, created_at, …)."
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                    description: "Projects owned by or memberships for this user."
+                  pipeline_templates:
+                    type: array
+                    items:
+                      type: object
+                    description: "Pipeline templates created by this user."
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                    description: "Runs initiated by this user."
+                  installed_packs:
+                    type: array
+                    items:
+                      type: object
+                    description: "Marketplace packs installed by this user."
+                  user_preferences:
+                    type: array
+                    items:
+                      type: object
+                    description: "Inferred user preferences (expert mode, ui_level, …)."
+                  api_keys:
+                    type: array
+                    items:
+                      type: object
+                    description: "API key metadata (no secrets — hashed keys are omitted)."
+                  audit_activity:
+                    type: array
+                    items:
+                      type: object
+                    description: "Audit log entries where this user was the actor."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+        '500':
+          description: "An internal error prevented the export from being generated. The user's data is unaffected — retry is safe."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /users/me/locale:
     patch:
       operationId: updateLocale
@@ -4620,6 +4948,7 @@ paths:
                   type: number
                   minimum: 0.01
                   maximum: 100
+                  description: "Maximum allowed LLM spend in USD for this run. The executor suspends the run with `suspended_reason: budget_exceeded` when the cumulative cost reaches this value. Range: $0.01–$100. Omit for no budget limit."
                 files:
                   type: array
                   description: "Base64-encoded files, max 10 MB each"
@@ -4659,7 +4988,7 @@ paths:
                   status:
                     type: string
                     enum: [pending]
-                    description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+                    description: "Always `pending` immediately after a successful submission. The orchestrator picks up the run within seconds. Subscribe to the SSE stream at `stream_url` for live progress events or poll `GET /v1/runs/{run_id}`."
                   estimated_duration_seconds:
                     type: number
                     description: "Estimated wall-clock execution time in seconds computed from DAG depth and profile benchmarks. Available immediately after the run is accepted; may be refined as nodes complete."
@@ -4743,7 +5072,7 @@ paths:
                           description: "Identifier of the parent run. Used to associate this resource with its execution context and to route SSE events."
                         status:
                           type: string
-                          description: "Current lifecycle state of this resource. Drives what operations are permitted and what UI views are displayed."
+                          description: "Current lifecycle status of this run. One of: `PENDING` (queued), `RUNNING` (in progress), `COMPLETED` (all nodes succeeded), `FAILED` (unrecoverable error), `SUSPENDED` (paused by system — see `suspended_reason`), `PAUSED` (manually paused by user). See `RunStatus` schema for the full state machine."
                         domain_profile:
                           type: string
                           description: "Domain profile applied to this run, determining the safety preset, LLM tier defaults, and Human Gate threshold."
