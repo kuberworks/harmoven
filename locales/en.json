@@ -12,7 +12,8 @@
     "logout": "Log out",
     "back": "Back",
     "new_run": "New run",
-    "new_project": "New project"
+    "new_project": "New project",
+    "pipelines": "Pipelines"
   },
   "auth": {
     "login": "Sign in",
@@ -260,26 +261,6 @@
     "instance": "Instance",
     "users": "Users",
     "audit_log": "Audit log",
-    "skills": "Skills & packs",
-    "config": "Configuration",
-    "health": "System health",
-    "version": "Version",
-    "users_title": "User management",
-    "users_empty": "No users",
-    "ban": "Suspend",
-    "unban": "Unsuspend",
-    "promote": "Promote to admin",
-    "demote": "Remove admin",
-    "audit": {
-      "title": "Audit log",
-      "actor": "Who",
-      "action": "Action",
-      "target": "Target",
-      "timestamp": "When",
-      "empty": "No audit events",
-      "loading": "Loading…",
-      "filter_by": "Filter by"
-    },
     "skills": {
       "title": "Installed skills",
       "install": "Install pack",
@@ -301,6 +282,25 @@
         "notify": "Notify on update",
         "manual": "Manual updates only"
       }
+    },
+    "config": "Configuration",
+    "health": "System health",
+    "version": "Version",
+    "users_title": "User management",
+    "users_empty": "No users",
+    "ban": "Suspend",
+    "unban": "Unsuspend",
+    "promote": "Promote to admin",
+    "demote": "Remove admin",
+    "audit": {
+      "title": "Audit log",
+      "actor": "Who",
+      "action": "Action",
+      "target": "Target",
+      "timestamp": "When",
+      "empty": "No audit events",
+      "loading": "Loading…",
+      "filter_by": "Filter by"
     }
   },
   "marketplace": {
