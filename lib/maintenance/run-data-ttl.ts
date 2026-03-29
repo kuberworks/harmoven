@@ -16,6 +16,8 @@
 // At run creation, data_expires_at = created_at + DATA_RETENTION_DAYS.
 //
 // Schedule: daily at 03:30 (after session-cleanup at 03:00).
+// Toggle:   RGPD_MAINTENANCE_ENABLED=false disables the cron at startup (see instrumentation.ts).
+//           The data_expires_at field is still written at run creation — it just won't be acted upon.
 
 import cron from 'node-cron'
 import { db } from '@/lib/db/client'
