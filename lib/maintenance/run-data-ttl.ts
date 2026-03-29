@@ -6,21 +6,20 @@
 //   Run.user_injections   → [] (replaced by empty array sentinel)
 //   Node.partial_output   → "" (replaced by empty string) for nodes of expired runs
 //   Node.handoff_in       → {} for nodes of expired runs
-//   Node.handoff_out      → {} for nodes of expired runs  (via Handoff table)
+//   Node.handoff_out      → {} for nodes of expired runs
 //
-// Node.partial_output and Handoff rows may contain free-form LLM or user text.
-// After TTL, the execution artifacts are deleted at field level — the Run row
-// itself and its metadata (status, cost, timing) are preserved for analytics.
-//
-// The TTL is configured via the DATA_RETENTION_DAYS env var (default: 90).
-// At run creation, data_expires_at = created_at + DATA_RETENTION_DAYS.
+// The TTL is configured via PATCH /api/admin/rgpd (data_retention_days, default 90).
+// Env var DATA_RETENTION_DAYS is the fallback when no DB setting exists.
+// At run creation, data_expires_at = created_at + data_retention_days.
 //
 // Schedule: daily at 03:30 (after session-cleanup at 03:00).
-// Toggle:   RGPD_MAINTENANCE_ENABLED=false disables the cron at startup (see instrumentation.ts).
-//           The data_expires_at field is still written at run creation — it just won't be acted upon.
+// Toggle:   configurable at runtime via PATCH /api/admin/rgpd (instance_admin).
+//           The data_expires_at field is still written at run creation regardless —
+//           it just won't be acted upon when maintenance is disabled.
 
 import cron from 'node-cron'
-import { db } from '@/lib/db/client'
+import { db }             from '@/lib/db/client'
+import { getRgpdConfig } from '@/lib/maintenance/rgpd-config'
 
 export const DATA_RETENTION_DAYS = parseInt(process.env.DATA_RETENTION_DAYS ?? '90', 10)
 
@@ -84,25 +83,31 @@ export function computeDataExpiresAt(createdAt: Date = new Date()): Date {
 
 /**
  * Starts the daily run-data TTL cron job.
- * Runs once at startup, then every day at 03:30.
+ * The cron itself always starts; it checks the live admin config at each sweep.
  */
 export function startRunDataTtlCron(): cron.ScheduledTask {
-  // Startup sweep
-  void purgeExpiredRunData().then(({ runs, nodes }) => {
-    if (runs > 0) {
-      console.info(`[run-data-ttl] Startup sweep: purged content from ${runs} run(s) / ${nodes} node(s).`)
+  async function sweep(context: 'startup' | 'daily') {
+    const { maintenance_enabled } = await getRgpdConfig()
+    if (!maintenance_enabled) {
+      if (context === 'startup') {
+        console.warn('[run-data-ttl] Maintenance disabled (admin config) — run data TTL purge skipped.')
+      }
+      return
     }
-  }).catch((err: unknown) => {
-    console.warn('[run-data-ttl] Startup sweep failed (non-fatal):', err)
-  })
+    const { runs, nodes } = await purgeExpiredRunData()
+    if (runs > 0 || context === 'startup') {
+      console.info(`[run-data-ttl] ${context} sweep: purged content from ${runs} run(s) / ${nodes} node(s).`)
+    }
+  }
 
-  const task = cron.schedule('30 3 * * *', () => {
-    void purgeExpiredRunData().then(({ runs, nodes }) => {
-      console.info(`[run-data-ttl] Daily sweep: purged content from ${runs} run(s) / ${nodes} node(s).`)
-    }).catch((err: unknown) => {
-      console.warn('[run-data-ttl] Daily sweep failed:', err)
-    })
-  })
+  // Startup sweep
+  void sweep('startup').catch((err: unknown) =>
+    console.warn('[run-data-ttl] Startup sweep failed (non-fatal):', err),
+  )
 
-  return task
+  return cron.schedule('30 3 * * *', () => {
+    void sweep('daily').catch((err: unknown) =>
+      console.warn('[run-data-ttl] Daily sweep failed:', err),
+    )
+  })
 }
