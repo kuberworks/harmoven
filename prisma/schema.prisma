@@ -320,6 +320,13 @@ model Run {
   business_value_note   String?  // free-text ROI context (optional)
   task_input_chars      Int      @default(0) // computed at creation
 
+  // RGPD Art.5 §1 e) — Data retention TTL (RGPD-04).
+  // Set at creation time to created_at + DATA_RETENTION_DAYS (default 90).
+  // When the maintenance job fires (daily 03:30) and this date is in the past,
+  // task_input, user_injections and Node content are purged.
+  // Null after purge to prevent re-processing.
+  data_expires_at      DateTime?
+
   // Pipeline template — optional FK to PipelineTemplate used to seed this run's DAG
   pipeline_template_id  String?
   pipeline_template     PipelineTemplate? @relation(fields: [pipeline_template_id], references: [id])
@@ -337,6 +344,7 @@ model Run {
   @@index([status])
   @@index([created_by])
   @@index([pipeline_template_id])
+  @@index([data_expires_at])
 }
 
 // ─── Nodes ───────────────────────────────────────────────────────────────────

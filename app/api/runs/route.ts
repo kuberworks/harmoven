@@ -237,6 +237,7 @@ export async function POST(req: NextRequest) {
       task_input_chars: typeof body.task_input === 'string'
         ? body.task_input.length
         : JSON.stringify(body.task_input).length,
+      data_expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(process.env.DATA_RETENTION_DAYS ?? '90', 10)); return d })(),
     },
   })
 

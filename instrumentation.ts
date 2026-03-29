@@ -45,5 +45,12 @@ export async function register(): Promise<void> {
     await getExecutionEngine().catch((err: unknown) =>
       console.warn('[bootstrap] getExecutionEngine pre-init failed (non-fatal):', err),
     )
+
+    // RGPD-03: purge expired sessions (contains IP + UA — personal data).
+    // RGPD-04: purge personal data content from expired runs (task_input, injections, Node LLM text).
+    const { startSessionCleanupCron } = await import('@/lib/maintenance/session-cleanup')
+    const { startRunDataTtlCron }     = await import('@/lib/maintenance/run-data-ttl')
+    startSessionCleanupCron()
+    startRunDataTtlCron()
   }
 }
