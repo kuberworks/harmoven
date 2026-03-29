@@ -198,7 +198,7 @@ export class Writer {
         // Fallback: find the outermost JSON object in the response
         const match = stripped.match(/(\{[\s\S]*\})/)
         if (match) {
-          parsed = JSON.parse(match[1])
+          parsed = JSON.parse(match[1]!)
         } else {
           throw new SyntaxError('no JSON object found')
         }

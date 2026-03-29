@@ -40,6 +40,14 @@ export interface EvalAgentOutput {
     tokens_input:     number
     tokens_output:    number
     duration_seconds: number
+    /** Per-model breakdown when parallelEval() was used. */
+    model_breakdown?: Array<{
+      model_tier:       string
+      model_id:         string
+      overall_score:    number
+      verdict:          EvalVerdict
+      duration_seconds: number
+    }>
   }
 }
 
@@ -55,4 +63,11 @@ export interface EvalResultRecord {
   criteria:      ScoredCriterion[]  // stored as JSON
   feedback:      string | null
   computed_at:   Date
+  model_breakdown?: Array<{          // present when parallelEval() was used
+    model_tier:       string
+    model_id:         string
+    overall_score:    number
+    verdict:          EvalVerdict
+    duration_seconds: number
+  }>
 }
