@@ -835,7 +835,9 @@ model PipelineTemplate {
   description String?
   // null = global (visible to all instance users); non-null = scoped to project
   project_id  String?
-  created_by  String
+  // RGPD Art.17: nullable — set to NULL when the creator's account is deleted
+  // (rather than cascade-deleting the template, which may be a project resource).
+  created_by  String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
   is_public   Boolean  @default(false) // global templates only
@@ -849,7 +851,7 @@ model PipelineTemplate {
   ai_suggestion     Json?    // { nodes, edges, rationale }
   ai_suggested_at   DateTime?
 
-  creator   User              @relation(fields: [created_by], references: [id])
+  creator   User?             @relation(fields: [created_by], references: [id], onDelete: SetNull)
   project   Project?          @relation(fields: [project_id], references: [id])
   versions  PipelineTemplateVersion[]
   runs      Run[]
