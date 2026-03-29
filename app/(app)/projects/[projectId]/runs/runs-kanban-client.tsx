@@ -9,6 +9,7 @@ import { useEffect, useReducer } from 'react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { RUN_STATUS_VARIANT } from '@/lib/utils/run-status'
 import type { RunStatus } from '@/types/run.types'
 
 export interface RunSummary {
@@ -37,10 +38,7 @@ const COLUMNS: { status: RunStatus; label: string }[] = [
   { status: 'FAILED',    label: 'Failed' },
 ]
 
-const STATUS_VARIANT: Record<string, 'running' | 'completed' | 'failed' | 'paused' | 'pending' | 'suspended'> = {
-  RUNNING: 'running', COMPLETED: 'completed', FAILED: 'failed',
-  PAUSED: 'paused', PENDING: 'pending', SUSPENDED: 'suspended',
-}
+const STATUS_VARIANT = RUN_STATUS_VARIANT
 
 // Simple reducer: update run status after SSE state_change events
 function runsReducer(runs: RunSummary[], action: { runId: string; status: string }): RunSummary[] {

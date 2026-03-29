@@ -16,6 +16,7 @@ import { PauseControls } from '@/components/run/PauseControls'
 import { ContextInjectionPanel } from '@/components/run/ContextInjectionPanel'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink } from 'lucide-react'
+import { RUN_STATUS_VARIANT } from '@/lib/utils/run-status'
 import type { Permission } from '@/lib/auth/permissions'
 import type { Dag } from '@/types/dag.types'
 import type { RunStatus, NodeStatus } from '@/types/run.types'
@@ -60,12 +61,7 @@ interface Props {
 
 // ─── Status helpers ─────────────────────────────────────────────────────────
 
-const STATUS_VARIANT: Record<string, 'running' | 'completed' | 'failed' | 'paused' | 'pending' | 'suspended'> = {
-  RUNNING: 'running', COMPLETED: 'completed', FAILED: 'failed',
-  PAUSED: 'paused', PENDING: 'pending', SUSPENDED: 'suspended',
-  INTERRUPTED: 'paused', BLOCKED: 'pending', ESCALATED: 'failed',
-  DEADLOCKED: 'failed', SKIPPED: 'pending',
-}
+const STATUS_VARIANT = RUN_STATUS_VARIANT
 
 const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
   RUNNING: <Loader2 className="h-3.5 w-3.5 animate-spin text-status-running" />,
@@ -112,11 +108,18 @@ function NodeCard({ node }: { node: InitialNode | NodeState }) {
 
 // ─── Activity feed entry ────────────────────────────────────────────────────
 
+const ACTIVITY_ICONS: Record<string, [emoji: string, label: string]> = {
+  error:      ['🔴', 'Error'],
+  completed:  ['✅', 'Completed'],
+  human_gate: ['⏸', 'Paused'],
+}
+
 function ActivityEntry({ type, label }: { type: string; label: string }) {
-  const icon = type === 'error' ? '🔴' : type === 'completed' ? '✅' : type === 'human_gate' ? '⏸' : '💬'
+  const [icon, iconLabel] = ACTIVITY_ICONS[type] ?? ['💬', 'Event']
   return (
     <div className="flex items-start gap-2 text-xs text-muted-foreground">
-      <span className="shrink-0">{icon}</span>
+      <span aria-hidden="true" className="shrink-0">{icon}</span>
+      <span className="sr-only">{iconLabel}:</span>
       <span>{label}</span>
     </div>
   )
@@ -307,7 +310,10 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                   {stream.events.length === 0 ? (
                     <p className="text-xs text-muted-foreground text-center py-4">No events yet.</p>
                   ) : (
-                    [...stream.events].reverse().map((ev, i) => {
+                    stream.events
+                      .map((ev, i) => ({ ev, i }))
+                      .reverse()
+                      .map(({ ev, i }) => {
                       const label =
                         ev.type === 'state_change'
                           ? `${ev.entity_type} ${ev.id?.slice(0, 6)} → ${ev.status}`
