@@ -50,6 +50,39 @@ function asProfileId(v: unknown): ProfileId {
   return 'generic'
 }
 
+/**
+ * Sanitize a user-supplied task description before passing it to a Planner or Classifier.
+ *
+ * Context: task_input is authored by an authenticated user (not an external attacker), so the
+ * real risk here is *jailbreak* — a user crafting a prompt that overrides the Planner's
+ * system prompt and causes it to emit a malicious DAG (e.g. agent_type = "SHELL",
+ * arbitrary tool calls, exfiltration instructions).
+ *
+ * Strategy (complementary layers):
+ *   1. Strip null bytes and non-whitespace C0/C1 control characters (same as Writer).
+ *   2. Normalise unicode to NFC to prevent homoglyph bypasses.
+ *   3. Detect common role-override openers and replace with a placeholder.
+ *      We intentionally do NOT replace the entire string — legitimate tasks may mention
+ *      "ignore previous X" in a completely innocuous business context. We strip only
+ *      the injection token itself, preserving the rest.
+ *   4. Hard cap: 10 000 characters (prompt flooding defence).
+ *
+ * Note: full jailbreak prevention at the prompt level is an arms race; the primary
+ * structural defence is the downstream DAG validation in Planner.validateDag()
+ * (agent whitelist, cycle detection, depth limit) which rejects structurally invalid
+ * plans regardless of what the LLM produces.
+ */
+const TASK_INJECTION_RE = /\b(ignore|forget|disregard|override|cancel)\s+(previous|prior|above|all)\s+(instructions?|rules?|context|prompt)/gi
+const MAX_TASK_INPUT_CHARS = 10_000
+
+function sanitizeTaskInput(raw: string): string {
+  return raw
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '')
+    .normalize('NFC')
+    .replace(TASK_INJECTION_RE, '[REDACTED]')
+    .slice(0, MAX_TASK_INPUT_CHARS)
+}
+
 // ─── ContextualLLMClient ──────────────────────────────────────────────────────
 
 /**
@@ -139,11 +172,14 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
       // ── CLASSIFIER ──────────────────────────────────────────────────────────
       case 'CLASSIFIER': {
-        const input = typeof handoffIn === 'string'
+        const raw = typeof handoffIn === 'string'
           ? handoffIn
           : ((handoffIn as Record<string, unknown> | null)?.['input'] as string | undefined)
             ?? (meta['task_input'] as string | undefined)
             ?? ''
+        // Sanitize before classification: strips control chars, NFC-normalises,
+        // and neutralises role-override openers. See sanitizeTaskInput() above.
+        const input = sanitizeTaskInput(raw)
 
         const result = await new IntentClassifier(contextualLlm).classify(input, signal)
         return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
@@ -154,9 +190,13 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         const classifierResult = handoffIn as ClassifierResult
         // task_input may be stashed in metadata (e.g. when the run was created directly
         // without a CLASSIFIER node). Fall back to the classifier's input_summary.
-        const taskInput = (meta['task_input'] as string | undefined)
+        const rawTaskInput = (meta['task_input'] as string | undefined)
           ?? classifierResult?.input_summary
           ?? ''
+        // Sanitize before feeding to the Planner's LLM call. The Planner's structural
+        // DAG validation (validateDag) is the primary defence; sanitisation here is
+        // defence-in-depth against jailbreak via prompt flooding or role-override.
+        const taskInput = sanitizeTaskInput(rawTaskInput)
 
         const result = await new Planner(contextualLlm).plan(
           taskInput, classifierResult, node.run_id, signal,
