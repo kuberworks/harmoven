@@ -21,7 +21,7 @@ interface Version {
 interface Template {
   id: string; name: string; description: string | null; dag: unknown
   ai_suggestion: unknown; ai_suggested_at: Date | null
-  created_by: string; use_count: number; is_public: boolean
+  created_by: string | null; use_count: number; is_public: boolean
   versions: Version[]
   _count: { runs: number }
 }
