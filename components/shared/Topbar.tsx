@@ -4,12 +4,14 @@
 // Top navigation bar — project switcher, help, user menu.
 // Spec: UX.md §2.1, DESIGN_SYSTEM.md §1.4.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { LogOut, User, Settings, ChevronDown, HelpCircle } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 import { LocaleSwitcher } from '@/components/shared/LocaleSwitcher'
+import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils/cn'
 
 interface TopbarProps {
@@ -20,16 +22,34 @@ interface TopbarProps {
 
 export function Topbar({ userName, userEmail, locale = 'en' }: TopbarProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
 
+  // A11Y: close the user menu on Escape
+  useEffect(() => {
+    if (!userMenuOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setUserMenuOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [userMenuOpen])
+
   async function handleLogout() {
-    await authClient.signOut({
-      fetchOptions: { onSuccess: () => router.push('/login') },
-    })
+    try {
+      await authClient.signOut({
+        fetchOptions: { onSuccess: () => router.push('/login') },
+      })
+    } catch {
+      // signOut failed — force navigation to /login to clear client state
+      toast({ variant: 'destructive', title: 'Sign out error', description: 'Redirecting to login…' })
+      router.push('/login')
+    }
   }
 
+  // Safe initials: guard against empty segments (double spaces, leading space)
   const initials = userName
-    ? userName.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
+    ? userName.split(' ').map(p => p[0] ?? '').filter(Boolean).join('').slice(0, 2).toUpperCase()
     : '?'
 
   return (
@@ -107,7 +127,7 @@ function MenuItem({
   href, icon: Icon, label, onClick,
 }: { href: string; icon: typeof User; label: string; onClick: () => void }) {
   return (
-    <a
+    <Link
       href={href}
       role="menuitem"
       onClick={onClick}
@@ -115,6 +135,6 @@ function MenuItem({
     >
       <Icon className="h-4 w-4 text-muted-foreground" />
       {label}
-    </a>
+    </Link>
   )
 }
