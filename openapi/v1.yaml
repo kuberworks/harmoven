@@ -1583,7 +1583,19 @@ components:
           description: "When true the template is visible to all instance users."
         dag:
           type: object
-          description: "DAG definition (`{ nodes: [], edges: [] }`)."
+          description: "DAG definition. Contains the full directed acyclic graph of agent nodes and their connections."
+          required: [nodes, edges]
+          properties:
+            nodes:
+              type: array
+              description: "Ordered list of agent nodes in the pipeline. Each node specifies an agent type, LLM provider, and optional configuration overrides."
+              items:
+                type: object
+            edges:
+              type: array
+              description: "Directed connections between nodes. Each edge defines a `source → target` dependency. A node is executed only after all its source nodes have completed."
+              items:
+                type: object
         change_note:
           type: string
           nullable: true
@@ -2942,6 +2954,11 @@ paths:
     get:
       operationId: getPipelineTemplate
       summary: Get a pipeline template
+      description: |
+        Returns the full template object including its current DAG definition.
+        Accessible to the creator, any user with access to the scoped project,
+        and `instance_admin` accounts. Returns 404 for templates that exist but
+        are not accessible to the caller (prevents enumeration).
       tags: [pipeline-templates]
       parameters:
         - in: path
@@ -2987,20 +3004,23 @@ paths:
               properties:
                 name:
                   type: string
+                  description: "New human-readable name for the template."
                 description:
                   type: string
+                  description: "Updated description of the template's purpose."
                 is_public:
                   type: boolean
+                  description: "Change template visibility. `true` makes it visible to all instance users; `false` restricts it to the creator and project members."
                 dag:
                   type: object
-                  description: "New DAG definition. Providing this creates a new version."
+                  description: "New DAG definition. Providing this field creates a new immutable version — the previous version is preserved in version history."
                 change_note:
                   type: string
-                  description: "Optional human-readable note describing what changed."
+                  description: "Optional human-readable note describing what changed in this version."
               additionalProperties: false
       responses:
         '200':
-          description: "Updated template."
+          description: "Updated template.
           content:
             application/json:
               schema:
@@ -3087,8 +3107,10 @@ paths:
                 properties:
                   recorded:
                     type: boolean
+                    description: "Present and `true` when run feedback was successfully stored. An async AI suggestion generation may have been triggered."
                   accepted:
                     type: boolean
+                    description: "Present and `true` when the pending AI suggestion was promoted to a new template version."
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4827,6 +4849,7 @@ paths:
                 properties:
                   ok:
                     type: boolean
+                    description: "`true` when the setting was persisted successfully and the audit log entry was written."
         '400':
           description: "Invalid request payload."
           content:
