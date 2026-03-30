@@ -3,7 +3,7 @@
 module.exports = {
   testEnvironment: 'node',
   transform: {
-    '^.+\\.(ts|tsx)$': ['babel-jest', { configFile: './babel.config.js' }],
+    '^.+\\.(ts|tsx)$': ['babel-jest', { configFile: './babel.jest.js' }],
   },
   moduleNameMapper: {
     // Map @/* path alias to project root (mirrors tsconfig.json paths)
