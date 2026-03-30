@@ -89,7 +89,7 @@ export default async function ProjectPage({ params }: Props) {
   return (
     <div className="space-y-6 animate-stagger">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-1">
             <Link href="/projects" className="hover:text-foreground transition-colors">Projects</Link>
@@ -117,6 +117,7 @@ export default async function ProjectPage({ params }: Props) {
 
       {/* Tabs */}
       <Tabs defaultValue="runs">
+        <div className="overflow-x-auto">
         <TabsList>
           <TabsTrigger value="runs">Runs</TabsTrigger>
           <PermissionGuard permissions={permissions} permission="project:members">
@@ -129,6 +130,7 @@ export default async function ProjectPage({ params }: Props) {
             <TabsTrigger value="history">Config History</TabsTrigger>
           </PermissionGuard>
         </TabsList>
+        </div>
 
         {/* Runs tab */}
         <TabsContent value="runs">

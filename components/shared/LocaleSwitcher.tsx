@@ -51,7 +51,7 @@ export function LocaleSwitcher({ currentLocale }: LocaleSwitcherProps) {
           key={loc}
           variant={locale === loc ? 'secondary' : 'ghost'}
           size="sm"
-          className="h-7 px-2 text-xs"
+          className="h-9 px-2 text-xs"
           onClick={() => switchLocale(loc)}
           disabled={isPending}
           aria-pressed={locale === loc}

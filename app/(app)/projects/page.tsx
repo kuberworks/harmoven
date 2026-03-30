@@ -80,7 +80,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-4 animate-stagger">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Projects</h1>
           <p className="text-xs text-muted-foreground mt-0.5">

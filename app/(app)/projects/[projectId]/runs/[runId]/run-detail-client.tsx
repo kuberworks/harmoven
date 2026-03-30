@@ -530,7 +530,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
   return (
     <div className="space-y-6">
       {/* Run header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
             <Badge variant={STATUS_VARIANT[run.status] ?? 'pending'} className="text-sm px-3 py-1">
@@ -569,7 +569,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
       {/* Human gate banner */}
       {hasOpenGate && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
             <div>
@@ -597,6 +597,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
           <RunProgress nodes={nodes} />
 
           <Tabs defaultValue="agents">
+            <div className="overflow-x-auto">
             <TabsList>
               <TabsTrigger value="agents">Agents ({nodes.length})</TabsTrigger>
               <TabsTrigger value="dag">DAG</TabsTrigger>
@@ -605,6 +606,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                 <TabsTrigger value="inject">Inject context</TabsTrigger>
               )}
             </TabsList>
+            </div>
 
             <TabsContent value="agents">
               <div className="space-y-2">
