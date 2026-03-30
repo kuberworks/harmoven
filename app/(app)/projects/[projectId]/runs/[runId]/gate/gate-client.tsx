@@ -47,6 +47,7 @@ interface Props {
     attempt: number
   } | null
   permissions: Set<Permission>
+  uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'
 }
 
 type Decision = 'approve' | 'abort'
@@ -65,6 +66,7 @@ export function GateClient({
   criticalReview,
   evalResult,
   permissions,
+  uiLevel,
 }: Props) {
   const router = useRouter()
   const [submitting, setSubmitting] = useState<Decision | null>(null)
@@ -306,7 +308,7 @@ export function GateClient({
                 run_id={runId}
                 node_id={criticalReview.node_id}
                 result_id={criticalReview.id}
-                ui_level="STANDARD"
+                ui_level={uiLevel}
                 on_fix={(findingId) => console.log('fix', findingId)}
                 on_ignore={(findingId) => console.log('ignore', findingId)}
                 on_show_all={() => console.log('show all')}

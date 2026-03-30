@@ -62,7 +62,11 @@ export default async function RunPage({ params }: Props) {
   if (!project || !run || run.project_id !== projectId) notFound()
 
   // Resolve permissions to pass to client (returns empty set for non-members)
-  const instanceRole = (session.user as Record<string, unknown>).role as string | null ?? null
+  const userRecord = session.user as Record<string, unknown>
+  const instanceRole = userRecord.role as string | null ?? null
+  const uiLevel = (userRecord.ui_level as string | undefined) === 'GUIDED' ? 'GUIDED'
+    : (userRecord.ui_level as string | undefined) === 'ADVANCED' ? 'ADVANCED'
+    : 'STANDARD'
   const caller = { type: 'session' as const, userId: session.user.id, instanceRole }
   const permissions = await resolvePermissions(caller, projectId).catch(() => new Set<import('@/lib/auth/permissions').Permission>())
 
@@ -122,6 +126,7 @@ export default async function RunPage({ params }: Props) {
         initialRun={serialisedRun}
         initialNodes={serialisedNodes}
         permissions={permissions}
+        uiLevel={uiLevel}
         initialEvents={auditLogs.map((log) => ({
           id: log.id,
           action_type: log.action_type,

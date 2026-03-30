@@ -64,7 +64,11 @@ export default async function GatePage({ params }: Props) {
   if (!project || !run || run.project_id !== projectId) notFound()
 
   // Check permissions
-  const instanceRole = (session.user as Record<string, unknown>).role as string | null ?? null
+  const userRecord = session.user as Record<string, unknown>
+  const instanceRole = userRecord.role as string | null ?? null
+  const uiLevel = (userRecord.ui_level as string | undefined) === 'GUIDED' ? 'GUIDED'
+    : (userRecord.ui_level as string | undefined) === 'ADVANCED' ? 'ADVANCED'
+    : 'STANDARD'
   const caller = { type: 'session' as const, userId: session.user.id, instanceRole }
   const permissions = await resolvePermissions(caller, projectId).catch(() => new Set<import('@/lib/auth/permissions').Permission>())
 
@@ -167,6 +171,7 @@ export default async function GatePage({ params }: Props) {
         criticalReview={criticalReview}
         evalResult={evalResult}
         permissions={permissions}
+        uiLevel={uiLevel}
       />
     </div>
   )
