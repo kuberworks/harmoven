@@ -18,7 +18,8 @@ import { ApiKeyPanel } from '@/components/project/ApiKeyPanel'
 import { RoleBuilder } from '@/components/project/RoleBuilder'
 import ConfigHistory from '@/components/project/ConfigHistory'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
-import { Play, ChevronRight, Plus } from 'lucide-react'
+import { RunsViewClient } from './runs-view-client'
+import { ChevronRight, Plus } from 'lucide-react'
 
 interface Props {
   params: Promise<{ projectId: string }>
@@ -28,11 +29,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { projectId } = await params
   const project = await db.project.findUnique({ where: { id: projectId }, select: { name: true } })
   return { title: project?.name ?? 'Project' }
-}
-
-const STATUS_VARIANT: Record<string, 'running' | 'completed' | 'failed' | 'paused' | 'pending' | 'suspended'> = {
-  RUNNING: 'running', COMPLETED: 'completed', FAILED: 'failed',
-  PAUSED: 'paused', PENDING: 'pending', SUSPENDED: 'suspended',
 }
 
 export default async function ProjectPage({ params }: Props) {
@@ -52,18 +48,44 @@ export default async function ProjectPage({ params }: Props) {
   })
   if (!project) notFound()
 
-  const recentRuns = await db.run.findMany({
-    where: { project_id: projectId },
-    orderBy: { created_at: 'desc' },
-    take: 10,
-    include: { user: { select: { name: true } } },
-  })
-
   // Resolve permissions to gate tabs (returns empty set for non-members)
   const instanceRole = (session.user as Record<string, unknown>).role as string | null ?? null
   const caller = { type: 'session' as const, userId: session.user.id, instanceRole }
   const permissions = await resolvePermissions(caller, projectId).catch(() => new Set<import('@/lib/auth/permissions').Permission>())
+  const showCosts = permissions.has('stream:costs')
 
+  const rawRuns = await db.run.findMany({
+    where: { project_id: projectId },
+    orderBy: { created_at: 'desc' },
+    take: 30,
+    select: {
+      id: true,
+      status: true,
+      created_at: true,
+      started_at: true,
+      completed_at: true,
+      paused_at: true,
+      cost_actual_usd: true,
+      tokens_actual: true,
+      task_input: true,
+      user: { select: { name: true } },
+      human_gates: { where: { status: 'OPEN' }, select: { id: true }, take: 1 },
+    },
+  })
+
+  const recentRuns = rawRuns.map((r) => ({
+    id: r.id,
+    status: r.status,
+    created_at: r.created_at.toISOString(),
+    started_at: r.started_at?.toISOString() ?? null,
+    completed_at: r.completed_at?.toISOString() ?? null,
+    paused_at: r.paused_at?.toISOString() ?? null,
+    cost_actual_usd: showCosts ? Number(r.cost_actual_usd) : 0,
+    tokens_actual: r.tokens_actual,
+    task_input: typeof r.task_input === 'string' ? r.task_input : (r.task_input != null ? JSON.stringify(r.task_input) : null),
+    user: r.user,
+    has_open_gate: r.human_gates.length > 0,
+  }))
   return (
     <div className="space-y-6 animate-stagger">
       {/* Header */}
@@ -110,55 +132,7 @@ export default async function ProjectPage({ params }: Props) {
 
         {/* Runs tab */}
         <TabsContent value="runs">
-          {recentRuns.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-                <Play className="h-8 w-8 text-muted-foreground/50" />
-                <div>
-                  <p className="font-medium text-foreground">No runs yet</p>
-                  <p className="text-sm text-muted-foreground mt-1">Start your first run to see it here.</p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="flex flex-col divide-y divide-surface-border rounded-card border border-surface-border overflow-hidden">
-              {recentRuns.map((run) => (
-                <Link
-                  key={run.id}
-                  href={`/projects/${projectId}/runs/${run.id}`}
-                  className="flex items-center justify-between gap-4 px-4 py-3 bg-surface-raised hover:bg-surface-hover transition-colors group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Badge variant={STATUS_VARIANT[run.status] ?? 'pending'}>
-                      {run.status}
-                    </Badge>
-                    <span className="text-sm font-mono text-muted-foreground truncate">
-                      {run.id.slice(0, 8)}
-                    </span>
-                    {run.user?.name && (
-                      <span className="text-sm text-muted-foreground hidden sm:block">
-                        by {run.user.name}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(run.created_at).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-          <div className="mt-3 text-center">
-            <Link
-              href={`/projects/${projectId}/runs`}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              View all runs →
-            </Link>
-          </div>
+          <RunsViewClient projectId={projectId} runs={recentRuns} />
         </TabsContent>
 
         {/* Members tab */}
