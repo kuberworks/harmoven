@@ -27,7 +27,7 @@ export default async function RunPage({ params }: Props) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
 
-  const [project, run] = await Promise.all([
+  const [project, run, auditLogs] = await Promise.all([
     db.project.findUnique({
       where: { id: projectId, archived_at: null },
       select: { id: true, name: true },
@@ -36,11 +36,12 @@ export default async function RunPage({ params }: Props) {
       where: { id: runId },
       include: {
         nodes: {
-          orderBy: { started_at: 'asc' },
+          orderBy: { node_id: 'asc' },
           select: {
             id: true, node_id: true, agent_type: true, status: true,
             llm_profile_id: true, started_at: true, completed_at: true,
-            error: true,
+            error: true, cost_usd: true, tokens_in: true, tokens_out: true,
+            handoff_out: true, partial_output: true,
           },
         },
         human_gates: {
@@ -49,6 +50,12 @@ export default async function RunPage({ params }: Props) {
           take: 1,
         },
       },
+    }),
+    db.auditLog.findMany({
+      where: { run_id: runId },
+      orderBy: { timestamp: 'asc' },
+      select: { id: true, action_type: true, node_id: true, payload: true, timestamp: true },
+      take: 200,
     }),
   ])
 
@@ -62,14 +69,15 @@ export default async function RunPage({ params }: Props) {
   const serialisedRun = {
     id: run.id,
     status: run.status,
-    cost_actual_usd: Number(run.cost_actual_usd),
-    tokens_actual: run.tokens_actual,
+    // Cost fields only exposed when caller has stream:costs
+    cost_actual_usd: permissions.has('stream:costs') ? Number(run.cost_actual_usd) : 0,
+    tokens_actual:   permissions.has('stream:costs') ? run.tokens_actual : 0,
     paused_at: run.paused_at?.toISOString() ?? null,
     started_at: run.started_at?.toISOString() ?? null,
     completed_at: run.completed_at?.toISOString() ?? null,
     transparency_mode: run.transparency_mode,
     dag: run.dag as unknown as import('@/types/dag.types').Dag,
-    budget_usd: run.budget_usd ? Number(run.budget_usd) : null,
+    budget_usd: permissions.has('stream:costs') ? (run.budget_usd ? Number(run.budget_usd) : null) : null,
     openGate: run.human_gates[0]
       ? { id: run.human_gates[0].id, reason: run.human_gates[0].reason }
       : null,
@@ -84,10 +92,12 @@ export default async function RunPage({ params }: Props) {
     started_at: n.started_at?.toISOString() ?? null,
     completed_at: n.completed_at?.toISOString() ?? null,
     error: n.error ?? null,
-    cost_usd: 0,
-    tokens_in: 0,
-    tokens_out: 0,
-    partial_output: null,
+    // Cost fields only exposed when caller has stream:costs
+    cost_usd:   permissions.has('stream:costs') ? Number(n.cost_usd) : 0,
+    tokens_in:  permissions.has('stream:costs') ? n.tokens_in : 0,
+    tokens_out: permissions.has('stream:costs') ? n.tokens_out : 0,
+    partial_output: n.partial_output ?? null,
+    handoff_out: n.handoff_out ?? null,
   }))
 
   return (
@@ -112,6 +122,13 @@ export default async function RunPage({ params }: Props) {
         initialRun={serialisedRun}
         initialNodes={serialisedNodes}
         permissions={permissions}
+        initialEvents={auditLogs.map((log) => ({
+          id: log.id,
+          action_type: log.action_type,
+          node_id: log.node_id ?? null,
+          payload: log.payload as Record<string, unknown> | null,
+          timestamp: log.timestamp.toISOString(),
+        }))}
       />
     </div>
   )
