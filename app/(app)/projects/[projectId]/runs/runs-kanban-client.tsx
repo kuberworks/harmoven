@@ -1,15 +1,12 @@
 'use client'
 
 // app/(app)/projects/[projectId]/runs/runs-kanban-client.tsx
-// Kanban board — columns by run status.
+// Kanban board — 4 columns matching harmoven_main_v5.html scr-runs design.
+// Columns: Pending | Running | ⏸ Gate open (PAUSED+SUSPENDED) | Completed (incl. FAILED)
 // Client component: re-orders runs as SSE events arrive (project-level stream).
-// Uses project-level EventSource (/api/projects/:id/stream).
 
 import { useEffect, useReducer } from 'react'
 import Link from 'next/link'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
-import { RUN_STATUS_VARIANT } from '@/lib/utils/run-status'
 import type { RunStatus } from '@/types/run.types'
 
 export interface RunSummary {
@@ -22,6 +19,8 @@ export interface RunSummary {
   cost_actual_usd: number
   tokens_actual: number
   user: { name: string } | null
+  task_input: string | null
+  has_open_gate: boolean
 }
 
 interface Props {
@@ -29,104 +28,229 @@ interface Props {
   initialRuns: RunSummary[]
 }
 
-const COLUMNS: { status: RunStatus; label: string }[] = [
-  { status: 'PENDING',   label: 'Pending' },
-  { status: 'RUNNING',   label: 'Running' },
-  { status: 'PAUSED',    label: 'Paused' },
-  { status: 'SUSPENDED', label: 'Suspended' },
-  { status: 'COMPLETED', label: 'Completed' },
-  { status: 'FAILED',    label: 'Failed' },
-]
+// ─── 4-column layout matching mockup scr-runs ─────────────────────────────────
 
-const STATUS_VARIANT = RUN_STATUS_VARIANT
-
-// Simple reducer: update run status after SSE state_change events
-function runsReducer(runs: RunSummary[], action: { runId: string; status: string }): RunSummary[] {
-  return runs.map((r) => r.id === action.runId ? { ...r, status: action.status } : r)
+type KanbanColumn = {
+  key: string
+  label: string
+  statuses: string[]
+  headerClass: string
+  countClass: string
 }
 
+const COLUMNS: KanbanColumn[] = [
+  {
+    key: 'pending',
+    label: 'Pending',
+    statuses: ['PENDING'],
+    headerClass: 'bg-surface-hover text-muted-foreground',
+    countClass:  'bg-surface-overlay text-muted-foreground',
+  },
+  {
+    key: 'running',
+    label: 'Running',
+    statuses: ['RUNNING'],
+    headerClass: 'bg-blue-500/8 text-blue-400',
+    countClass:  'bg-blue-500/15 text-blue-400',
+  },
+  {
+    key: 'gate',
+    label: '⏸ Gate open',
+    statuses: ['PAUSED', 'SUSPENDED'],
+    headerClass: 'bg-amber-500/8 text-amber-400',
+    countClass:  'bg-amber-500/15 text-amber-400',
+  },
+  {
+    key: 'done',
+    label: 'Completed',
+    statuses: ['COMPLETED', 'FAILED'],
+    headerClass: 'bg-emerald-500/8 text-emerald-400',
+    countClass:  'bg-emerald-500/15 text-emerald-400',
+  },
+]
+
+// ─── Card left-border & icon per status ──────────────────────────────────────
+
+function cardAccent(status: string): string {
+  switch (status) {
+    case 'RUNNING':   return 'border-l-blue-500/70 bg-gradient-to-r from-blue-500/5 to-transparent'
+    case 'PAUSED':
+    case 'SUSPENDED': return 'border-l-amber-500/70 bg-gradient-to-r from-amber-500/5 to-transparent'
+    case 'COMPLETED': return 'border-l-emerald-500/50'
+    case 'FAILED':    return 'border-l-red-500/70 bg-gradient-to-r from-red-500/5 to-transparent'
+    default:          return 'border-l-muted-foreground/20'
+  }
+}
+
+function statusIcon(status: string): string {
+  switch (status) {
+    case 'COMPLETED': return '✓'
+    case 'FAILED':    return '✕'
+    case 'PAUSED':
+    case 'SUSPENDED': return '⏸'
+    default:          return ''
+  }
+}
+
+function statusIconColor(status: string): string {
+  switch (status) {
+    case 'COMPLETED': return 'text-emerald-400'
+    case 'FAILED':    return 'text-red-400'
+    case 'PAUSED':
+    case 'SUSPENDED': return 'text-amber-400'
+    default:          return ''
+  }
+}
+
+// ─── Run card ────────────────────────────────────────────────────────────────
+
 function RunCard({ run, projectId }: { run: RunSummary; projectId: string }) {
-  const elapsed = run.started_at
-    ? Math.round((Date.now() - new Date(run.started_at).getTime()) / 60_000)
+  const isRunning          = run.status === 'RUNNING'
+  const isGate             = run.status === 'PAUSED' || run.status === 'SUSPENDED'
+  const isGateReview       = isGate && run.has_open_gate      // real human gate open
+  const isGateRecovering   = run.status === 'SUSPENDED' && !run.has_open_gate  // crash recovery
+  const isFailed           = run.status === 'FAILED'
+
+  const elapsedSec = run.started_at
+    ? Math.round((Date.now() - new Date(run.started_at).getTime()) / 1000)
+    : null
+  const elapsedLabel = elapsedSec !== null
+    ? elapsedSec >= 60
+      ? `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`
+      : `${elapsedSec}s`
     : null
 
+  const icon = statusIcon(run.status)
+  const iconColor = statusIconColor(run.status)
+
   return (
-    <Link href={`/projects/${projectId}/runs/${run.id}`} className="group outline-none">
-      <Card className="mb-2 transition-colors group-hover:border-accent-amber group-focus-visible:ring-2 group-focus-visible:ring-amber-500">
-        <CardContent className="p-3 space-y-1.5">
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-xs font-mono text-muted-foreground truncate">
-              {run.id.slice(0, 8)}
-            </span>
-            <Badge variant={STATUS_VARIANT[run.status] ?? 'pending'}>
-              {run.status}
-            </Badge>
-          </div>
-          {run.user?.name && (
-            <p className="text-xs text-muted-foreground">by {run.user.name}</p>
-          )}
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            {elapsed !== null ? (
-              <span>{elapsed}m</span>
-            ) : (
-              <span>{new Date(run.created_at).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
-            )}
-            {run.cost_actual_usd > 0 && (
-              <span className="font-mono">€{run.cost_actual_usd.toFixed(3)}</span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+    <Link
+      href={`/projects/${projectId}/runs/${run.id}`}
+      className={`block rounded-card border border-surface-border border-l-[3px] p-3 mb-2 transition-colors hover:border-surface-hover cursor-pointer ${cardAccent(run.status)}`}
+    >
+      {/* Title row */}
+      <div className="flex items-start gap-1.5 mb-0.5">
+        {icon && <span className={`text-[11px] mt-0.5 shrink-0 ${iconColor}`}>{icon}</span>}
+        <span className="text-[13px] font-semibold text-foreground leading-snug line-clamp-2">
+          {run.task_input ? run.task_input.slice(0, 60) + (run.task_input.length > 60 ? '…' : '') : '—'}
+        </span>
+      </div>
+      <div className="text-[10px] font-mono text-muted-foreground/50 mb-1 pl-[calc(1.5ch+1px)]">
+        {run.id.slice(0, 8)}
+      </div>
+
+      {/* Meta */}
+      <div className="text-[11px] text-muted-foreground mb-2">
+        {run.user?.name ? `${run.user.name} · ` : ''}
+        {isRunning && elapsedLabel ? `${elapsedLabel}` : ''}
+        {!isRunning && run.created_at
+          ? new Date(run.created_at).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : ''}
+        {run.cost_actual_usd > 0 ? ` · €${run.cost_actual_usd.toFixed(3)}` : ''}
+      </div>
+
+      {/* Progress bar for RUNNING */}
+      {isRunning && (
+        <div className="h-[5px] rounded-full bg-surface-border overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full animate-pulse w-[60%]" />
+        </div>
+      )}
+
+      {/* Gate badge — only when a real HumanGate is open */}
+      {isGateReview && (
+        <div className="mt-1.5">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-amber-500/30 bg-amber-500/10 text-amber-400">
+            awaiting review
+          </span>
+        </div>
+      )}
+
+      {/* Recovering badge — crash-suspended, no gate open */}
+      {isGateRecovering && (
+        <div className="mt-1.5">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-blue-500/30 bg-blue-500/10 text-blue-400">
+            ⟳ interrupted
+          </span>
+        </div>
+      )}
+
+      {/* Paused badge — manual pause, no gate */}
+      {run.status === 'PAUSED' && !run.has_open_gate && (
+        <div className="mt-1.5">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-amber-500/30 bg-amber-500/10 text-amber-400">
+            paused
+          </span>
+        </div>
+      )}
+
+      {/* Failed badge */}
+      {isFailed && (
+        <div className="mt-1.5">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-red-500/30 bg-red-500/10 text-red-400">
+            failed
+          </span>
+        </div>
+      )}
+
+      {/* Gate CTA — only when a real HumanGate is open */}
+      {isGateReview && (
+        <button
+          type="button"
+          className="mt-2 w-full text-center text-[11px] font-semibold rounded-md border border-amber-500/40 text-amber-400 py-1 hover:bg-amber-500/10 transition-colors"
+          onClick={(e) => { e.preventDefault(); window.location.href = `/projects/${projectId}/runs/${run.id}/gate` }}
+        >
+          Review now →
+        </button>
+      )}
     </Link>
   )
 }
 
+// ─── Reducer ─────────────────────────────────────────────────────────────────
+
+function runsReducer(runs: RunSummary[], action: { runId: string; status: string }): RunSummary[] {
+  return runs.map((r) => r.id === action.runId ? { ...r, status: action.status } : r)
+}
+
+// ─── Kanban board ─────────────────────────────────────────────────────────────
+
 export function RunsKanbanClient({ projectId, initialRuns }: Props) {
   const [runs, dispatch] = useReducer(runsReducer, initialRuns)
 
-  // Subscribe to project-level SSE for live status updates
   useEffect(() => {
     const es = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/stream`)
-
     es.onmessage = (evt) => {
       try {
         const payload = JSON.parse(evt.data) as {
-          type: string
-          entity_type?: string
-          id?: string
-          status?: string
+          type: string; entity_type?: string; id?: string; status?: string
         }
         if (payload.type === 'state_change' && payload.entity_type === 'run' && payload.id && payload.status) {
           dispatch({ runId: payload.id, status: payload.status })
         }
-      } catch { /* skip malformed */ }
+      } catch { /* skip */ }
     }
-
     return () => es.close()
   }, [projectId])
 
-  // Show only columns that have runs, plus always RUNNING
-  const activeStatuses = new Set(runs.map((r) => r.status))
-  const visibleColumns = COLUMNS.filter(
-    (col) => activeStatuses.has(col.status) || col.status === 'RUNNING',
-  )
-
   return (
-    <div className="overflow-x-auto pb-4">
-      <div className="flex gap-4 min-w-max">
-        {visibleColumns.map(({ status, label }) => {
-          const colRuns = runs.filter((r) => r.status === status)
+    <div className="overflow-x-auto pb-4 -mx-1">
+      <div className="flex gap-3 min-w-max px-1">
+        {COLUMNS.map((col) => {
+          const colRuns = runs.filter((r) => col.statuses.includes(r.status))
           return (
-            <div key={status} className="w-64 shrink-0">
-              <div className="flex items-center justify-between mb-2 px-1">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {label}
+            <div key={col.key} className="w-[240px] shrink-0 flex flex-col gap-2">
+              {/* Column header */}
+              <div className={`flex items-center justify-between px-2.5 py-2 rounded-md mb-0.5 ${col.headerClass}`}>
+                <span className="text-[11px] font-medium uppercase tracking-[0.07em]">{col.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${col.countClass}`}>
+                  {colRuns.length}
                 </span>
-                <span className="text-xs text-muted-foreground tabular-nums">{colRuns.length}</span>
               </div>
-              <div className="min-h-[120px] rounded-card border border-surface-border bg-surface-raised/50 p-2">
+
+              {/* Cards */}
+              <div className="min-h-[100px]">
                 {colRuns.length === 0 ? (
-                  <p className="text-xs text-muted-foreground/50 text-center py-8">Empty</p>
+                  <p className="text-[11px] text-muted-foreground/40 text-center py-8">Empty</p>
                 ) : (
                   colRuns.map((run) => (
                     <RunCard key={run.id} run={run} projectId={projectId} />
@@ -140,3 +264,5 @@ export function RunsKanbanClient({ projectId, initialRuns }: Props) {
     </div>
   )
 }
+
+
