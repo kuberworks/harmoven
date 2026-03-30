@@ -3,7 +3,7 @@
 // SSE reconnect hook for live run state streaming.
 // Pattern per SKILLS.md §1 — EventSource + reducer + Last-Event-ID replay.
 
-import { useEffect, useReducer, useRef } from 'react'
+import { useEffect, useReducer, useRef, useCallback } from 'react'
 import type { RunStatus, NodeStatus } from '@/types/run.types'
 import type { Dag } from '@/types/dag.types'
 
@@ -31,11 +31,14 @@ export interface NodeState {
   completed_at: string | null
   error: string | null
   partial_output: string | null
+  handoff_out: unknown
 }
 
 type StreamEvent =
   | { type: 'initial'; run: RunState; nodes: NodeState[] }
   | { type: 'state_change'; entity_type: 'run' | 'node'; id: string; status: string }
+  | { type: 'node_snapshot'; node_id: string; data: Partial<NodeState> & Record<string, unknown> }
+  | { type: 'nodes_refresh'; nodes: NodeState[] }
   | { type: 'cost_update'; cost_usd: number; tokens: number; percent_of_budget: number }
   | { type: 'human_gate'; gate_id: string; reason: string; data: Record<string, unknown> }
   | { type: 'budget_warning'; percent_used: number; remaining_usd: number }
@@ -70,12 +73,34 @@ function reducer(state: StreamState, action: Action): StreamState {
       if (e.type === 'initial') {
         run = e.run
         nodes = e.nodes
+      } else if (e.type === 'nodes_refresh') {
+        // PLANNER expanded the DAG — replace the full node list
+        nodes = e.nodes
       } else if (e.type === 'state_change') {
         if (e.entity_type === 'run' && run) {
           run = { ...run, status: e.status as RunStatus }
         } else if (e.entity_type === 'node') {
-          nodes = nodes.map(n => n.id === e.id ? { ...n, status: e.status as NodeStatus } : n)
+          // The SSE sends node_id (e.g. "n3"), not the DB UUID id.
+          // Match on either field for robustness.
+          nodes = nodes.map(n =>
+            (n.id === e.id || n.node_id === e.id)
+              ? { ...n, status: e.status as NodeStatus, error: e.status === 'PENDING' ? null : n.error }
+              : n,
+          )
         }
+      } else if (e.type === 'node_snapshot') {
+        nodes = nodes.map(n =>
+          n.node_id === e.node_id
+            ? { ...n, ...e.data } as NodeState
+            : n,
+        )
+      } else if (e.type === 'error') {
+        // Mark the node as FAILED and set its error message in the live state
+        nodes = nodes.map(n =>
+          n.node_id === e.node_id
+            ? { ...n, status: 'FAILED' as NodeStatus, error: e.message }
+            : n,
+        )
       } else if (e.type === 'cost_update' && run) {
         run = { ...run, cost_actual_usd: e.cost_usd, tokens_actual: e.tokens }
       } else if (e.type === 'completed' && run) {
@@ -100,6 +125,7 @@ const INITIAL_STATE: StreamState = {
 export function useRunStream(runId: string) {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
   const lastEventIdRef = useRef<string | null>(null)
+  const reconnectFnRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (!runId) return
@@ -126,13 +152,10 @@ export function useRunStream(runId: string) {
           if (evt.lastEventId) lastEventIdRef.current = evt.lastEventId
           const payload = JSON.parse(evt.data) as StreamEvent
           dispatch({ type: 'EVENT', payload })
-          // Stop reconnecting once run reaches a terminal state
-          if (
-            payload.type === 'completed' ||
-            (payload.type === 'state_change' &&
-              payload.entity_type === 'run' &&
-              ['COMPLETED', 'FAILED'].includes(payload.status))
-          ) {
+          // Stop reconnecting once run reaches a terminal state with no chance of restart.
+          // Keep listening on FAILED — a user may restart a failed node, which pushes
+          // new state_change events that need to reach the client.
+          if (payload.type === 'completed') {
             es.close()
           }
         } catch { /* malformed SSE frame — skip */ }
@@ -153,14 +176,27 @@ export function useRunStream(runId: string) {
       }
     }
 
+    reconnectFnRef.current = () => {
+      clearTimeout(reconnectTimer)
+      es?.close()
+      // Reset lastEventId so the stream replays from the beginning on reconnect
+      lastEventIdRef.current = null
+      connect()
+    }
+
     connect()
 
     return () => {
       destroyed = true
+      reconnectFnRef.current = null
       clearTimeout(reconnectTimer)
       es?.close()
     }
   }, [runId])
 
-  return state
+  const reconnect = useCallback(() => {
+    reconnectFnRef.current?.()
+  }, [])
+
+  return { ...state, reconnect }
 }

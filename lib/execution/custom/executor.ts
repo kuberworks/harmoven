@@ -7,6 +7,7 @@
 // T3.2 scope: context injection (Am.64), per-node interrupt + gate (Am.65).
 
 import { randomUUID } from 'crypto'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 import type { Dag } from '@/types/dag.types'
 import type { NodeStatus, RunStatus } from '@/types/run.types'
 import type {
@@ -31,6 +32,7 @@ import { credentialVault } from '@/lib/execution/credential-scope'
 import { PlannerExhaustionError } from '@/lib/agents/planner'
 import type { PlannerHandoff }     from '@/lib/agents/planner'
 import { gateTimeoutAt }          from '@/lib/execution/gate-timeout'
+import { AgentCostError }         from '@/lib/agents/agent-cost-error'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -174,7 +176,7 @@ export class CustomExecutor implements IExecutionEngine {
     }
 
     await this.db.auditLog.create({
-      data: { actor: actorId, action_type: 'run_cancelled', run_id: runId, payload: { reason: 'user_cancelled' } },
+      data: { id: uuidv7(), actor: actorId, action_type: 'run_cancelled', run_id: runId, payload: { reason: 'user_cancelled' } },
     })
   }
 
@@ -188,7 +190,7 @@ export class CustomExecutor implements IExecutionEngine {
     await this.db.run.update({ where: { id: runId }, data: { paused_at: new Date() } })
 
     await this.db.auditLog.create({
-      data: { actor: actorId, action_type: 'run_paused', run_id: runId, payload: {} },
+      data: { id: uuidv7(), actor: actorId, action_type: 'run_paused', run_id: runId, payload: {} },
     })
   }
 
@@ -200,7 +202,7 @@ export class CustomExecutor implements IExecutionEngine {
     this._pausedRunIds.delete(runId)
 
     await this.db.auditLog.create({
-      data: { actor: actorId, action_type: 'run_resumed', run_id: runId, payload: {} },
+      data: { id: uuidv7(), actor: actorId, action_type: 'run_resumed', run_id: runId, payload: {} },
     })
 
     // The execution loop exited cleanly when it detected PAUSED status.
@@ -241,6 +243,7 @@ export class CustomExecutor implements IExecutionEngine {
 
     await this.db.auditLog.create({
       data: {
+        id: uuidv7(),
         run_id: runId,
         actor: actorId,
         action_type: 'context_injected',
@@ -297,6 +300,7 @@ export class CustomExecutor implements IExecutionEngine {
 
     await this.db.auditLog.create({
       data: {
+        id: uuidv7(),
         run_id: runId,
         node_id: nodeId,
         actor: actorId,
@@ -317,13 +321,19 @@ export class CustomExecutor implements IExecutionEngine {
     const nodes = await this.db.node.findMany({ where: { run_id: runId } })
     const node = nodes.find(n => n.node_id === nodeId)
     if (!node) throw new Error(`Node '${nodeId}' not found in run '${runId}'`)
-    if (node.status !== 'INTERRUPTED') {
-      throw new Error(`Node '${nodeId}' is not INTERRUPTED (status: '${node.status}')`)
+    const canRestart = node.status === 'INTERRUPTED' || node.status === 'FAILED'
+    if (!canRestart) {
+      throw new Error(`Node '${nodeId}' cannot be restarted (status: '${node.status}') — must be INTERRUPTED or FAILED`)
+    }
+    // resume_from_partial requires partial output, only valid for INTERRUPTED nodes
+    if (gate.decision === 'resume_from_partial' && node.status !== 'INTERRUPTED') {
+      throw new Error(`Node '${nodeId}' must be INTERRUPTED to resume from partial`)
     }
 
     const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
-    if (run.status !== 'SUSPENDED') {
-      throw new Error(`Run '${runId}' is not SUSPENDED (status: '${run.status}')`)
+    const runCanResume = run.status === 'SUSPENDED' || run.status === 'FAILED'
+    if (!runCanResume) {
+      throw new Error(`Run '${runId}' cannot be restarted (status: '${run.status}') — must be SUSPENDED or FAILED`)
     }
 
     switch (gate.decision) {
@@ -343,6 +353,7 @@ export class CustomExecutor implements IExecutionEngine {
         })
         await this.db.auditLog.create({
           data: {
+            id: uuidv7(),
             run_id: runId, node_id: nodeId, actor: actorId,
             action_type: 'gate_resume_from_partial',
             payload: { partial_length: gate.edited_partial.length },
@@ -363,13 +374,22 @@ export class CustomExecutor implements IExecutionEngine {
             interrupted_by: null,
             partial_output: null,
             partial_updated_at: null,
+            error: null,
           },
         })
+        // If the run itself is FAILED/SUSPENDED, reset it to PENDING so executeRun proceeds.
+        if (run.status !== 'SUSPENDED') {
+          await this.db.run.update({
+            where: { id: runId },
+            data: { status: 'PENDING', started_at: null },
+          })
+        }
         await this.db.auditLog.create({
           data: {
+            id: uuidv7(),
             run_id: runId, node_id: nodeId, actor: actorId,
             action_type: 'gate_replay_from_scratch',
-            payload: { patch: gate.patch ?? null },
+            payload: { patch: gate.patch ?? null, restarted_from: node.status },
           },
         })
         this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'PENDING' })
@@ -404,6 +424,7 @@ export class CustomExecutor implements IExecutionEngine {
         })
         await this.db.auditLog.create({
           data: {
+            id: uuidv7(),
             run_id: runId, node_id: nodeId, actor: actorId,
             action_type: 'gate_accept_partial',
             payload: { partial_length: partialContent.length },
@@ -453,6 +474,7 @@ export class CustomExecutor implements IExecutionEngine {
       if (runId) {
         await this.db.auditLog.create({
           data: {
+            id: uuidv7(),
             run_id: runId,
             actor: 'system',
             action_type: 'node_shutdown',
@@ -502,6 +524,7 @@ export class CustomExecutor implements IExecutionEngine {
       })
       await this.db.auditLog.create({
         data: {
+          id: uuidv7(),
           run_id: node.run_id,
           node_id: node.node_id,
           actor: 'system',
@@ -641,10 +664,12 @@ export class CustomExecutor implements IExecutionEngine {
 
     // Transition to RUNNING
     await this.transitionNode(node, 'RUNNING')
+    const nodeStartedAt = new Date()
     await this.db.node.update({
       where: { id: node.id },
-      data: { started_at: new Date(), last_heartbeat: new Date() },
+      data: { started_at: nodeStartedAt, last_heartbeat: nodeStartedAt },
     })
+    this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { started_at: nodeStartedAt.toISOString() } })
     this._runningNodeIds.add(node.id)
     this._nodeRunId.set(node.id, runId)
 
@@ -688,13 +713,26 @@ export class CustomExecutor implements IExecutionEngine {
         void this.db.node.update({
           where: { id: node.id },
           data:  { partial_output: snapshot, partial_updated_at: new Date() },
+        }).then(() => {
+          this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { partial_output: snapshot } })
         }).catch((err: unknown) => {
           console.error(`[executor] partial_output flush failed for node ${node.id}:`, err)
         })
       }, 5_000)
 
+      // ─── Per-chunk SSE emit (250ms throttle) ──────────────────────────────
+      // DB flush stays at 5s for persistence, but SSE fires on every chunk so
+      // the client sees tokens appear in near-real-time without waiting 5s.
+      let _lastChunkEmit = 0
+      const CHUNK_EMIT_THROTTLE_MS = 250
+
       const output = await this.agentRunner(node, handoffIn, nodeSignal, (chunk) => {
         _partialBuffer += chunk
+        const now = Date.now()
+        if (now - _lastChunkEmit >= CHUNK_EMIT_THROTTLE_MS) {
+          _lastChunkEmit = now
+          this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { partial_output: _partialBuffer } })
+        }
       })
 
       // Store handoff (immutable)
@@ -820,8 +858,20 @@ export class CustomExecutor implements IExecutionEngine {
               })
             }
 
-            // Emit event so SSE subscribers see the expanded DAG.
-            this._emit(runId, { type: 'state_change', entity_type: 'run', id: runId, status: 'RUNNING' })
+            // Emit full node list so SSE subscribers see newly created nodes immediately.
+            const allNodesAfterExpansion = await this.db.node.findMany({
+              where: { run_id: runId },
+              orderBy: { node_id: 'asc' },
+            })
+            this._emit(runId, {
+              type: 'nodes_refresh',
+              nodes: allNodesAfterExpansion.map(n => ({
+                ...n,
+                cost_usd: Number(n.cost_usd),
+                started_at: n.started_at?.toISOString() ?? null,
+                completed_at: n.completed_at?.toISOString() ?? null,
+              })),
+            })
           }
         } catch (expandErr) {
           console.error(`[executor] Failed to expand DAG from PLANNER output for run ${runId}:`, expandErr)
@@ -857,23 +907,74 @@ export class CustomExecutor implements IExecutionEngine {
       // Transition to COMPLETED
       const freshNode = { ...node, status: 'RUNNING' }
       await this.transitionNode(freshNode as NodeRow, 'COMPLETED')
+      // Emit full node snapshot so client gets cost/tokens/output without page refresh
+      this._emit(runId, {
+        type: 'node_snapshot',
+        node_id: node.node_id ?? node.id,
+        data: {
+          status:      'COMPLETED',
+          cost_usd:    output.costUsd,
+          tokens_in:   output.tokensIn,
+          tokens_out:  output.tokensOut,
+          handoff_out: output.handoffOut,
+          completed_at: new Date().toISOString(),
+          partial_output: null,
+        },
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const isAbort = err instanceof DOMException && err.name === 'AbortError'
       const isPlannerExhausted = err instanceof PlannerExhaustionError
+
+      // If the agent incurred LLM cost before failing, capture it on the node and run.
+      const partialCost = err instanceof AgentCostError ? err : null
+      if (partialCost && (partialCost.costUsd > 0 || partialCost.tokensIn > 0)) {
+        await this.db.node.update({
+          where: { id: node.id },
+          data: { cost_usd: partialCost.costUsd, tokens_in: partialCost.tokensIn, tokens_out: partialCost.tokensOut },
+        }).catch(() => {})
+        const currentRun = await this.db.run.findUnique({ where: { id: runId } })
+        if (currentRun) {
+          const newCost   = Number(currentRun.cost_actual_usd ?? 0) + partialCost.costUsd
+          const newTokens = (currentRun.tokens_actual ?? 0) + partialCost.tokensIn + partialCost.tokensOut
+          await this.db.run.update({
+            where: { id: runId },
+            data: { cost_actual_usd: newCost, tokens_actual: newTokens },
+          }).catch(() => {})
+          const budget = (currentRun.budget_usd as number | null) ?? 0
+          this._emit(runId, {
+            type: 'cost_update',
+            cost_usd: newCost,
+            tokens: newTokens,
+            percent_of_budget: budget > 0 ? Math.round((newCost / budget) * 100) : 0,
+          })
+        }
+      }
 
       if (isAbort) {
         await this.db.node.update({
           where: { id: node.id },
           data: { status: 'INTERRUPTED', interrupted_at: new Date(), interrupted_by: 'user' },
         })
+        this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { status: 'INTERRUPTED' } })
       } else {
         await this.db.node.update({
           where: { id: node.id },
           data: { status: 'FAILED', error: message },
         })
-        // Emit error SSE event for run and project streams
+        // Emit error SSE event and a full node snapshot so client updates status + error together
         this._emit(runId, { type: 'error', node_id: node.node_id ?? node.id, message })
+        this._emit(runId, {
+          type: 'node_snapshot',
+          node_id: node.node_id ?? node.id,
+          data: {
+            status: 'FAILED',
+            error: message,
+            cost_usd: partialCost?.costUsd ?? 0,
+            tokens_in: partialCost?.tokensIn ?? 0,
+            tokens_out: partialCost?.tokensOut ?? 0,
+          },
+        })
       }
 
       if (isPlannerExhausted) {
@@ -914,6 +1015,7 @@ export class CustomExecutor implements IExecutionEngine {
 
       await this.db.auditLog.create({
         data: {
+          id: uuidv7(),
           run_id: runId,
           node_id: node.node_id,
           actor: 'system',
@@ -937,6 +1039,7 @@ export class CustomExecutor implements IExecutionEngine {
     await this.db.node.update({ where: { id: node.id }, data: { status: to } })
     await this.db.auditLog.create({
       data: {
+        id: uuidv7(),
         run_id: node.run_id,
         node_id: node.node_id,
         actor: 'system',
@@ -958,6 +1061,7 @@ export class CustomExecutor implements IExecutionEngine {
     await this.db.run.update({ where: { id: runId }, data: { status: to } })
     await this.db.auditLog.create({
       data: {
+        id: uuidv7(),
         run_id: runId,
         actor: 'system',
         action_type: 'state_transition',

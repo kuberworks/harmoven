@@ -18,6 +18,7 @@
 
 import type { IExecutionEngine } from '@/lib/execution/engine.interface'
 import { db } from '@/lib/db/client'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 /** Suspend reasons that indicate the run can be auto-resumed after restart. */
 const RECOVERABLE_SUSPEND_REASONS = new Set([
@@ -99,6 +100,7 @@ export async function resumeSuspendedRunsFromCrash(
 
       await db.auditLog.create({
         data: {
+          id:          uuidv7(),
           run_id:      run.id,
           actor:       'system',
           action_type: 'run_crash_recovery',
@@ -129,4 +131,61 @@ export async function resumeSuspendedRunsFromCrash(
   }
 
   return resumed
+}
+
+/**
+ * Reset stale RUNNING runs (engine lost during startup before any node ran).
+ *
+ * A run can be left in RUNNING status with all nodes PENDING if the process
+ * was killed after `transitionRun(PENDING→RUNNING)` but before any node
+ * started. These runs are invisible to SUSPENDED recovery above.
+ *
+ * Fix: reset them back to PENDING and re-execute via the engine.
+ */
+export async function resetStaleRunningRuns(engine: IExecutionEngine): Promise<number> {
+  // Find RUNNING runs that have zero RUNNING nodes — they are stuck.
+  const staleRuns = await db.$queryRaw<Array<{ id: string }>>`
+    SELECT r.id
+    FROM "Run" r
+    WHERE r.status = 'RUNNING'
+      AND NOT EXISTS (
+        SELECT 1 FROM "Node" n
+        WHERE n.run_id = r.id AND n.status = 'RUNNING'
+      )
+  `
+
+  let restarted = 0
+  for (const run of staleRuns) {
+    try {
+      await db.run.update({
+        where: { id: run.id },
+        data: { status: 'PENDING', started_at: null },
+      })
+      await db.node.updateMany({
+        where: { run_id: run.id, status: { in: ['INTERRUPTED', 'FAILED'] } },
+        data: { status: 'PENDING', error: null, interrupted_at: null, interrupted_by: null },
+      })
+      await db.auditLog.create({
+        data: {
+          id:          uuidv7(),
+          run_id:      run.id,
+          actor:       'system',
+          action_type: 'run_stale_reset',
+          payload:     { reason: 'stale_running_no_active_nodes' },
+        },
+      })
+      console.info(`[crash-recovery] reset stale RUNNING run ${run.id} → PENDING, re-executing`)
+      void engine.executeRun(run.id).catch((err: unknown) => {
+        console.error(`[crash-recovery] re-execute failed for stale run ${run.id}:`, err)
+      })
+      restarted++
+    } catch (err) {
+      console.error(`[crash-recovery] failed to reset stale run ${run.id}:`, err)
+    }
+  }
+
+  if (restarted > 0) {
+    console.info(`[crash-recovery] restarted ${restarted} stale RUNNING run(s)`)
+  }
+  return restarted
 }
