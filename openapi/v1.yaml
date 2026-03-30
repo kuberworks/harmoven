@@ -2977,7 +2977,9 @@ paths:
                 project_id:
                   type: string
                   format: uuid
-                  description: "Optional project scope. If omitted the template is personal."
+                  description: |
+                    Optional project scope. If omitted the template is personal (visible to the creating user only).
+                    **Security:** When supplied, the caller must be a member of the referenced project — returns `403 Forbidden` otherwise.
                 is_public:
                   type: boolean
                   default: false
@@ -3827,6 +3829,8 @@ paths:
       description: |
         > **Required permission:** `project:credentials` — minimum role: `admin`
         Returns the raw key **once** at creation. Store it securely — it cannot be retrieved again.
+
+        **Rate limit:** 10 requests per 15 minutes per IP. Excess returns `429` with `Retry-After`.
       tags: [projects]
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -4537,6 +4541,8 @@ paths:
         > **Required permission:** `project:credentials` — minimum role: `admin`
 
         Value is AES-256-GCM-encrypted at rest. Never returned by any GET endpoint.
+
+        **Rate limit:** 20 requests per hour per IP. Excess returns `429` with `Retry-After`.
 
       tags: [admin]
       requestBody:
@@ -5582,6 +5588,8 @@ paths:
         - `X-Webhook-Timestamp`: Unix timestamp — must be within 5 minutes of server time
         - `X-Webhook-Delivery`: Idempotency UUID — rejects duplicates (stored in `WebhookDelivery`)
 
+        **Rate limit:** 60 requests per minute per IP per trigger endpoint — enforced before HMAC validation and DB queries. Excess returns `429` with `Retry-After`.
+
         **Safety gate:** max 20 auto-runs/day + $10/day cost globally.
       security: []
       tags: [triggers]
@@ -5640,7 +5648,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '429':
-          description: "The instance-wide safety gate has triggered: either 20 auto-runs have already been queued today, or the $10/day auto-run cost cap has been reached. Both counters reset at UTC midnight."
+          description: |
+            Two distinct rate limits can trigger a 429 on this endpoint:
+            1. **Per-IP rate limit:** 60 requests per minute per IP+trigger combination. Enforced before any DB query or HMAC check. Retry after the duration indicated by `Retry-After`.
+            2. **Instance safety gate:** The instance-wide daily limit of 20 auto-runs or the $10/day cost cap has been reached. Both counters reset at UTC midnight.
           content:
             application/json:
               schema:
