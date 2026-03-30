@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { LogOut, User, Settings, ChevronDown, HelpCircle } from 'lucide-react'
+import { LogOut, User, Settings, ChevronDown, HelpCircle, ExternalLink } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 import { LocaleSwitcher } from '@/components/shared/LocaleSwitcher'
@@ -28,6 +28,12 @@ export function Topbar({ userName, userEmail, locale = 'en' }: TopbarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const firstMenuItemRef = useRef<HTMLAnchorElement>(null)
+
+  function handleHelp() {
+    // Opens Harmoven documentation in a new tab.
+    // Update this URL to the real docs site when available.
+    window.open('https://github.com/harmoven/harmoven', '_blank', 'noopener,noreferrer')
+  }
 
   // A11Y: close the user menu on Escape and return focus to trigger button
   useEffect(() => {
@@ -79,10 +85,12 @@ export function Topbar({ userName, userEmail, locale = 'en' }: TopbarProps) {
 
         {/* Help */}
         <button
+          onClick={handleHelp}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors duration-150"
-          aria-label="Help"
+          aria-label="Documentation"
         >
           <HelpCircle className="h-4 w-4" />
+          <ExternalLink className="h-2.5 w-2.5 -ml-1 -mt-1.5 opacity-50" aria-hidden />
         </button>
 
         {/* User menu */}

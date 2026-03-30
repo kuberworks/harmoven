@@ -45,27 +45,27 @@ const PAD      = 16   // canvas padding
 // ─── Status colours ───────────────────────────────────────────────────────────
 
 const STATUS_FILL: Record<string, string> = {
-  PENDING:   'var(--surface-raised, #1e1e2a)',
-  RUNNING:   'var(--color-blue-950, #172554)',
-  COMPLETED: 'var(--color-emerald-950, #022c22)',
-  FAILED:    'var(--color-red-950,  #290101)',
-  SKIPPED:   'var(--surface-raised, #1e1e2a)',
+  PENDING:   'var(--surface-raised)',
+  RUNNING:   'var(--node-bg-running)',
+  COMPLETED: 'var(--node-bg-completed)',
+  FAILED:    'var(--node-bg-failed)',
+  SKIPPED:   'var(--surface-raised)',
 }
 
 const STATUS_STROKE: Record<string, string> = {
-  PENDING:   'var(--surface-border, #374151)',
-  RUNNING:   '#3b82f6',
-  COMPLETED: '#10b981',
-  FAILED:    '#ef4444',
-  SKIPPED:   'var(--surface-border, #374151)',
+  PENDING:   'var(--surface-border)',
+  RUNNING:   'var(--color-status-running)',
+  COMPLETED: 'var(--color-status-completed)',
+  FAILED:    'var(--color-status-failed)',
+  SKIPPED:   'var(--surface-border)',
 }
 
 const STATUS_TEXT: Record<string, string> = {
-  PENDING:   '#6b7280',
-  RUNNING:   '#93c5fd',
-  COMPLETED: '#6ee7b7',
-  FAILED:    '#fca5a5',
-  SKIPPED:   '#4b5563',
+  PENDING:   'var(--text-secondary)',
+  RUNNING:   'var(--node-text-running)',
+  COMPLETED: 'var(--node-text-completed)',
+  FAILED:    'var(--node-text-failed)',
+  SKIPPED:   'var(--text-disabled)',
 }
 
 // ─── Layout helpers ───────────────────────────────────────────────────────────

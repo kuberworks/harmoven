@@ -11,20 +11,29 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
 const DOMAIN_OPTIONS = [
-  { value: 'generic',    label: 'Generic' },
-  { value: 'legal',      label: 'Legal' },
-  { value: 'medical',    label: 'Medical' },
-  { value: 'finance',    label: 'Finance' },
-  { value: 'software',   label: 'Software' },
-  { value: 'research',   label: 'Research' },
+  { value: 'generic',            label: 'Generic' },
+  { value: 'data_reporting',     label: 'Data & Reporting' },
+  { value: 'app_scaffolding',    label: 'App Development' },
+  { value: 'document_drafting',  label: 'Documents' },
+  { value: 'research_synthesis', label: 'Research' },
+  { value: 'marketing_content',  label: 'Marketing' },
+  { value: 'hr_recruiting',      label: 'HR & Recruiting' },
+  { value: 'legal_compliance',   label: 'Legal & Compliance' },
+  { value: 'finance_modeling',   label: 'Finance' },
+  { value: 'customer_support',   label: 'Customer Support' },
+  { value: 'training_content',   label: 'Training' },
 ]
 
 const CONFIDENTIALITY_OPTIONS = [
-  { value: 'LOW',    label: 'Low' },
-  { value: 'MEDIUM', label: 'Medium' },
-  { value: 'HIGH',   label: 'High' },
+  { value: 'LOW',      label: 'Low — all providers eligible' },
+  { value: 'MEDIUM',   label: 'Medium — trust tier 1–3' },
+  { value: 'HIGH',     label: 'High — vetted providers only' },
+  { value: 'CRITICAL', label: 'Critical — local models only' },
 ]
 
 export default function NewProjectPage() {
@@ -86,7 +95,7 @@ export default function NewProjectPage() {
       </Link>
 
       <div>
-        <h1 className="text-[17px] font-bold text-foreground">New project</h1>
+        <h1 className="text-xl font-semibold text-foreground">New project</h1>
         <p className="text-xs text-muted-foreground mt-0.5">
           You will become the first admin of this project.
         </p>
@@ -121,30 +130,30 @@ export default function NewProjectPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="domain">Domain</Label>
-                <select
-                  id="domain"
-                  value={domainProfile}
-                  onChange={(e) => setDomainProfile(e.target.value)}
-                  className="w-full h-9 rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  {DOMAIN_OPTIONS.map(({ value, label }) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
+                <Select value={domainProfile} onValueChange={setDomainProfile}>
+                  <SelectTrigger id="domain">
+                    <SelectValue placeholder="Select domain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DOMAIN_OPTIONS.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="confidentiality">Confidentiality</Label>
-                <select
-                  id="confidentiality"
-                  value={confidentiality}
-                  onChange={(e) => setConfidentiality(e.target.value)}
-                  className="w-full h-9 rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  {CONFIDENTIALITY_OPTIONS.map(({ value, label }) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
+                <Select value={confidentiality} onValueChange={setConfidentiality}>
+                  <SelectTrigger id="confidentiality">
+                    <SelectValue placeholder="Select level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONFIDENTIALITY_OPTIONS.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

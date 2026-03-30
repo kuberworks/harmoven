@@ -11,14 +11,24 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { TaskInput } from '@/components/task/TaskInput'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
+// Values match the DomainProfile enum in openapi/v1.yaml
 const DOMAIN_OPTIONS = [
-  { value: 'generic',  label: 'Generic' },
-  { value: 'legal',    label: 'Legal' },
-  { value: 'medical',  label: 'Medical' },
-  { value: 'finance',  label: 'Finance' },
-  { value: 'software', label: 'Software' },
-  { value: 'research', label: 'Research' },
+  { value: 'generic',            label: 'Generic' },
+  { value: 'data_reporting',     label: 'Data & Reporting' },
+  { value: 'app_scaffolding',    label: 'App Development' },
+  { value: 'document_drafting',  label: 'Documents' },
+  { value: 'research_synthesis', label: 'Research' },
+  { value: 'marketing_content',  label: 'Marketing' },
+  { value: 'hr_recruiting',      label: 'HR & Recruiting' },
+  { value: 'legal_compliance',   label: 'Legal & Compliance' },
+  { value: 'finance_modeling',   label: 'Finance' },
+  { value: 'customer_support',   label: 'Customer Support' },
+  { value: 'training_content',   label: 'Training' },
 ]
 
 interface Props {
@@ -93,7 +103,7 @@ export default function NewRunPage({ params }: Props) {
       </Link>
 
       <div>
-        <h1 className="text-[17px] font-bold text-foreground">New run</h1>
+        <h1 className="text-xl font-semibold text-foreground">New run</h1>
         <p className="text-xs text-muted-foreground mt-0.5">
           Describe the task and an agent will be assigned automatically.
         </p>
@@ -103,32 +113,27 @@ export default function NewRunPage({ params }: Props) {
         <CardContent className="pt-5">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="task_input">Task <span className="text-red-400">*</span></Label>
-              <textarea
-                id="task_input"
+              <TaskInput
                 value={taskInput}
-                onChange={(e) => setTaskInput(e.target.value)}
-                placeholder="Describe what the agent should do…"
-                rows={5}
-                maxLength={100_000}
-                required
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                onChange={setTaskInput}
+                domainProfile={domainProfile}
+                maxLength={4000}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="domain">Domain</Label>
-                <select
-                  id="domain"
-                  value={domainProfile}
-                  onChange={(e) => setDomainProfile(e.target.value)}
-                  className="w-full h-9 rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  {DOMAIN_OPTIONS.map(({ value, label }) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
+                <Select value={domainProfile} onValueChange={setDomainProfile}>
+                  <SelectTrigger id="domain">
+                    <SelectValue placeholder="Select domain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DOMAIN_OPTIONS.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-1.5">
