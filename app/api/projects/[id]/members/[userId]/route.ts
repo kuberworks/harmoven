@@ -15,6 +15,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
 } from '@/lib/auth/rbac'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string; userId: string }> }
 
@@ -90,6 +91,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       actorId,
       action_type: 'project_member_role_changed',
       payload:     { project_id: projectId, user_id: userId, new_role_id: role_id, previous_role: existing.role.name },
@@ -143,6 +145,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       actorId,
       action_type: 'project_member_removed',
       payload:     { project_id: projectId, user_id: userId, previous_role: existing.role.name },

@@ -14,6 +14,7 @@ import {
 } from '@/lib/auth/rbac'
 import { revokeProjectApiKey } from '@/lib/auth/project-api-key'
 import { db } from '@/lib/db/client'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string; keyId: string }> }
 
@@ -49,6 +50,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       actorId,
       action_type: 'api_key_revoked',
       payload:     { project_id: projectId, key_id: keyId },

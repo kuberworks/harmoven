@@ -16,6 +16,7 @@ import {
 } from '@/lib/auth/rbac'
 import { ALL_PERMISSIONS } from '@/lib/auth/permissions'
 import type { Permission } from '@/lib/auth/permissions'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -164,6 +165,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       actorId,
       action_type: 'project_role_created',
       payload:     { project_id: projectId, role_id: role.id, name, display_name },

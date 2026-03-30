@@ -30,6 +30,7 @@ import {
 } from '@/lib/security/supply-chain-monitor'
 import { assertNotPrivateHost } from '@/lib/security/ssrf-protection'
 import type { PackManifest } from '@/lib/marketplace/types'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 const execFileAsync = promisify(execFile)
 
@@ -336,6 +337,7 @@ export async function installPack(opts: InstallPackOptions): Promise<{ id: strin
     // Log failed scan attempt to AuditLog before throwing
     await db.auditLog.create({
       data: {
+        id:          uuidv7(),
         actor:       userId,
         action_type: 'marketplace_scan_failed',
         payload: {
@@ -394,6 +396,7 @@ export async function installPack(opts: InstallPackOptions): Promise<{ id: strin
   // ── Audit log ─────────────────────────────────────────────────────────────
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       userId,
       action_type: existing ? 'marketplace_update' : 'marketplace_install',
       payload: {
@@ -532,6 +535,7 @@ export async function uninstallPack(userId: string, packId: string): Promise<boo
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       userId,
       action_type: 'marketplace_uninstall',
       payload:     { pack_id: packId },

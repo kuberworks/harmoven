@@ -20,6 +20,7 @@
 // Operators can override via orchestrator.yaml: execution.gate_timeout_hours.
 
 import { db } from '@/lib/db/client'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 /** Default gate expiry from creation — 24 hours. */
 export const GATE_DEFAULT_TIMEOUT_HOURS = 24
@@ -63,6 +64,7 @@ export async function sweepExpiredGates(): Promise<{ expired: number }> {
 
       await db.auditLog.create({
         data: {
+          id:          uuidv7(),
           run_id:      gate.run_id,
           actor:       'system',
           action_type: 'gate_timed_out',

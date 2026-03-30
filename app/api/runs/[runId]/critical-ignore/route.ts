@@ -11,6 +11,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { db } from '@/lib/db/client'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 import type { CriticalFinding } from '@/lib/agents/reviewer/critical-reviewer.types'
 
 interface CriticalIgnoreBody {
@@ -99,6 +100,7 @@ export async function POST(
   // Section 27.6: "HANDOFF_NOTE mentions ignored critical findings"
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       run_id:      runId,
       actor:       actorId,
       action_type: 'critical_finding_ignored',

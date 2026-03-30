@@ -13,6 +13,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { db } from '@/lib/db/client'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 // ─── Zod schema ─────────────────────────────────────────────────────────────
 // finding is a nested object — validate the fields we use (title, severity).
@@ -120,6 +121,7 @@ export async function POST(
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       run_id:      runId,
       actor:       actorId,
       action_type: 'critical_fix_requested',

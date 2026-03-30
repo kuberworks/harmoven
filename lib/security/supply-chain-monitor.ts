@@ -14,6 +14,7 @@
 //   3. Automatic rollback triggered if severity = 'critical'
 
 import { db } from '@/lib/db/client'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 // ---------------------------------------------------------------------------
 // Event types
@@ -70,6 +71,7 @@ export async function recordSupplyChainEvent(
   try {
     await db.auditLog.create({
       data: {
+        id:          uuidv7(),
         actor:       actorId,
         action_type: `supply_chain.${event.event_type}`,
         payload: {

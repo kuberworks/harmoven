@@ -18,6 +18,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import path                     from 'node:path'
 import { db }                   from '@/lib/db/client'
 import { mcpSkillEnv }          from '@/lib/utils/safe-env'
+import { uuidv7 }               from '@/lib/utils/uuidv7'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ export const mcpSkillClient = {
     // (may contain sensitive data from the conversation context).
     await db.auditLog.create({
       data: {
+        id:          uuidv7(),
         run_id:      runId,
         actor:       'system',
         action_type: 'mcp_tool_called',

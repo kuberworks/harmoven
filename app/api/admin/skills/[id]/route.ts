@@ -16,6 +16,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller } from '@/lib/auth/rbac'
 import { scanPackContent } from '@/lib/marketplace/scan'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 // ─── UUID validation ──────────────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ export async function PATCH(
     if (!scan.passed) {
       await db.auditLog.create({
         data: {
+          id:          uuidv7(),
           actor:       caller.userId,
           action_type: 'skill_scan_failed',
           payload: { skill_id: id, name: existing.name, reason: scan.reason },
@@ -139,6 +141,7 @@ export async function PATCH(
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       caller.userId,
       action_type: enabled === true ? 'skill_enable' : enabled === false ? 'skill_disable' : 'skill_update',
       payload: {
@@ -179,6 +182,7 @@ export async function DELETE(
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       caller.userId,
       action_type: 'skill_delete',
       payload: { skill_id: id, name: existing.name },
