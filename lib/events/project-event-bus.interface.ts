@@ -10,6 +10,8 @@ import type { RunStatus } from '@/types/run.types'
 export type RunSSEEvent =
   | { type: 'initial';        run: unknown; nodes: unknown[] }
   | { type: 'state_change';   entity_type: 'run' | 'node'; id: string; status: string }
+  | { type: 'node_snapshot';  node_id: string; data: Record<string, unknown> }
+  | { type: 'nodes_refresh';  nodes: unknown[] }
   | { type: 'cost_update';    cost_usd: number; tokens: number; percent_of_budget: number }
   | { type: 'human_gate';     gate_id: string; reason: string; data: unknown }
   | { type: 'budget_warning'; percent_used: number; remaining_usd: number }

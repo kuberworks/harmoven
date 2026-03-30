@@ -115,9 +115,25 @@ export async function GET(
       try {
         const [runSnap, nodes] = await Promise.all([
           db.run.findUniqueOrThrow({ where: { id: runId } }),
-          db.node.findMany({ where: { run_id: runId } }),
+          db.node.findMany({ where: { run_id: runId }, orderBy: { node_id: 'asc' } }),
         ])
-        send({ type: 'initial', run: runSnap, nodes } as unknown as RunSSEEvent)
+        // Serialise Decimal fields to primitives — Prisma Decimal serialises as
+        // a string via JSON.stringify, which breaks .toFixed() calls on the client.
+        const serialisedRun = {
+          ...runSnap,
+          cost_actual_usd: Number(runSnap.cost_actual_usd),
+          budget_usd: runSnap.budget_usd ? Number(runSnap.budget_usd) : null,
+          started_at: runSnap.started_at?.toISOString() ?? null,
+          completed_at: runSnap.completed_at?.toISOString() ?? null,
+          paused_at: runSnap.paused_at?.toISOString() ?? null,
+        }
+        const serialisedNodes = nodes.map((n) => ({
+          ...n,
+          cost_usd: Number(n.cost_usd),
+          started_at: n.started_at?.toISOString() ?? null,
+          completed_at: n.completed_at?.toISOString() ?? null,
+        }))
+        send({ type: 'initial', run: serialisedRun, nodes: serialisedNodes } as unknown as RunSSEEvent)
       } catch { /* non-fatal — client will reconstruct from live events */ }
 
       // Replay reconnect buffer if Last-Event-ID header is present
@@ -140,8 +156,25 @@ export async function GET(
       // Subscribe to live events
       const unsubscribe = projectEventBus.subscribe(run.project_id, (e: ProjectEvent) => {
         if (e.run_id !== runId) return
-        const sseEvent = e.event as RunSSEEvent
+        let sseEvent = e.event as RunSSEEvent
         if (!('type' in sseEvent)) return
+        // Sanitize Decimal / DateTime fields that Prisma injects into run objects
+        // emitted by the executor (cost_actual_usd is Prisma Decimal — JSON.stringify
+        // serialises it as a string, which breaks .toFixed() calls on the client).
+        if (sseEvent.type === 'completed' && sseEvent.run) {
+          const r = sseEvent.run as Record<string, unknown>
+          sseEvent = {
+            ...sseEvent,
+            run: {
+              ...r,
+              cost_actual_usd: Number(r['cost_actual_usd'] ?? 0),
+              budget_usd: r['budget_usd'] != null ? Number(r['budget_usd']) : null,
+              started_at:   r['started_at']   instanceof Date ? (r['started_at'] as Date).toISOString()   : (r['started_at']   ?? null),
+              completed_at: r['completed_at'] instanceof Date ? (r['completed_at'] as Date).toISOString() : (r['completed_at'] ?? null),
+              paused_at:    r['paused_at']    instanceof Date ? (r['paused_at'] as Date).toISOString()    : (r['paused_at']    ?? null),
+            },
+          } as RunSSEEvent
+        }
         if (shouldSendEvent(sseEvent)) send(sseEvent)
       })
 

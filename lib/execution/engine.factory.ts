@@ -20,8 +20,9 @@ import type { IProjectEventBus } from '@/lib/events/project-event-bus.interface'
 import { CustomExecutor } from '@/lib/execution/custom/executor'
 import { makeAgentRunner } from '@/lib/agents/runner'
 import { createLLMClient } from '@/lib/llm/client'
-import { resumeSuspendedRunsFromCrash } from '@/lib/execution/custom/crash-recovery'
+import { resumeSuspendedRunsFromCrash, resetStaleRunningRuns } from '@/lib/execution/custom/crash-recovery'
 import { db as _prismaDb } from '@/lib/db/client'
+import { projectEventBus as _defaultEventBus } from '@/lib/events/project-event-bus.factory'
 
 // ─── ExecutorDb adapter — wraps PrismaClient and adds findOrphaned ────────────
 /**
@@ -192,10 +193,8 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
   } else if (config.eventBus != null) {
     eventBus = config.eventBus
   } else if (!isTestContext) {
-    // Production default: lazy-load the singleton to avoid circular imports at module level
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { projectEventBus } = require('@/lib/events/project-event-bus.factory') as { projectEventBus: IProjectEventBus }
-    eventBus = projectEventBus
+    // Production default: use the module-level import of the singleton.
+    eventBus = _defaultEventBus
   }
 
   let engine: IExecutionEngine
@@ -238,6 +237,11 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
     // Am.34.3b — "resume RUNNING runs on startup".
     void resumeSuspendedRunsFromCrash(engine).catch((err: unknown) => {
       console.error('[harmoven] crash recovery (resume suspended) failed on startup:', err)
+    })
+
+    // Reset stale RUNNING runs (engine lost mid-launch, all nodes still PENDING).
+    void resetStaleRunningRuns(engine).catch((err: unknown) => {
+      console.error('[harmoven] stale RUNNING run reset failed on startup:', err)
     })
   }
 
