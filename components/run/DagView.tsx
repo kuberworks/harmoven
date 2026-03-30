@@ -5,32 +5,33 @@
 //
 // Renders the DAG from `run.dag` (nodes + edges) as an SVG-based graph using
 // a topological-level layout (BFS from roots). Each node shows its agent type,
-// ID, and live status overlay. Edges are drawn as cubic Bezier curves.
-//
-// Props:
-//   dag        — static DAG structure (DagNode[], DagEdge[])
-//   nodeStates — live status map keyed by node_id
-//
-// Layout:
-//   Columns = topological levels (left → right).
-//   Within a column, nodes are stacked top-to-bottom, centered vertically.
-//   Edges connect right-centre of source to left-centre of target.
+// ID, and live status overlay. Clicking a node opens a detail panel on the right.
+// Edges are drawn as cubic Bezier curves.
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useState, useCallback } from 'react'
 import type { Dag, DagNode, DagEdge } from '@/types/dag.types'
+import { X, RotateCcw } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface NodeStatusOverlay {
-  status:   string
-  cost_usd?: number
-  error?:   string
+  status:          string
+  cost_usd?:       number
+  error?:          string
+  tokens_in?:      number
+  tokens_out?:     number
+  started_at?:     string | null
+  completed_at?:   string | null
+  llm_profile_id?: string | null
+  partial_output?: string | null
+  handoff_out?:    unknown
 }
 
 interface DagViewProps {
-  dag:        Dag
-  nodeStates: Record<string, NodeStatusOverlay>
-  className?: string
+  dag:             Dag
+  nodeStates:      Record<string, NodeStatusOverlay>
+  onRestartNode?:  (nodeId: string) => void
+  className?:      string
 }
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
@@ -154,10 +155,196 @@ function layoutNodes(nodes: DagNode[], edges: DagEdge[]): LayoutNode[] {
   return result
 }
 
+// ─── Detail panel ─────────────────────────────────────────────────────────────
+
+const STATUS_BADGE: Record<string, string> = {
+  PENDING:   'bg-gray-700/50 text-gray-400',
+  RUNNING:   'bg-blue-900/60 text-blue-300',
+  COMPLETED: 'bg-emerald-900/60 text-emerald-300',
+  FAILED:    'bg-red-900/60 text-red-300',
+  SKIPPED:   'bg-gray-700/50 text-gray-500',
+}
+
+function DetailPanel({
+  dagNode,
+  state,
+  edges,
+  allNodes,
+  onClose,
+  onRestart,
+  restarting,
+}: {
+  dagNode:    DagNode
+  state:      NodeStatusOverlay | undefined
+  edges:      DagEdge[]
+  allNodes:   DagNode[]
+  onClose:    () => void
+  onRestart?: (nodeId: string) => void
+  restarting: Set<string>
+}) {
+  const status = state?.status ?? 'PENDING'
+  const badgeCls = STATUS_BADGE[status] ?? STATUS_BADGE.PENDING!
+
+  // Dependencies
+  const upstreams   = edges.filter(e => e.to === dagNode.id).map(e => allNodes.find(n => n.id === e.from)).filter(Boolean) as DagNode[]
+  const downstreams = edges.filter(e => e.from === dagNode.id).map(e => allNodes.find(n => n.id === e.to)).filter(Boolean) as DagNode[]
+
+  // Duration
+  const durationSec = state?.started_at && state?.completed_at
+    ? Math.round((new Date(state.completed_at).getTime() - new Date(state.started_at).getTime()) / 1000)
+    : null
+  const duration = durationSec !== null
+    ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`
+    : state?.started_at && !state?.completed_at
+    ? 'running…'
+    : '—'
+
+  // Output content from handoff_out
+  const handoff = (state?.handoff_out as Record<string, unknown> | null) ?? null
+  const outputObj = handoff?.['output'] as Record<string, unknown> | null | undefined
+  const outputContent = (outputObj?.['content'] ?? outputObj?.['summary']) as string | undefined
+
+  const canRestart = !!onRestart && (status === 'FAILED' || status === 'INTERRUPTED')
+
+  return (
+    <div className="w-72 shrink-0 flex flex-col overflow-hidden border-l border-border bg-card text-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-semibold text-foreground truncate">{dagNode.agent_type}</span>
+          <span className="font-mono text-xs text-muted-foreground">{dagNode.id}</span>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeCls}`}>{status}</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="shrink-0 ml-2 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Close panel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+        {/* Metrics */}
+        {status !== 'PENDING' && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Metrics</p>
+            <div className="rounded-lg overflow-hidden divide-y divide-border border border-border">
+              {[
+                ['Model',      state?.llm_profile_id ?? '—',  false],
+                ['Tokens in',  state?.tokens_in  != null ? state.tokens_in.toLocaleString()  : '—', true],
+                ['Tokens out', state?.tokens_out != null ? state.tokens_out.toLocaleString() : '—', true],
+                ['Cost',       state?.cost_usd != null && state.cost_usd > 0 ? `€${state.cost_usd.toFixed(4)}` : '—', true],
+                ['Duration',   duration, false],
+              ].map(([k, v]) => (
+                <div key={k as string} className="flex justify-between px-3 py-1.5 text-xs">
+                  <span className="text-muted-foreground">{k}</span>
+                  <span className="font-mono text-foreground text-right max-w-[140px] truncate" title={v as string}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Dependencies */}
+        {(upstreams.length > 0 || downstreams.length > 0) && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Dependencies</p>
+            <div className="flex gap-6 flex-wrap text-xs">
+              {upstreams.length > 0 && (
+                <div>
+                  <p className="text-muted-foreground mb-1">After</p>
+                  {upstreams.map(n => (
+                    <div key={n.id} className="flex items-center gap-1.5 text-foreground mb-1">
+                      <span className="font-mono">{n.id}</span>
+                      <span className="text-muted-foreground">{n.agent_type}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {downstreams.length > 0 && (
+                <div>
+                  <p className="text-muted-foreground mb-1">Feeds into</p>
+                  {downstreams.map(n => (
+                    <div key={n.id} className="flex items-center gap-1.5 text-foreground mb-1">
+                      <span className="font-mono">{n.id}</span>
+                      <span className="text-muted-foreground">{n.agent_type}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {state?.error && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-red-400 mb-2">Error</p>
+            <pre className="text-xs text-red-300 bg-red-950/30 border border-red-900/40 rounded-lg p-3 whitespace-pre-wrap break-words line-clamp-6 font-mono">
+              {state.error}
+            </pre>
+          </div>
+        )}
+
+        {/* Partial output (RUNNING) */}
+        {status === 'RUNNING' && state?.partial_output && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-blue-400 mb-2">Partial output</p>
+            <pre className="text-xs text-muted-foreground bg-card border border-border rounded-lg p-3 whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-mono">
+              {state.partial_output.slice(-600)}
+            </pre>
+          </div>
+        )}
+
+        {/* Output (COMPLETED) */}
+        {outputContent && status !== 'RUNNING' && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-emerald-400 mb-2">Output</p>
+            <pre className="text-xs text-muted-foreground bg-card border border-border rounded-lg p-3 whitespace-pre-wrap break-words max-h-48 overflow-y-auto font-mono">
+              {outputContent.length > 1200 ? outputContent.slice(0, 1200) + '\n…' : outputContent}
+            </pre>
+          </div>
+        )}
+
+        {/* Restart */}
+        {canRestart && (
+          <button
+            onClick={() => onRestart!(dagNode.id)}
+            disabled={restarting.has(dagNode.id)}
+            className="w-full flex items-center justify-center gap-2 rounded-lg border border-amber-600/40 bg-amber-950/30 px-3 py-2 text-xs font-medium text-amber-300 hover:bg-amber-950/50 transition-colors disabled:opacity-50"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {restarting.has(dagNode.id) ? 'Restarting…' : 'Restart agent'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── DagView ──────────────────────────────────────────────────────────────────
 
-export function DagView({ dag, nodeStates, className }: DagViewProps) {
+export function DagView({ dag, nodeStates, onRestartNode, className }: DagViewProps) {
   const { nodes: dagNodes, edges } = dag
+  const [restarting, setRestarting] = useState<Set<string>>(new Set())
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const handleSelect = useCallback((nodeId: string) => {
+    setSelectedId(prev => prev === nodeId ? null : nodeId)
+  }, [])
+
+  const handleRestart = (nodeId: string) => {
+    if (!onRestartNode || restarting.has(nodeId)) return
+    setRestarting(prev => new Set([...prev, nodeId]))
+    try {
+      onRestartNode(nodeId)
+    } finally {
+      setTimeout(() => setRestarting(prev => { const s = new Set(prev); s.delete(nodeId); return s }), 3000)
+    }
+  }
 
   const layouted = useMemo(
     () => layoutNodes(dagNodes, edges),
@@ -183,7 +370,9 @@ export function DagView({ dag, nodeStates, className }: DagViewProps) {
   const svgHeight   = maxY + PAD
 
   return (
-    <div className={`overflow-x-auto rounded-lg border border-surface-border bg-surface-1 p-3 ${className ?? ''}`}>
+    <div className={`flex rounded-lg border border-surface-border bg-surface-1 overflow-hidden ${className ?? ''}`}>
+      {/* SVG canvas */}
+      <div className="overflow-x-auto p-3 flex-1 min-w-0">
       <svg
         width={svgWidth}
         height={svgHeight}
@@ -236,9 +425,31 @@ export function DagView({ dag, nodeStates, className }: DagViewProps) {
           const stroke = STATUS_STROKE[status] ?? STATUS_STROKE.PENDING!
           const textC  = STATUS_TEXT[status]   ?? STATUS_TEXT.PENDING!
           const isRunning = status === 'RUNNING'
+          const isSelected = selectedId === n.id
 
           return (
-            <g key={n.id} transform={`translate(${n.x}, ${n.y})`}>
+            <g
+              key={n.id}
+              transform={`translate(${n.x}, ${n.y})`}
+              onClick={() => handleSelect(n.id)}
+              style={{ cursor: 'pointer' }}
+              role="button"
+              aria-label={`${n.type} ${n.id} — ${status}`}
+              aria-pressed={isSelected}
+            >
+              {/* Selected highlight ring */}
+              {isSelected && (
+                <rect
+                  x={-2} y={-2}
+                  width={NODE_W + 4} height={NODE_H + 4}
+                  rx={8} ry={8}
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  opacity={0.8}
+                />
+              )}
+
               {/* Running pulse ring */}
               {isRunning && (
                 <rect
@@ -332,10 +543,67 @@ export function DagView({ dag, nodeStates, className }: DagViewProps) {
               {state?.error && (
                 <circle cx={NODE_W - 5} cy={5} r={4} fill="#ef4444" />
               )}
+
+              {/* Restart overlay — shown on FAILED or INTERRUPTED nodes when onRestartNode is provided */}
+              {onRestartNode && (status === 'FAILED' || status === 'INTERRUPTED') && (
+                <g
+                  onClick={(ev) => { ev.stopPropagation(); handleRestart(n.id) }}
+                  style={{ cursor: restarting.has(n.id) ? 'wait' : 'pointer' }}
+                  role="button"
+                  aria-label={`Restart ${n.type} (${n.id})`}
+                >
+                  {/* Semi-transparent overlay */}
+                  <rect
+                    x={0} y={NODE_H - 16}
+                    width={NODE_W} height={16}
+                    rx={0} ry={0}
+                    fill={restarting.has(n.id) ? '#78350f' : '#451a03'}
+                    opacity={0.92}
+                  />
+                  <rect
+                    x={0} y={NODE_H - 16}
+                    width={NODE_W} height={16}
+                    rx={0} ry={0}
+                    fill="none"
+                    stroke="#d97706"
+                    strokeWidth={0.5}
+                    opacity={0.5}
+                  />
+                  <text
+                    x={NODE_W / 2} y={NODE_H - 5}
+                    textAnchor="middle"
+                    fontSize={8.5}
+                    fontWeight="600"
+                    fill="#fbbf24"
+                    fontFamily="system-ui, sans-serif"
+                    letterSpacing="0.05em"
+                  >
+                    {restarting.has(n.id) ? '…' : '↺ Restart'}
+                  </text>
+                </g>
+              )}
             </g>
           )
         })}
       </svg>
+      </div>
+
+      {/* Detail panel */}
+      {selectedId && (() => {
+        const dagNode = dagNodes.find(n => n.id === selectedId)
+        if (!dagNode) return null
+        return (
+          <DetailPanel
+            dagNode={dagNode}
+            state={nodeStates[selectedId]}
+            edges={edges}
+            allNodes={dagNodes}
+            onClose={() => setSelectedId(null)}
+            onRestart={onRestartNode}
+            restarting={restarting}
+          />
+        )
+      })()}
     </div>
   )
 }
