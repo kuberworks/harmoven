@@ -88,6 +88,7 @@ interface Props {
   initialNodes: InitialNode[]
   permissions: Set<Permission>
   initialEvents: AuditEntry[]
+  uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'
 }
 
 // ─── Post-run feedback panel ────────────────────────────────────────────────
@@ -348,18 +349,18 @@ function NodeCard({ node, runId, canRestart, onRestart }: { node: InitialNode | 
             {durationSec !== null && (
               <span className="text-xs text-muted-foreground">{durationSec}s</span>
             )}
-            {node.tokens_in > 0 && (
+            {node.tokens_in > 0 && uiLevel !== 'GUIDED' && (
               <span className="text-xs text-muted-foreground font-mono">
                 ↑{node.tokens_in.toLocaleString()} ↓{node.tokens_out.toLocaleString()} tok
               </span>
             )}
-            {node.cost_usd > 0 && (
+            {node.cost_usd > 0 && uiLevel !== 'GUIDED' && (
               <span className="text-xs text-muted-foreground font-mono">€{node.cost_usd.toFixed(4)}</span>
             )}
             {llmUsed && (
               <span className="text-xs text-muted-foreground/60 font-mono truncate max-w-[120px]">{llmUsed}</span>
             )}
-            {typeof confidence === 'number' && (
+            {typeof confidence === 'number' && uiLevel === 'ADVANCED' && (
               <span className={`text-xs font-mono ${confidence >= 80 ? 'text-emerald-400' : confidence >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
                 {confidence}% conf
               </span>
@@ -490,7 +491,7 @@ function CostMeter({
 
 // ─── Main client component ──────────────────────────────────────────────────
 
-export function RunDetailClient({ projectId, initialRun, initialNodes, permissions, initialEvents }: Props) {
+export function RunDetailClient({ projectId, initialRun, initialNodes, permissions, initialEvents, uiLevel }: Props) {
   const stream = useRunStream(initialRun.id)
   const { reconnect } = stream
 
@@ -713,11 +714,13 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
         {/* Right: cost meter + run info */}
         <div className="space-y-4">
-          <CostMeter
-            costUsd={run.cost_actual_usd}
-            budgetUsd={initialRun.budget_usd}
-            permissions={permissions}
-          />
+          {uiLevel !== 'GUIDED' && (
+            <CostMeter
+              costUsd={run.cost_actual_usd}
+              budgetUsd={initialRun.budget_usd}
+              permissions={permissions}
+            />
+          )}
 
           <Card>
             <CardHeader className="pb-2">
