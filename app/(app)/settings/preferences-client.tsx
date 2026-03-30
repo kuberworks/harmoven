@@ -35,7 +35,9 @@ export function PreferencesClient({
   initialExpertMode,
   initialUiLevel,
 }: Props) {
-  const { toast } = useToast()  const t = useT()  const [name, setName] = useState(initialName)
+  const { toast } = useToast()
+  const t = useT()
+  const [name, setName] = useState(initialName)
   const [locale, setLocale] = useState<'en' | 'fr'>(initialLocale)
   const [expertMode, setExpertMode] = useState(initialExpertMode)
   const [uiLevel, setUiLevel] = useState(initialUiLevel)
