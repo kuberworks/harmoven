@@ -280,7 +280,7 @@ const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
 
 // ─── Node card ──────────────────────────────────────────────────────────────
 
-function NodeCard({ node, runId, canRestart, onRestart }: { node: InitialNode | NodeState; runId: string; canRestart: boolean; onRestart?: () => void }) {
+function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: InitialNode | NodeState; runId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED' }) {
   const [expanded, setExpanded] = useState(false)
   const streamEndRef = useRef<HTMLPreElement>(null)
 
@@ -617,7 +617,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                     </CardContent>
                   </Card>
                 ) : (
-                  nodes.map((node) => <NodeCard key={node.id} node={node} runId={run.id} canRestart={permissions.has('runs:replay')} onRestart={reconnect} />)
+                  nodes.map((node) => <NodeCard key={node.id} node={node} runId={run.id} canRestart={permissions.has('runs:replay')} onRestart={reconnect} uiLevel={uiLevel} />)
                 )}
               </div>
             </TabsContent>
