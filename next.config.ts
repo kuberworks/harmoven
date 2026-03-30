@@ -98,6 +98,20 @@ const nextConfig: NextConfig = {
     ]
   },
 
+  // Webpack externals — modules that are conditionally required at runtime but
+  // are not installed in the web/Docker environment. Marking them external
+  // prevents webpack from trying to bundle them and emitting spurious warnings.
+  //   • electron  — only used in DEPLOYMENT_MODE=electron (lib/config-git/paths.ts)
+  //   • puppeteer — optional screenshots fallback (lib/agents/scaffolding/preview-cascade.ts)
+  webpack(config) {
+    config.externals = [
+      ...(Array.isArray(config.externals) ? config.externals : config.externals ? [config.externals] : []),
+      'electron',
+      'puppeteer',
+    ]
+    return config
+  },
+
   // Experimental features
   experimental: {
     serverActions: {
