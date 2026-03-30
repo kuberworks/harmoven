@@ -14,6 +14,7 @@
 import type { ILLMClient } from '@/lib/llm/interface'
 import type { ProfileId } from '@/lib/agents/classifier'
 import { withRetry } from '@/lib/utils/retry'
+import { AgentCostError } from '@/lib/agents/agent-cost-error'
 
 /** Max chars of upstream input content forwarded to the LLM (Section 24). */
 const MAX_UPSTREAM_INPUT_CHARS = 500_000
@@ -57,12 +58,23 @@ export interface WriterOutput {
   lateral_delegation_request: null
 }
 
-// ─── Complexity → LLM tier mapping ───────────────────────────────────────────
+// ─── Complexity → LLM tier mapping ─────────────────────────────────────────
 
 const TIER: Record<Complexity, string> = {
   low: 'fast',
   medium: 'balanced',
   high: 'powerful',
+}
+
+/**
+ * Max output tokens per complexity tier.
+ * Writers produce full file content — 4096 (the global default) is too small
+ * for medium/high tasks and causes truncated JSON responses.
+ */
+const MAX_TOKENS: Record<Complexity, number> = {
+  low:    4096,
+  medium: 8192,
+  high:   16384,
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -160,18 +172,20 @@ export class Writer {
     let raw: string
     let tokensIn: number
     let tokensOut: number
+    let costUsd = 0
     let modelUsed: string
 
     if (onChunk) {
       // Streaming does not retry (chunks already emitted to client)
-      const result = await this.llm.stream(messages, { model: tier, signal }, onChunk)
+      const result = await this.llm.stream(messages, { model: tier, maxTokens: MAX_TOKENS[node.complexity], signal }, onChunk)
       raw = result.content
       tokensIn = result.tokensIn
       tokensOut = result.tokensOut
+      costUsd = result.costUsd ?? 0
       modelUsed = result.model
     } else {
       const result = await withRetry(
-        () => this.llm.chat(messages, { model: tier, signal }),
+        () => this.llm.chat(messages, { model: tier, maxTokens: MAX_TOKENS[node.complexity], signal }),
         {
           signal,
           onRetry: (err, attempt) => {
@@ -183,6 +197,7 @@ export class Writer {
       raw = result.content
       tokensIn = result.tokensIn
       tokensOut = result.tokensOut
+      costUsd = result.costUsd ?? 0
       modelUsed = result.model
     }
 
@@ -195,26 +210,60 @@ export class Writer {
       try {
         parsed = JSON.parse(stripped)
       } catch {
-        // Fallback: find the outermost JSON object in the response
+        // Fallback 1: find the outermost JSON object in the response
         const match = stripped.match(/(\{[\s\S]*\})/)
         if (match) {
-          parsed = JSON.parse(match[1]!)
+          try {
+            parsed = JSON.parse(match[1]!)
+          } catch {
+            // Fallback 2: the JSON was truncated (LLM hit max_tokens mid-output).
+            // Attempt to recover: extract the "content" field value collected so far
+            // and close the JSON manually so we can return a partial result rather
+            // than failing the entire run.
+            const partial = match[1]!
+            const contentMatch = partial.match(/"content"\s*:\s*"([\s\S]*?)(?="confidence"|"confidence_rationale"|"\s*\}|$)/)
+            const contentSoFar = contentMatch
+              ? contentMatch[1]!
+                  .replace(/\\n/g, '\n')
+                  .replace(/\\t/g, '\t')
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, '\\')
+              : ''
+            const typeMatch  = partial.match(/"type"\s*:\s*"([^"]+)"/)
+            const summaryMatch = partial.match(/"summary"\s*:\s*"([^"]+)"/)
+            console.warn(
+              `[Writer(${node.node_id})] response truncated — recovering partial content ` +
+              `(${contentSoFar.length} chars recovered)`,
+            )
+            parsed = {
+              output: {
+                type:                 typeMatch?.[1]   ?? 'document',
+                summary:              summaryMatch?.[1] ?? 'Partial output (response truncated)',
+                content:              contentSoFar + '\n[OUTPUT TRUNCATED — increase max_tokens or reduce task scope]',
+                confidence:           30,
+                confidence_rationale: 'LLM response was truncated before completion. Output may be incomplete.',
+              },
+              assumptions_made: ['Response was truncated by the model token limit; only partial content was recovered.'],
+            }
+          }
         } else {
           throw new SyntaxError('no JSON object found')
         }
       }
     } catch {
       console.error(`[Writer(${node.node_id})] full raw response:`, raw)
-      throw new Error(
+      throw new AgentCostError(
         `Writer(${node.node_id}): LLM returned invalid JSON — ${raw.slice(0, 200)}`,
+        costUsd, tokensIn, tokensOut,
       )
     }
 
     const p = parsed as Record<string, unknown>
     const output = p['output'] as Record<string, unknown> | undefined
     if (!output || typeof output['confidence'] !== 'number') {
-      throw new Error(
+      throw new AgentCostError(
         `Writer(${node.node_id}): missing or invalid "output.confidence" in LLM response`,
+        costUsd, tokensIn, tokensOut,
       )
     }
 
