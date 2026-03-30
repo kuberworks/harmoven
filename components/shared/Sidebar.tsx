@@ -45,8 +45,19 @@ interface SidebarProps {
 
 export function Sidebar({ instanceRole }: SidebarProps) {
   const pathname = usePathname()
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try { return localStorage.getItem('sidebar-collapsed') === 'true' } catch { return false }
+  })
   const t = useT()
+
+  function handleCollapseToggle() {
+    setCollapsed(c => {
+      const next = !c
+      try { localStorage.setItem('sidebar-collapsed', String(next)) } catch {}
+      return next
+    })
+  }
 
   function isVisible(item: NavItem) {
     if (!item.requiresRole) return true
@@ -93,7 +104,7 @@ export function Sidebar({ instanceRole }: SidebarProps) {
 
       {/* Collapse toggle */}
       <button
-        onClick={() => setCollapsed(c => !c)}
+        onClick={() => handleCollapseToggle()}
         className="absolute -right-3 top-16 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface-raised shadow-sm hover:bg-surface-hover transition-colors duration-150"
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
@@ -110,6 +121,7 @@ function NavLink({
   return (
     <Link
       href={item.href}
+      aria-label={collapsed ? label : undefined}
       title={collapsed ? label : undefined}
       className={cn(
         'flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors duration-150',

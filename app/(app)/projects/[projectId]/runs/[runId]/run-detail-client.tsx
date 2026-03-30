@@ -151,7 +151,7 @@ function FeedbackPanel({ runId }: { runId: string }) {
               onMouseEnter={() => setHovered(n)}
               onMouseLeave={() => setHovered(0)}
               onClick={() => setRating(n)}
-              className="focus:outline-none"
+              className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background transition-colors"
             >
               <Star
                 className={`h-6 w-6 transition-colors ${
@@ -176,7 +176,7 @@ function FeedbackPanel({ runId }: { runId: string }) {
             value={hoursSaved}
             onChange={(e) => setHoursSaved(e.target.value)}
             placeholder="e.g. 2.5"
-            className="w-32 rounded-md border border-surface-border bg-surface-1 px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="w-32 rounded-md border border-surface-border bg-surface-raised px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
           />
         </div>
 
@@ -190,7 +190,7 @@ function FeedbackPanel({ runId }: { runId: string }) {
             onChange={(e) => setValueNote(e.target.value)}
             placeholder="Any notes on business value or quality…"
             rows={2}
-            className="w-full rounded-md border border-surface-border bg-surface-1 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+            className="w-full rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
           />
         </div>
 
@@ -377,7 +377,7 @@ function NodeCard({ node, runId, canRestart, onRestart }: { node: InitialNode | 
 
       {/* Expandable output panel */}
       {expanded && hasOutput && (
-        <div className="border-t border-surface-border bg-surface-1">
+        <div className="border-t border-surface-border bg-surface-raised">
           {outputSummary && (
             <div className="px-4 py-2 border-b border-surface-border/50">
               <p className="text-xs text-muted-foreground italic">{outputSummary}</p>
@@ -392,7 +392,7 @@ function NodeCard({ node, runId, canRestart, onRestart }: { node: InitialNode | 
 
       {/* RUNNING: partial output live preview */}
       {node.status === 'RUNNING' && node.partial_output && (
-        <div className="border-t border-surface-border/50 bg-surface-1 px-4 py-2">
+        <div className="border-t border-surface-border/50 bg-surface-raised px-4 py-2">
           <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
             <span>Streaming…</span>
@@ -626,7 +626,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                   nodes.map(n => [n.node_id, {
                     status:          n.status,
                     cost_usd:        ('cost_usd'        in n ? n.cost_usd        : undefined),
-                    error:           ('error'           in n ? n.error           : undefined),
+                    error:           ('error'           in n ? n.error ?? undefined : undefined),
                     tokens_in:       ('tokens_in'       in n ? n.tokens_in       : undefined),
                     tokens_out:      ('tokens_out'      in n ? n.tokens_out      : undefined),
                     started_at:      ('started_at'      in n ? n.started_at      : undefined),

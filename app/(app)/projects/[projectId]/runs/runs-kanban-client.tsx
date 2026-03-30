@@ -5,9 +5,30 @@
 // Columns: Pending | Running | ⏸ Gate open (PAUSED+SUSPENDED) | Completed (incl. FAILED)
 // Client component: re-orders runs as SSE events arrive (project-level stream).
 
-import { useEffect, useReducer } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import Link from 'next/link'
 import type { RunStatus } from '@/types/run.types'
+
+// ─── Live elapsed clock ───────────────────────────────────────────────────────
+
+/** Renders a self-updating elapsed time label. Re-renders once per second for RUNNING cards. */
+function ElapsedTime({ startedAt }: { startedAt: string | null }) {
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    if (!startedAt) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+
+  if (!startedAt) return null
+  const sec = Math.round((now - new Date(startedAt).getTime()) / 1000)
+  const label = sec >= 60
+    ? `${Math.floor(sec / 60)}m ${sec % 60}s`
+    : `${sec}s`
+
+  return <>{label}</>
+}
 
 export interface RunSummary {
   id: string
@@ -111,15 +132,6 @@ function RunCard({ run, projectId }: { run: RunSummary; projectId: string }) {
   const isGateRecovering   = run.status === 'SUSPENDED' && !run.has_open_gate  // crash recovery
   const isFailed           = run.status === 'FAILED'
 
-  const elapsedSec = run.started_at
-    ? Math.round((Date.now() - new Date(run.started_at).getTime()) / 1000)
-    : null
-  const elapsedLabel = elapsedSec !== null
-    ? elapsedSec >= 60
-      ? `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`
-      : `${elapsedSec}s`
-    : null
-
   const icon = statusIcon(run.status)
   const iconColor = statusIconColor(run.status)
 
@@ -142,7 +154,7 @@ function RunCard({ run, projectId }: { run: RunSummary; projectId: string }) {
       {/* Meta */}
       <div className="text-[11px] text-muted-foreground mb-2">
         {run.user?.name ? `${run.user.name} · ` : ''}
-        {isRunning && elapsedLabel ? `${elapsedLabel}` : ''}
+        {isRunning ? <ElapsedTime startedAt={run.started_at} /> : null}
         {!isRunning && run.created_at
           ? new Date(run.created_at).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
           : ''}

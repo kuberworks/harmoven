@@ -82,7 +82,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-[17px] font-bold text-foreground">Projects</h1>
+          <h1 className="text-xl font-semibold text-foreground">Projects</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             {total} project{total !== 1 ? 's' : ''}{q ? ` matching "${q}"` : ''}
           </p>

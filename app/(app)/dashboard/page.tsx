@@ -47,7 +47,10 @@ export default async function DashboardPage() {
       },
       orderBy: { started_at: 'desc' },
       take: 10,
-      include: { project: { select: { name: true } } },
+      select: {
+        id: true, project_id: true, status: true, started_at: true, task_input: true,
+        project: { select: { name: true } },
+      },
     }),
     db.project.findMany({
       where: memberProjectIds !== undefined
@@ -77,7 +80,7 @@ export default async function DashboardPage() {
           </p>
         </div>
         <Button asChild size="sm">
-          <Link href="/projects"><Plus className="h-4 w-4" /> New run</Link>
+          <Link href={recentProjects.length > 0 ? `/projects/${recentProjects[0]!.id}/runs/new` : '/projects/new'}><Plus className="h-4 w-4" /> New run</Link>
         </Button>
       </div>
 
@@ -109,8 +112,10 @@ export default async function DashboardPage() {
                       <p className="text-sm font-medium truncate text-foreground">
                         {run.project?.name ?? 'Unknown project'}
                       </p>
-                      <p className="text-xs text-muted-foreground font-mono truncate">
-                        {run.id.slice(0, 8)}…
+                      <p className="text-xs text-muted-foreground truncate">
+                        {(run as { task_input?: string | null }).task_input
+                          ? ((run as { task_input: string }).task_input).slice(0, 80)
+                          : <span className="font-mono opacity-60">{run.id.slice(0, 8)}…</span>}
                       </p>
                     </div>
                     <span className="text-xs text-muted-foreground shrink-0">
