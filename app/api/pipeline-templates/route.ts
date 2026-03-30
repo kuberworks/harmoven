@@ -60,6 +60,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // SEC-M-01: If scoping to a project, verify the caller is a member of that project.
+  // Prevents an authenticated user from creating templates inside a project they don't belong to.
+  if (typeof project_id === 'string') {
+    try {
+      await assertProjectAccess(caller, project_id)
+    } catch {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
   const template = await createTemplate({
     name,
     description: typeof description === 'string' ? description : undefined,

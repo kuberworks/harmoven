@@ -103,11 +103,13 @@ function decrypt(ciphertext: string): string {
       return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
     }
 
-    // Unknown format — treat as plaintext
-    return ciphertext
-  } catch {
-    // If decryption fails, return the raw value (handles dev plaintext mode)
-    return ciphertext
+    // Unknown format — throw rather than silently passing ciphertext to the agent.
+    throw new Error(`[CredentialVault] Unrecognised ciphertext format (not GCM or CBC). Credential may be corrupted.`)
+  } catch (err) {
+    // Re-throw with context so the run fails fast and visibly rather than
+    // silently injecting a garbage value into the agent's HTTP requests.
+    if (err instanceof Error && err.message.startsWith('[CredentialVault]')) throw err
+    throw new Error(`[CredentialVault] Decryption failed — check ENCRYPTION_KEY and credential integrity: ${(err as Error).message}`)
   }
 }
 

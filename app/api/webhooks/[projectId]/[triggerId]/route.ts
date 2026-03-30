@@ -14,6 +14,7 @@ import { NextRequest, NextResponse }   from 'next/server'
 import { db }                          from '@/lib/db/client'
 import { uuidv7 }                      from '@/lib/utils/uuidv7'
 import { getExecutionEngine }          from '@/lib/execution/engine.factory'
+import { checkRateLimitAsync }         from '@/lib/auth/rate-limit'
 
 type Params = { params: Promise<{ projectId: string; triggerId: string }> }
 
@@ -51,6 +52,10 @@ function utcMidnight(): Date {
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { projectId, triggerId } = await params
+
+  // LOW-5: rate limit webhook ingestion before any DB queries (60 req/min per IP+trigger)
+  const rl = await checkRateLimitAsync(req, `webhook:${triggerId}`, 60, 60 * 1000)
+  if (rl) return rl
 
   // ── 1. Read raw body (needed for HMAC) ──────────────────────────────────────
   const rawBodyBuf = await req.arrayBuffer()
