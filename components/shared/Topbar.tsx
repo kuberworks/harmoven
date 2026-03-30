@@ -7,13 +7,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { LogOut, User, Settings, ChevronDown, HelpCircle, ExternalLink } from 'lucide-react'
+import { LogOut, User, Settings, ChevronDown, HelpCircle, ExternalLink, Menu } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 import { LocaleSwitcher } from '@/components/shared/LocaleSwitcher'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils/cn'
 import { useT } from '@/lib/i18n/client'
+import { useMobileSidebar } from '@/components/shared/MobileSidebarContext'
 
 interface TopbarProps {
   userName?: string
@@ -25,6 +26,7 @@ export function Topbar({ userName, userEmail, locale = 'en' }: TopbarProps) {
   const router = useRouter()
   const { toast } = useToast()
   const t = useT()
+  const { open: openMobileSidebar } = useMobileSidebar()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const firstMenuItemRef = useRef<HTMLAnchorElement>(null)
@@ -75,8 +77,17 @@ export function Topbar({ userName, userEmail, locale = 'en' }: TopbarProps) {
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-surface-raised px-4">
-      {/* Left — breadcrumb slot (filled by pages via slot or context) */}
-      <div id="topbar-breadcrumb" className="text-sm text-muted-foreground" />
+      {/* Left — hamburger (mobile) + breadcrumb slot */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={openMobileSidebar}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-hover hover:text-foreground transition-colors md:hidden"
+          aria-label="Open navigation menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div id="topbar-breadcrumb" className="text-sm text-muted-foreground" />
+      </div>
 
       {/* Right — controls */}
       <div className="flex items-center gap-2">

@@ -131,7 +131,7 @@ export default async function AnalyticsPage({
   return (
     <div className="space-y-8 animate-stagger">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-foreground">{t('analytics.title')}</h1>
           {data && (

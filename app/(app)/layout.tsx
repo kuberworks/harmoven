@@ -11,6 +11,7 @@ import { Sidebar } from '@/components/shared/Sidebar'
 import { Topbar } from '@/components/shared/Topbar'
 import { UpdateBannerAsync } from '@/components/admin/UpdateBannerAsync'
 import { TranslationProvider } from '@/lib/i18n/client'
+import { MobileSidebarProvider } from '@/components/shared/MobileSidebarContext'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <TranslationProvider locale={locale}>
+      <MobileSidebarProvider>
       <div className="flex h-screen overflow-hidden bg-surface-base">
       {/* A11Y: skip-navigation link — visible on focus for keyboard users */}
       <a
@@ -52,11 +54,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
 
         {/* Page content */}
-        <main id="main-content" className="flex-1 overflow-y-auto p-6" tabIndex={-1}>
+        <main id="main-content" className="flex-1 overflow-y-auto p-3 sm:p-6" tabIndex={-1}>
           <div className="mx-auto max-w-[1200px]">
             {children}
           </div>
         </main>
-      </div>      </div>    </TranslationProvider>
+      </div>      </div>
+      </MobileSidebarProvider>
+    </TranslationProvider>
   )
 }
