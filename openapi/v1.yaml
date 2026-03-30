@@ -3074,7 +3074,7 @@ paths:
               additionalProperties: false
       responses:
         '200':
-          description: "Updated template.
+          description: "Updated template."
           content:
             application/json:
               schema:
