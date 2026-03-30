@@ -45,6 +45,18 @@ export default async function GatePage({ params }: Props) {
           orderBy: { computed_at: 'desc' },
           take: 1,
         },
+        nodes: {
+          orderBy: { node_id: 'asc' },
+          select: {
+            node_id: true,
+            agent_type: true,
+            tokens_in: true,
+            tokens_out: true,
+            cost_usd: true,
+            handoff_out: true,
+            status: true,
+          },
+        },
       },
     }),
   ])
@@ -62,11 +74,39 @@ export default async function GatePage({ params }: Props) {
 
   const openGate = run.human_gates[0]
 
-  // Serialize for client — reconstruct output shapes from individual Prisma fields
-  const criticalReview = run.critical_reviews[0]
+  // Extract writer output from the last WRITER node that has handoff_out
+  const writerNode = [...run.nodes].reverse().find(n => n.agent_type === 'WRITER' && n.handoff_out != null)
+  const writerHandoff = writerNode?.handoff_out as Record<string, unknown> | null ?? null
+  const writerOutput = writerHandoff?.['output'] as Record<string, unknown> | undefined
+
+  // ── Server-side data filtering by permission ──────────────────────────────
+  // PermissionGuard in gate-client is UI-only. Sensitive data must be
+  // withheld at this layer so it never reaches the rendered HTML payload.
+
+  // Cost data — only included when caller has stream:costs
+  const nodes = permissions.has('stream:costs')
+    ? run.nodes.map(n => ({
+        node_id: n.node_id,
+        agent_type: n.agent_type,
+        tokens_in: n.tokens_in,
+        tokens_out: n.tokens_out,
+        cost_usd: Number(n.cost_usd),
+        status: n.status,
+      }))
+    : run.nodes.map(n => ({
+        node_id: n.node_id,
+        agent_type: n.agent_type,
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        status: n.status,
+      }))
+
+  // Critical review — only included when caller has gates:read_critical
+  const criticalReview = permissions.has('gates:read_critical') && run.critical_reviews[0]
     ? {
         id: run.critical_reviews[0].id,
-        node_id: 'n/a', // CriticalReviewResult has no node_id field in schema
+        node_id: 'n/a',
         output: {
           verdict: run.critical_reviews[0].verdict as 'no_issues' | 'issues_found',
           severity: run.critical_reviews[0].severity as import('@/lib/agents/reviewer/critical-reviewer.types').CriticalSeverity,
@@ -78,7 +118,8 @@ export default async function GatePage({ params }: Props) {
       }
     : null
 
-  const evalResult = run.eval_results[0]
+  // Eval result — only included when caller has gates:read
+  const evalResult = permissions.has('gates:read') && run.eval_results[0]
     ? {
         output: {
           run_id: runId,
@@ -96,9 +137,9 @@ export default async function GatePage({ params }: Props) {
     : null
 
   return (
-    <div className="space-y-6 animate-stagger">
+    <div className="animate-stagger">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+      <nav className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap mb-5">
         <Link href="/projects" className="hover:text-foreground transition-colors">Projects</Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <Link href={`/projects/${projectId}`} className="hover:text-foreground transition-colors">
@@ -116,8 +157,13 @@ export default async function GatePage({ params }: Props) {
         runId={runId}
         projectId={projectId}
         runStatus={run.status}
+        taskInput={typeof run.task_input === 'string' ? run.task_input : JSON.stringify(run.task_input ?? '')}
         gateId={openGate?.id ?? null}
         gateReason={openGate?.reason ?? null}
+        writerContent={(writerOutput?.['content'] ?? writerOutput?.['text'] ?? null) as string | null}
+        writerSummary={(writerOutput?.['summary'] ?? null) as string | null}
+        writerType={(writerOutput?.['type'] ?? null) as string | null}
+        nodes={nodes}
         criticalReview={criticalReview}
         evalResult={evalResult}
         permissions={permissions}
