@@ -113,8 +113,11 @@ export default async function DashboardPage() {
                         {run.project?.name ?? 'Unknown project'}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {(run as { task_input?: string | null }).task_input
-                          ? ((run as { task_input: string }).task_input).slice(0, 80)
+                        {(run as { task_input?: unknown }).task_input != null
+                          ? (() => {
+                              const ti = (run as { task_input: unknown }).task_input
+                              return (typeof ti === 'string' ? ti : JSON.stringify(ti)).slice(0, 80)
+                            })()
                           : <span className="font-mono opacity-60">{run.id.slice(0, 8)}…</span>}
                       </p>
                     </div>
