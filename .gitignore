@@ -55,3 +55,8 @@ dev/
 # Generated files — produced by `npm run generate:types` in CI (Pattern A: spec-first)
 # Never commit — always regenerated fresh from openapi/v1.yaml
 types/api.ts
+
+# Playwright
+playwright-report/
+test-results/
+tests/e2e/.auth/

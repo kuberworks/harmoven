@@ -51,7 +51,9 @@ export async function POST(
   }
 
   const perms = await resolvePermissions(caller, runLookup.project_id)
-  if (!perms.has('gates:approve')) {
+  // gates:approve is required for INTERRUPTED gate resolution;
+  // runs:replay is sufficient for restarting a FAILED node from scratch.
+  if (!perms.has('gates:approve') && !perms.has('runs:replay')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -80,7 +82,7 @@ export async function POST(
     if (message.includes('not found')) {
       return NextResponse.json({ error: message }, { status: 404 })
     }
-    if (message.includes('not INTERRUPTED') || message.includes('not SUSPENDED') || message.includes('status')) {
+    if (message.includes('cannot be restarted') || message.includes('not INTERRUPTED') || message.includes('not SUSPENDED') || message.includes('status')) {
       return NextResponse.json({ error: message }, { status: 409 })
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

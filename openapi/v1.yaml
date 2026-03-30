@@ -1846,6 +1846,60 @@ components:
               message: "Run is already in a terminal state and cannot be modified."
 
 # ─── Global security (overridden per route) ───────────────────────────────────
+
+    ConfigVersion:
+      description: |
+        A single commit in the project's configuration git history. Represents
+        one atomic change to one or more config files (`project.json`,
+        `AGENTS.md`, `orchestrator.yaml`, `roles/*.json`).  
+        History is append-only — commits are never rebased or amended.
+      type: object
+      required: [hash, message, author, timestamp, changed]
+      properties:
+        hash:
+          type: string
+          minLength: 7
+          maxLength: 7
+          description: "Short (7-character) git commit hash. Stable identifier used in `diff` and `restore` calls. Guaranteed unique within a repository."
+          example: "a3f9c12"
+        message:
+          type: string
+          description: "Auto-generated commit message describing the change. Format: `<action>: <key> by <actor>`. Example: `set: AGENTS.md by usr_01HXY…`."
+          example: "set: AGENTS.md by usr_01HXY4ZQPB"
+        author:
+          type: string
+          description: "User ID of the actor who triggered the config change, or the string `system` for automated changes (e.g. bootstrap, migrations)."
+          example: "usr_01HXY4ZQPB"
+        timestamp:
+          type: string
+          format: date-time
+          description: "ISO 8601 UTC timestamp of when the commit was created."
+          example: "2026-03-15T14:22:11.000Z"
+        changed:
+          type: array
+          description: "Relative paths (within the config repository) of files modified by this commit. Empty array means the commit was an intentional no-op (e.g. a restore to the current state)."
+          items:
+            type: string
+          example: ["projects/c96e5d92-a5e3-41de-b7a2-309411ad4460/AGENTS.md"]
+
+    ConfigDiff:
+      description: |
+        Comparison between two config versions. Provides the full content before
+        and after the change, plus the standard unified diff patch.
+        Used by the Config History panel to render side-by-side diffs.
+      type: object
+      required: [before, after, patch]
+      properties:
+        before:
+          type: string
+          description: "Full text content of the file(s) at the older commit (`from` hash). Empty string if the file did not exist at that revision."
+        after:
+          type: string
+          description: "Full text content of the file(s) at the newer commit (`to` hash). Empty string if the file was deleted."
+        patch:
+          type: string
+          description: "Raw unified diff output (GNU diff format). Suitable for display or programmatic application with `patch -p1`. Empty string if the two hashes are identical."
+
 security:
   - SessionCookie: []
 
@@ -3854,6 +3908,223 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimit'
+  # ══════════════════════════════════════════════════════════════════════════
+  # PROJECT CONFIG HISTORY (Amendment 83)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /projects/{projectId}/config/history:
+    get:
+      operationId: getProjectConfigHistory
+      x-required-permissions: [project:edit]
+      summary: List project config version history
+      description: |
+        > **Required permission:** `project:edit` — minimum role: `admin`
+
+        Returns the git commit log for a project's configuration repository,
+        ordered from newest to oldest (max 50 entries).
+
+        Each entry represents one atomic change to one or more config files
+        (`project.json`, `AGENTS.md`, `orchestrator.yaml`, `roles/*.json`).
+        History is append-only — commits are never rebased or force-pushed.
+
+        **Amendment 83.8** — Config History panel.  
+        **Amendment 83.10 rule 4** — `project:edit` required.
+
+        **Use cases:**
+        - Auditing who changed what and when in a project's config.
+        - Selecting a `hash` to pass to `GET /projects/{projectId}/config/diff` or
+          `POST /projects/{projectId}/config/restore`.
+      tags: [projects]
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: |
+            Ordered list of config commits, newest first. Returns an empty array
+            if no config changes have been committed yet for this project.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConfigVersion'
+              example:
+                - hash: "a3f9c12"
+                  message: "set: AGENTS.md by usr_01HXY4ZQPB"
+                  author: "usr_01HXY4ZQPB"
+                  timestamp: "2026-03-15T14:22:11.000Z"
+                  changed: ["projects/c96e5d92/AGENTS.md"]
+                - hash: "8b21d07"
+                  message: "set: project.json by system"
+                  author: "system"
+                  timestamp: "2026-03-14T09:00:00.000Z"
+                  changed: ["projects/c96e5d92/project.json"]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{projectId}/config/diff:
+    get:
+      operationId: getProjectConfigDiff
+      x-required-permissions: [project:edit]
+      summary: Diff two project config versions
+      description: |
+        > **Required permission:** `project:edit` — minimum role: `admin`
+
+        Returns a before/after content comparison plus a unified diff patch
+        between two config commits.
+
+        Pass `to=HEAD` to compare a historical version against the current state.
+        Both `from` and `to` are validated to be well-formed git short hashes
+        (7–40 lowercase hex characters) or the literal string `HEAD`.
+
+        **Amendment 83.8** — Config History panel diff view.  
+        **Amendment 83.10 rule 4** — `project:edit` required.
+
+        **Security:** Hash parameters are validated server-side with a strict
+        regex before being passed to `git diff` via `execFile` (no shell
+        interpolation — Am.94.4).
+      tags: [projects]
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - in: query
+          name: from
+          required: true
+          description: |
+            Source commit hash (7–40 hex chars). Obtain from
+            `GET /projects/{projectId}/config/history`.
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{7,40}$'
+          example: "8b21d07"
+        - in: query
+          name: to
+          required: false
+          description: |
+            Target commit hash (7–40 hex chars) or the literal `HEAD` (default).
+            Use `HEAD` to diff a historical version against the current state.
+          schema:
+            type: string
+            default: HEAD
+            pattern: '^([0-9a-f]{7,40}|HEAD)$'
+          example: "HEAD"
+      responses:
+        '200':
+          description: |
+            Diff between the two commits. `before` and `after` contain the full
+            file content at each revision. `patch` is the raw unified diff output.
+            All three fields are empty strings when the two commits are identical.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigDiff'
+        '400':
+          description: "One or both hash parameters are missing or contain invalid characters (non-hex, wrong length)."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: "The git diff operation failed, typically because one of the hashes does not exist in the repository."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /projects/{projectId}/config/restore:
+    post:
+      operationId: restoreProjectConfig
+      x-required-permissions: [project:edit]
+      summary: Restore project config to a previous version
+      description: |
+        > **Required permission:** `project:edit` — minimum role: `admin`
+        > **Session-only** — API key callers receive 403.
+
+        Creates a new forward commit that restores the project's config files
+        to the state they were in at the given commit hash. History is never
+        rewritten — the restore itself appears as a new entry in the config log.
+
+        After the commit, the database is synchronised with the restored values
+        so that subsequent reads from `GET /projects/{projectId}` reflect the
+        restored configuration.
+
+        **Amendment 83.10 rules:**
+        1. Always a new forward commit — `git rebase` / `git reset --hard` are never used.
+        2. `syncToDb()` is called after every restore.
+        3. Running runs are unaffected (they captured a config snapshot at start time).
+        4. Credentials are never stored in `config.git` and are therefore
+           unaffected by restores.
+
+        **Security (Am.94.4):** The `hash` value is validated against
+        `/^[0-9a-f]{7,40}$/` and passed to `git checkout` via `execFile` —
+        no shell interpolation.
+      tags: [projects]
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hash]
+              properties:
+                hash:
+                  type: string
+                  pattern: '^[0-9a-f]{7,40}$'
+                  description: |
+                    Short or full git commit hash to restore to. Must exist in the
+                    project's config history. Obtain from
+                    `GET /projects/{projectId}/config/history`.
+                  example: "8b21d07"
+      responses:
+        '200':
+          description: |
+            Restore succeeded. The returned `ConfigVersion` describes the new
+            forward commit that was created. Its `message` follows the pattern
+            `restore: reverted to <7-char-hash> by <userId>`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version]
+                properties:
+                  version:
+                    $ref: '#/components/schemas/ConfigVersion'
+        '400':
+          description: "The `hash` field is missing, empty, or contains characters outside the set `[0-9a-f]`."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: "The git restore operation failed. The hash may not exist in this repository, or the working tree may have uncommitted changes."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
   # ══════════════════════════════════════════════════════════════════════════
   # ADMIN
   # ══════════════════════════════════════════════════════════════════════════

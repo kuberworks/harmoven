@@ -94,9 +94,13 @@ export default async function AnalyticsPage({
     redirect('/dashboard')
   }
 
-  // Build query string for the internal API call
+  // Build query string for the internal API call — last 30 days default
+  const now  = new Date()
+  const from = new Date(now)
+  from.setDate(from.getDate() - 30)
   const params = new URLSearchParams()
-  params.set('from', '30')  // last 30 days — default
+  params.set('from', from.toISOString())
+  params.set('to',   now.toISOString())
   if (project_id) params.set('project_id', project_id)
 
   let data: AnalyticsResponse | null = null

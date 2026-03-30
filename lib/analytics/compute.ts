@@ -479,20 +479,6 @@ export async function computeUserPeriodStats(
     }
   }
 
-  return {
-    user_id,
-    period: { from, to },
-    runs_authored: authoredRuns.length,
-    runs_participated: participatedRunIds.size,
-    projects_active: activeProjects.size,
-    total_weight: totalWeight,
-    avg_contribution_pct: contributionPcts.length > 0
-      ? contributionPcts.reduce((s, v) => s + v, 0) / contributionPcts.length
-      : 0,
-    contribution_by_type: byType,
-    gates_decided: gatesDecided.length,
-    gates_approved_direct: gatesDirect,
-    gates_modified: gatesModified,
   // Critical findings fixed and ignored by this user in the period
   const critFixes = await (db as any).criticalFindingFix?.count?.({
     where: {
@@ -518,6 +504,20 @@ export async function computeUserPeriodStats(
     },
   }).catch(() => 0) as number ?? 0
 
+  return {
+    user_id,
+    period: { from, to },
+    runs_authored: authoredRuns.length,
+    runs_participated: participatedRunIds.size,
+    projects_active: activeProjects.size,
+    total_weight: totalWeight,
+    avg_contribution_pct: contributionPcts.length > 0
+      ? contributionPcts.reduce((s, v) => s + v, 0) / contributionPcts.length
+      : 0,
+    contribution_by_type: byType,
+    gates_decided: gatesDecided.length,
+    gates_approved_direct: gatesDirect,
+    gates_modified: gatesModified,
     critical_findings_fixed: critFixes,
     critical_findings_ignored: critIgnores,
     context_injections: contextInjections,

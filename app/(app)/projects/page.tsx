@@ -1,7 +1,7 @@
 // app/(app)/projects/page.tsx
 // Project list — shows all projects the user can see.
 // Server Component; data fetched from DB.
-// UX spec §3.7 — Project detail.
+// Design: table-style list matching harmoven_main_v5.html (tbl pattern).
 
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
@@ -9,10 +9,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { FolderOpen, Plus, Play } from 'lucide-react'
+import { Plus } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Projects' }
 
@@ -55,85 +52,100 @@ export default async function ProjectsPage() {
   return (
     <div className="space-y-6 animate-stagger">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header — matches mockup .ph pattern */}
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Projects</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-[17px] font-bold text-foreground">Projects</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
             {projects.length} project{projects.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <Button asChild size="sm">
-          <Link href="/projects/new">
-            <Plus className="h-4 w-4" />
-            New project
-          </Link>
-        </Button>
+        <Link
+          href="/projects/new"
+          className="inline-flex items-center gap-1.5 h-[34px] px-3.5 rounded-md bg-accent-amber text-[#111] text-xs font-semibold hover:bg-accent-amber-press transition-colors shrink-0"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New project
+        </Link>
       </div>
 
-      {/* Grid */}
+      {/* Table — matches mockup .tbl pattern */}
       {projects.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <FolderOpen className="h-10 w-10 text-muted-foreground/50" />
-            <div>
-              <p className="font-medium text-foreground">No projects yet</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Create your first project to start running agents.
-              </p>
-            </div>
-            <Button asChild size="sm">
-              <Link href="/projects/new">
-                <Plus className="h-4 w-4" />
-                New project
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center gap-4 py-20 text-center">
+          <span className="text-4xl opacity-30">⬡</span>
+          <div>
+            <p className="text-sm font-semibold text-foreground">No projects yet</p>
+            <p className="text-xs text-muted-foreground mt-1">Create your first project to start running agents.</p>
+          </div>
+          <Link
+            href="/projects/new"
+            className="inline-flex items-center gap-1.5 h-[34px] px-3.5 rounded-md bg-accent-amber text-[#111] text-xs font-semibold hover:bg-accent-amber-press transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New project
+          </Link>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => {
-            const activeCount = project.runs.length
-            return (
-              <Link key={project.id} href={`/projects/${project.id}`} className="group outline-none">
-                <Card className="h-full transition-colors group-hover:border-accent-amber group-focus-visible:ring-2 group-focus-visible:ring-amber-500">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="text-base font-semibold leading-tight line-clamp-2">
-                        {project.name}
-                      </CardTitle>
-                      {activeCount > 0 && (
-                        <Badge variant="running" className="shrink-0">
-                          <Play className="h-2.5 w-2.5" />
-                          {activeCount} active
-                        </Badge>
+        <div className="rounded-card border border-surface-border overflow-hidden">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-surface-border">
+                <th className="text-left px-3 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-[0.06em]">Project</th>
+                <th className="text-left px-3 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-[0.06em]">Domain</th>
+                <th className="text-left px-3 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-[0.06em] hidden sm:table-cell">Active</th>
+                <th className="text-left px-3 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-[0.06em] hidden sm:table-cell">Runs</th>
+                <th className="text-right px-3 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-[0.06em]">Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map((project) => {
+                const activeCount = project.runs.length
+                const runningCount = project.runs.filter(r => r.status === 'RUNNING').length
+                return (
+                  <tr
+                    key={project.id}
+                    className="border-b border-surface-border last:border-0 hover:bg-surface-hover transition-colors cursor-pointer"
+                  >
+                    <td className="px-3 py-2.5">
+                      <Link href={`/projects/${project.id}`} className="block after:absolute after:inset-0 relative">
+                        <span className="font-medium text-foreground">{project.name}</span>
+                        {project.description && (
+                          <span className="block text-[11px] text-muted-foreground truncate max-w-[240px]">{project.description}</span>
+                        )}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {project.domain_profile ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-surface-border text-muted-foreground bg-surface-overlay">
+                          {project.domain_profile}
+                        </span>
+                      ) : <span className="text-muted-foreground/40">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 hidden sm:table-cell">
+                      {activeCount > 0 ? (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono border ${
+                          runningCount > 0
+                            ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                        }`}>
+                          {runningCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />}
+                          {activeCount}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
                       )}
-                    </div>
-                    {project.domain_profile && (
-                      <Badge variant="secondary" className="w-fit text-xs">
-                        {project.domain_profile}
-                      </Badge>
-                    )}
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    {project.description && (
-                      <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-                        {project.description}
-                      </p>
-                    )}
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{project._count.runs} run{project._count.runs !== 1 ? 's' : ''}</span>
-                      <span>
-                        {new Date(project.updated_at).toLocaleDateString('en', {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            )
-          })}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-muted-foreground hidden sm:table-cell">
+                      {project._count.runs}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-muted-foreground text-right whitespace-nowrap">
+                      {new Date(project.updated_at).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
