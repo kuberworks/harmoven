@@ -107,7 +107,7 @@ export default async function ProjectPage({ params }: Props) {
         </div>
         <PermissionGuard permissions={permissions} permission="runs:create">
           <Button asChild size="sm">
-            <Link href={`/projects/${projectId}/runs`}>
+            <Link href={`/projects/${projectId}/runs/new`}>
               <Plus className="h-4 w-4" />
               New run
             </Link>
