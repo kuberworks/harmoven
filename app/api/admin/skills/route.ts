@@ -23,6 +23,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller } from '@/lib/auth/rbac'
 import { scanPackContent } from '@/lib/marketplace/scan'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -112,6 +113,7 @@ export async function POST(req: NextRequest) {
     if (!scan.passed) {
       await db.auditLog.create({
         data: {
+          id:          uuidv7(),
           actor:       caller.userId,
           action_type: 'skill_scan_failed',
           payload: { name, source_type, reason: scan.reason },
@@ -143,6 +145,7 @@ export async function POST(req: NextRequest) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       caller.userId,
       action_type: 'skill_install',
       payload: { skill_id: skill.id, name, source_type, version },

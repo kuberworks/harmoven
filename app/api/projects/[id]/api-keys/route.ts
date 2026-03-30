@@ -15,6 +15,7 @@ import {
 } from '@/lib/auth/rbac'
 import { createProjectApiKey } from '@/lib/auth/project-api-key'
 import { checkRateLimitAsync } from '@/lib/auth/rate-limit'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -142,6 +143,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       actorId,
       action_type: 'api_key_created',
       payload:     { project_id: projectId, key_id: result.id, name, role_name: role.name },

@@ -16,6 +16,7 @@ import { resolveCaller }                        from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { getExecutionEngine }                   from '@/lib/execution/engine.factory'
+import { uuidv7 }                               from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ runId: string }> }
 
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         await db.run.update({ where: { id: runId }, data: { task_input: merged as Prisma.InputJsonValue } })
         await db.auditLog.create({
           data: {
+            id:          uuidv7(),
             actor:       actorId,
             action_type: 'gate:modify',
             payload: {

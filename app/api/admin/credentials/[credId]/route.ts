@@ -18,6 +18,7 @@ import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -150,6 +151,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       caller!.userId,
       action_type: 'credential_updated',
       payload: {

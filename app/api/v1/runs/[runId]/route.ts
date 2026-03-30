@@ -13,6 +13,7 @@ import {
   UnauthorizedError,
 }                                    from '@/lib/auth/rbac'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ runId: string }> }
 
@@ -87,6 +88,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       run_id:      runId,
       actor:       actorId,
       action_type: 'run.aborted',

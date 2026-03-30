@@ -14,6 +14,7 @@ import {
   ForbiddenError,
   UnauthorizedError,
 } from '@/lib/auth/rbac'
+import { uuidv7 } from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -116,6 +117,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       actor:       actorId,
       action_type: 'project_member_added',
       payload:     { project_id: projectId, user_id, role_id },

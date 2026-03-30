@@ -14,6 +14,7 @@ import {
   UnauthorizedError,
 }                                    from '@/lib/auth/rbac'
 import { updateProjectConfig }       from '@/lib/projects/project-service'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -140,6 +141,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
   await db.auditLog.create({
     data: {
+      id:          uuidv7(),
       run_id:      null,
       actor:       actorId,
       action_type: 'project.archived',
