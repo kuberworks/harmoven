@@ -142,46 +142,50 @@ export class PgNotifyEventBus implements IProjectEventBus {
   async emit(event: ProjectEvent): Promise<void> {
     if (this._closed) return
 
-    // Wait for the PG connection before writing to EventPayload (cross-process replay buffer).
-    // In-process delivery via this.emitter.emit() is still immediate below.
-    await this._ready
-
-    const fullPayload = JSON.stringify(event)
-    const byteLength = Buffer.byteLength(fullPayload, 'utf8')
-    const expiresAt = new Date(Date.now() + EVENT_PAYLOAD_TTL_HOURS * 3600_000)
-
-    // Always persist to EventPayload for the reconnect replay buffer
-    const payloadId = randomUUID()
-    if (this.emitter_client) {
-      await this.emitter_client.query(
-        'INSERT INTO "EventPayload" (id, project_id, run_id, payload, created_at, expires_at) VALUES ($1, $2, $3, $4, NOW(), $5)',
-        [payloadId, event.project_id, event.run_id, fullPayload, expiresAt],
-      ).catch(err => console.error('[PgNotifyEventBus] EventPayload insert failed:', err))
-    }
-
-    // Also deliver in-process immediately
+    // Deliver in-process IMMEDIATELY — never blocked by PG readiness.
+    // This ensures SSE subscribers in the same process always receive events
+    // even if the PG LISTEN/NOTIFY connection is slow or unavailable.
     this.emitter.emit(event.project_id, event)
 
-    if (!this.listener) return
+    // Persist to EventPayload and cross-process pg_notify asynchronously.
+    // Fire-and-forget — PG unavailability must never block in-process delivery.
+    void (async () => {
+      try {
+        // Wait for the PG connection (with a 5s timeout so we don't hang forever).
+        await Promise.race([
+          this._ready,
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error('pg_ready timeout')), 5_000)),
+        ])
+      } catch {
+        return // PG not available — skip DB persist and pg_notify
+      }
 
-    if (byteLength > PG_NOTIFY_MAX_BYTES) {
-      // Large event: cross-process ref points to EventPayload row
-      const ref = JSON.stringify({
-        type: 'event_ref',
-        event_payload_id: payloadId,
-        project_id: event.project_id,
-        run_id: event.run_id,
-      })
-      await this.listener.query('SELECT pg_notify($1, $2)', [
-        channel(event.project_id),
-        ref,
-      ])
-    } else {
-      await this.listener.query('SELECT pg_notify($1, $2)', [
-        channel(event.project_id),
-        fullPayload,
-      ])
-    }
+      const fullPayload = JSON.stringify(event)
+      const byteLength = Buffer.byteLength(fullPayload, 'utf8')
+      const expiresAt = new Date(Date.now() + EVENT_PAYLOAD_TTL_HOURS * 3600_000)
+      const payloadId = randomUUID()
+
+      if (this.emitter_client) {
+        await this.emitter_client.query(
+          'INSERT INTO "EventPayload" (id, project_id, run_id, payload, created_at, expires_at) VALUES ($1, $2, $3, $4, NOW(), $5)',
+          [payloadId, event.project_id, event.run_id, fullPayload, expiresAt],
+        ).catch(err => console.error('[PgNotifyEventBus] EventPayload insert failed:', err))
+      }
+
+      if (!this.listener) return
+
+      if (byteLength > PG_NOTIFY_MAX_BYTES) {
+        const ref = JSON.stringify({
+          type: 'event_ref',
+          event_payload_id: payloadId,
+          project_id: event.project_id,
+          run_id: event.run_id,
+        })
+        await this.listener.query('SELECT pg_notify($1, $2)', [channel(event.project_id), ref])
+      } else {
+        await this.listener.query('SELECT pg_notify($1, $2)', [channel(event.project_id), fullPayload])
+      }
+    })()
   }
 
   subscribe(project_id: string, handler: (e: ProjectEvent) => void): Unsubscribe {
