@@ -8,6 +8,7 @@ import { useCallback, useTransition } from 'react'
 import { Search, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PAGE_SIZES, type PageSize } from './projects-shared'
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,6 @@ export function SortHeader({ field, label, currentSort, currentOrder, className 
 // ─── Page size picker ─────────────────────────────────────────────────────────
 
 export { PAGE_SIZES, type PageSize } from './projects-shared'
-
 export function PageSizePicker({ currentSize }: { currentSize: number }) {
   const router       = useRouter()
   const pathname     = usePathname()
