@@ -16,6 +16,7 @@ import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
 import { previewFromGitHubUrl, GitHubImportError, type GitHubImportPreview } from '@/lib/marketplace/from-github-url'
+import { validateMcpConfig } from '@/lib/mcp/validate-config'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
@@ -129,6 +130,15 @@ export async function POST(req: NextRequest) {
       },
       { status: 409 },
     )
+  }
+
+  // Validate mcp_command against the execution-time allowlist before storing
+  // (belt-and-suspenders with lib/mcp/client.ts CVE-HARM-005 guard).
+  if (confirmed.mcp_command) {
+    const mcpErr = validateMcpConfig({ command: confirmed.mcp_command, args: [] })
+    if (mcpErr) {
+      return NextResponse.json({ error: mcpErr }, { status: 422 })
+    }
   }
 
   // Create the McpSkill row with confirmed values (SEC-08: enabled:false)

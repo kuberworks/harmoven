@@ -227,7 +227,9 @@ function parseContent(raw: string, filename: string): ParsedPack {
   // YAML / YML
   if (ext === 'yaml' || ext === 'yml') {
     try {
-      const parsed = yaml.load(raw)
+      // yaml.JSON_SCHEMA restricts to JSON-compatible types only — prevents
+      // !!timestamp → Date and !!binary → Buffer coercions on untrusted content.
+      const parsed = yaml.load(raw, { schema: yaml.JSON_SCHEMA })
       if (typeof parsed !== 'object' || parsed === null) {
         throw new GitHubImportError('PARSE_FAILED', 'YAML root must be a mapping')
       }
