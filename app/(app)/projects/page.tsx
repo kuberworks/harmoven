@@ -19,7 +19,7 @@ import { BUILT_IN_ROLES } from '@/lib/auth/built-in-roles'
 
 export const metadata: Metadata = { title: 'Projects' }
 
-const DEFAULT_PAGE_SIZE: PageSize = 20
+const DEFAULT_PAGE_SIZE: PageSize = 10
 const VALID_SORTS: SortField[] = ['updated_at', 'created_at', 'name', 'runs', 'cost']
 
 interface PageProps {
