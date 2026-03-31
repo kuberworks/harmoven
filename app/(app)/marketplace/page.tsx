@@ -14,6 +14,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Package, ShoppingBag } from 'lucide-react'
 import { InstallPackClient } from './install-pack-client'
+import { ImportFromUrlClient } from './import-from-url-client'
 
 export const metadata: Metadata = { title: 'Marketplace — Harmoven' }
 
@@ -61,6 +62,17 @@ export default async function MarketplacePage() {
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Install a pack</h2>
           <InstallPackClient />
+        </section>
+      )}
+
+      {/* Import from GitHub URL — admin only */}
+      {isAdmin && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Import from GitHub URL</h2>
+          <p className="text-xs text-muted-foreground -mt-1">
+            Fetch a raw GitHub file and convert it to a pack. Human review required before activation.
+          </p>
+          <ImportFromUrlClient />
         </section>
       )}
 
