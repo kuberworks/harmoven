@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { useRunStream, type RunState, type NodeState } from '@/hooks/useRunStream'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { PauseControls } from '@/components/run/PauseControls'
@@ -171,14 +172,14 @@ function FeedbackPanel({ runId }: { runId: string }) {
           <label className="text-xs font-medium text-muted-foreground">
             {t('analytics.feedback.hours_saved')}
           </label>
-          <input
+          <Input
             type="number"
             min="0"
             step="0.5"
             value={hoursSaved}
             onChange={(e) => setHoursSaved(e.target.value)}
             placeholder="e.g. 2.5"
-            className="w-32 rounded-md border border-surface-border bg-surface-raised px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="w-32"
           />
         </div>
 
@@ -192,7 +193,7 @@ function FeedbackPanel({ runId }: { runId: string }) {
             onChange={(e) => setValueNote(e.target.value)}
             placeholder="Any notes on business value or quality…"
             rows={2}
-            className="w-full rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+            className="w-full rounded-input border border-border bg-surface-raised px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
           />
         </div>
 
