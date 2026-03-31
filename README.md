@@ -238,15 +238,13 @@ See [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) for the full security aud
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Branch naming: `feat/*`, `fix/*`, `docs/*`. All PRs target `develop`.
+Branch naming: `feat/*`, `fix/*`, `docs/*`. All PRs target `develop`.
 
-## Commands
+---
 
-Core workflow commands:
+## License
 
-- [/sdd:add-task](add-task.md) - Create task template file with initial prompt
-- [/sdd:plan](plan.md) - Analyze prompt, generate required skills and refine task specification
-- [/sdd:implement](implement.md) - Produce working implementation of the task and verify it
+CC BY-NC 4.0 — see [`LICENSE`](LICENSE).
 
 Additional commands useful before creating a task:
 
