@@ -15,7 +15,8 @@ import {
   type SortField,
 } from './projects-controls'
 import { PAGE_SIZES, type PageSize } from './projects-shared'
-import { BUILT_IN_ROLES } from '@/lib/auth/built-in-roles'
+import { BUILT_IN_ROLES, type BuiltInRoleName } from '@/lib/auth/built-in-roles'
+import { type Prisma, RunStatus } from '@prisma/client'
 
 export const metadata: Metadata = { title: 'Projects' }
 
@@ -49,7 +50,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
     ? null
     : await db.projectMember.findMany({
         where: { user_id: userId },
-        select: { project_id: true, role: true },
+        select: { project_id: true, role: { select: { name: true, permissions: true } } },
       })
   const memberProjectIds = isAdmin ? undefined : memberships!.map((m) => m.project_id)
   // Projects where the user's role grants runs:read_costs permission.
@@ -57,7 +58,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
     isAdmin
       ? [] // bypassed below via isAdmin flag
       : memberships!
-          .filter((m) => (BUILT_IN_ROLES[m.role as keyof typeof BUILT_IN_ROLES] ?? []).includes('runs:read_costs'))
+          .filter((m) => (BUILT_IN_ROLES[m.role.name as BuiltInRoleName] ?? m.role.permissions).includes('runs:read_costs'))
           .map((m) => m.project_id),
   )
 
@@ -70,11 +71,11 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
   const projectInclude = {
     _count: { select: { runs: true } },
     runs: {
-      where: { status: { in: ['RUNNING', 'PAUSED', 'PENDING'] } },
+      where: { status: { in: ['RUNNING', 'PAUSED', 'PENDING'] as RunStatus[] } },
       select: { id: true, status: true },
       take: 10,
     },
-  } as const
+  } satisfies Prisma.ProjectInclude
 
   // ── Fetch projects + total ───────────────────────────────────────────────
   let projects: Awaited<ReturnType<typeof db.project.findMany<{ include: typeof projectInclude }>>>
