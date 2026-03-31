@@ -12,10 +12,9 @@ import { db } from '@/lib/db/client'
 import { Plus } from 'lucide-react'
 import {
   ProjectSearch, SortHeader, Pagination,
-  PAGE_SIZES,
   type SortField,
-  type PageSize,
 } from './projects-controls'
+import { PAGE_SIZES, type PageSize } from './projects-shared'
 import { BUILT_IN_ROLES } from '@/lib/auth/built-in-roles'
 
 export const metadata: Metadata = { title: 'Projects' }

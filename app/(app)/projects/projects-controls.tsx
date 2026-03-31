@@ -86,8 +86,7 @@ export function SortHeader({ field, label, currentSort, currentOrder, className 
 
 // ─── Page size picker ─────────────────────────────────────────────────────────
 
-export const PAGE_SIZES = [10, 20, 50, 100] as const
-export type  PageSize   = typeof PAGE_SIZES[number]
+export { PAGE_SIZES, type PageSize } from './projects-shared'
 
 export function PageSizePicker({ currentSize }: { currentSize: number }) {
   const router       = useRouter()
