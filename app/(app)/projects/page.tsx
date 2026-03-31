@@ -104,7 +104,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
     projects = unsorted.sort((a, b) => (rankOf.get(a.id) ?? 0) - (rankOf.get(b.id) ?? 0))
   } else {
     const orderBy =
-      sort === 'runs'       ? { _count: { runs: order } } :
+      sort === 'runs'       ? { runs: { _count: order } } :
       sort === 'name'       ? { name: order } :
       sort === 'created_at' ? { created_at: order } :
                               { updated_at: order }
