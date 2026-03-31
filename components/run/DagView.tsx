@@ -53,11 +53,11 @@ const STATUS_FILL: Record<string, string> = {
 }
 
 const STATUS_STROKE: Record<string, string> = {
-  PENDING:   'var(--surface-border)',
+  PENDING:   'var(--color-status-pending)',
   RUNNING:   'var(--color-status-running)',
   COMPLETED: 'var(--color-status-completed)',
   FAILED:    'var(--color-status-failed)',
-  SKIPPED:   'var(--surface-border)',
+  SKIPPED:   'var(--color-status-pending)',
 }
 
 const STATUS_TEXT: Record<string, string> = {
