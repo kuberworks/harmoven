@@ -84,6 +84,20 @@
   --node-text-running:   #93c5fd;
   --node-text-completed: #6ee7b7;
   --node-text-failed:    #fca5a5;
+
+  /* Kanban column header backgrounds — dark mode */
+  --kc-pending-bg:      rgba(107, 114, 128, 0.13);
+  --kc-pending-text:    #9ca3af;
+  --kc-pending-count:   rgba(107, 114, 128, 0.22);
+  --kc-running-bg:      rgba( 59, 130, 246, 0.13);
+  --kc-running-text:    #60a5fa;
+  --kc-running-count:   rgba( 59, 130, 246, 0.22);
+  --kc-gate-bg:         rgba(245, 158,  11, 0.13);
+  --kc-gate-text:       #fbbf24;
+  --kc-gate-count:      rgba(245, 158,  11, 0.22);
+  --kc-done-bg:         rgba( 34, 197,  94, 0.13);
+  --kc-done-text:       #4ade80;
+  --kc-done-count:      rgba( 34, 197,  94, 0.22);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -122,6 +136,20 @@
   --node-text-running:   #1d4ed8;
   --node-text-completed: #15803d;
   --node-text-failed:    #dc2626;
+
+  /* Kanban column header backgrounds — light mode (higher contrast text) */
+  --kc-pending-bg:      rgba(107, 114, 128, 0.10);
+  --kc-pending-text:    #4b5563;
+  --kc-pending-count:   rgba(107, 114, 128, 0.18);
+  --kc-running-bg:      rgba( 59, 130, 246, 0.10);
+  --kc-running-text:    #1d4ed8;
+  --kc-running-count:   rgba( 59, 130, 246, 0.18);
+  --kc-gate-bg:         rgba(245, 158,  11, 0.10);
+  --kc-gate-text:       #92400e;
+  --kc-gate-count:      rgba(245, 158,  11, 0.18);
+  --kc-done-bg:         rgba( 34, 197,  94, 0.10);
+  --kc-done-text:       #15803d;
+  --kc-done-count:      rgba( 34, 197,  94, 0.18);
 }
 
 /* ─────────────────────────────────────────────────────────────
