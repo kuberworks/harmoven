@@ -1,8 +1,8 @@
 # Harmoven
 
-**Multi-tenant AI agent orchestration platform.** Submit a prompt, Harmoven runs it through a multi-LLM pipeline (Classifier → Planner → Writer → Reviewer), enforces human-gate approvals, tracks every token and dollar, and exposes the entire flow over a versioned REST API.
+**Self-hosted AI agent orchestration platform.** Describe a business goal in plain language — Harmoven runs it through a graph of specialised AI agents (Classifier → Planner → Writer → Reviewer → Critical Reviewer), enforces human-gate approvals at any checkpoint, tracks every token and dollar, and exposes the full flow over a versioned REST API.
 
-Self-host on Docker Compose in minutes. Built for teams that cannot send sensitive data to third-party SaaS services.
+Deploy in minutes on Docker Compose. Built for teams that need data sovereignty and cannot send sensitive content to third-party SaaS services.
 
 ---
 
@@ -10,31 +10,54 @@ Self-host on Docker Compose in minutes. Built for teams that cannot send sensiti
 
 | Feature | Detail |
 |---|---|
-| **Multi-agent pipeline** | CLASSIFIER → PLANNER → WRITER → REVIEWER, parallelisable via a DAG engine |
-| **Human-in-the-loop gates** | Pause any run at a defined checkpoint for human approval before continuing |
-| **Multi-LLM routing** | Per-node LLM selection based on confidentiality level, jurisdiction, estimated tokens |
-| **RBAC** | 7 roles, 27 permissions, per-project membership — enforced at API and UI layer |
-| **Audit log** | Immutable PostgreSQL-level log (UPDATE/DELETE blocked by DB rules) |
-| **REST API** | Versioned OpenAPI v1, suitable for CI/CD integration |
-| **Marketplace** | Install skill packs; run `GET /api/marketplace` for available packs |
-| **i18n** | English and French, switchable per user |
+| **Multi-agent DAG pipeline** | Agents execute as a Directed Acyclic Graph — CLASSIFIER → PLANNER → WRITER → REVIEWER → CRITICAL REVIEWER, with parallelism at each level |
+| **Human-in-the-loop gates** | Pause any run at a defined node for human approval, partial edit, or replay before continuing |
+| **Multi-LLM routing** | Per-node model selection driven by confidentiality level, jurisdiction tags, context-window fit, and remaining budget |
+| **Visual pipeline builder** | Drag-and-drop DAG editor (React Flow) to create and save reusable pipeline templates per project |
+| **RBAC** | 7 built-in roles, 27 atomic permissions, per-project membership — enforced at API and UI layer |
+| **Immutable audit log** | PostgreSQL-level log; UPDATE and DELETE are blocked by DB rules |
+| **Real-time SSE streaming** | Live run events (node start/complete, cost updates, gate opens) streamed to the browser |
+| **Context injection** | Inject additional context into a running pipeline mid-execution without restarting |
+| **Marketplace** | Install domain skill packs (official registry or Git/local) to extend agent capabilities |
+| **Analytics dashboard** | KPI board: runs completed, gate decisions, cost over time, ROI estimate |
+| **Config GitOps** | `orchestrator.yaml` auto-versioned in a local git mirror on every change |
+| **Auto-updates** | Background update check with digest verification and supply-chain hardening |
+| **i18n** | English and French, switchable per user; instance-wide default in `orchestrator.yaml` |
+| **Adaptive UI levels** | GUIDED / STANDARD / ADVANCED — interface complexity adapts to user experience score |
+| **Electron desktop mode** | Single-user offline mode; SQLite replaces PostgreSQL automatically |
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 15 (App Router, Server Components) |
+| Language | TypeScript 5 |
+| Database | PostgreSQL 16 via Prisma ORM |
+| Auth | Better Auth 1.5+ — TOTP + Passkey MFA |
+| UI | Tailwind CSS, Radix UI, Lucide icons |
+| Pipeline editor | React Flow (`@xyflow/react`) |
+| LLM providers | Anthropic, OpenAI, Google Gemini, LiteLLM gateway (opt-in), CometAPI (opt-in) |
+| MCP skills | Model Context Protocol SDK 1.28 |
+| Deployment | Docker Compose / Electron |
 
 ---
 
 ## Requirements
 
-| Dependency | Version |
+| Dependency | Minimum version |
 |---|---|
-| Node.js | ≥ 22 |
-| Docker + Docker Compose | v2+ |
-| PostgreSQL | 16 (included in Compose) |
-| Anthropic API key | Required — [console.anthropic.com](https://console.anthropic.com) |
+| Node.js | 22 |
+| Docker + Docker Compose | v2 |
+| PostgreSQL | 16 (bundled in Compose) |
+| Anthropic API key | Required for default LLM profiles |
 
 ---
 
-## Quick start (Docker Compose — 5 minutes)
+## Quick start (Docker Compose)
 
-### 1. Clone and copy env template
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/your-org/harmoven.git
@@ -42,21 +65,25 @@ cd harmoven
 cp .env.example .env
 ```
 
-### 2. Fill in the required secrets in `.env`
+Edit `.env` — fill in the three mandatory secrets:
 
 ```bash
-# Mandatory
 DATABASE_URL=postgresql://harmoven:CHANGE_ME@db:5432/harmoven
-AUTH_SECRET=$(openssl rand -base64 32)       # Windows: see CONTRIBUTING.md
+AUTH_SECRET=$(openssl rand -base64 32)
 ANTHROPIC_API_KEY=sk-ant-...
+POSTGRES_PASSWORD=CHANGE_ME   # must match the password in DATABASE_URL
+```
 
-# Optional — only if you want a second LLM provider
+Optional second provider:
+
+```bash
 # OPENAI_API_KEY=sk-...
+# GOOGLE_AI_API_KEY=...
 ```
 
 > All variables are documented inline in `.env.example`. Never commit `.env`.
 
-### 3. Start
+### 2. Start
 
 ```bash
 docker compose up -d
@@ -64,14 +91,13 @@ docker compose up -d
 
 The app starts at **http://localhost:3000**.
 
-On first boot, a **setup token** is printed in Docker logs. Navigate to `/setup`, enter the token, and complete the 4-step wizard (admin account + LLM profile).
+On first boot a **setup token** is printed in the logs. Open `/setup`, enter the token, and complete the wizard (admin account + LLM profile + organisation preset).
 
 ```bash
-# See the token
 docker compose logs app | grep "setup token"
 ```
 
-### 4. Verify
+### 3. Verify
 
 ```bash
 curl http://localhost:3000/api/health
@@ -83,68 +109,84 @@ curl http://localhost:3000/api/health
 ## Development setup (local, no Docker)
 
 ```bash
-# Install dependencies
 npm install
 
-# Run DB via Docker, app locally
+# Start only the database via Docker
 docker compose up db -d
-cp .env.example .env   # fill in DATABASE_URL pointing to localhost
+cp .env.example .env   # point DATABASE_URL to localhost:5432
 
-# Generate Prisma client and run migrations
-npm run db:generate
+# Apply migrations and generate Prisma client
 npm run db:migrate
+npm run db:generate
 
-# Start dev server
+# Start the dev server
 CONFIG_GIT_DIR=/tmp/harmoven-config-git npm run dev
 ```
 
-> `CONFIG_GIT_DIR` tells the config-git module where to store the local git mirror of `orchestrator.yaml`. Any writable path works in development.
+> `CONFIG_GIT_DIR` tells the config-git module where to store the local git mirror of `orchestrator.yaml`. Any writable path works during development.
 
 ---
 
 ## Configuration
 
-Two files control runtime behaviour — keep them in version control (no secrets in either):
+Two files drive runtime behaviour — both live in version control (zero secrets in either):
 
 | File | Purpose |
 |---|---|
-| `orchestrator.yaml` | Org name, preset, LLM profiles, security policy, rate limits |
-| `.env` | Secrets only — never committed |
+| `orchestrator.yaml` | Org name, preset, LLM profiles, security policy, rate limits, marketplace registry |
+| `.env` | Secrets only (DATABASE_URL, AUTH_SECRET, API keys) — never committed |
 
-### Presets (`orchestrator.yaml → organization.preset`)
+### Organisation presets (`organization.preset`)
 
-| Preset | Description |
+| Preset | Profile |
 |---|---|
-| `small_business` | Low concurrency, cost cap $10/day, memory rate limiter |
+| `small_business` | Low concurrency, $10/day auto-run cost cap, in-memory rate limiter |
 | `enterprise` | Higher concurrency, Upstash rate limiter, Presidio PII detection opt-in |
 | `developer` | Relaxed limits, MFA optional for non-admins |
+
+### LLM profiles
+
+Three tiers ship out of the box (mapped in `orchestrator.yaml → llm.profiles_active`):
+
+| Tier | Default model | Typical use |
+|---|---|---|
+| `fast` | Claude Haiku | CLASSIFIER, simple routing |
+| `balanced` | Claude Sonnet | PLANNER, WRITER |
+| `powerful` | Claude Opus | REVIEWER, CRITICAL REVIEWER |
+
+The LLM selector applies hard constraints before scoring: confidentiality level (`CRITICAL` → local model only), jurisdiction tags (`eu_only`, `no_cn_jurisdiction`, `local_only`), and context-window fit.
 
 ---
 
 ## Optional: LiteLLM gateway (multi-provider routing)
 
-To use OpenAI, Mistral, or local models alongside Anthropic, enable the LiteLLM sidecar:
+Route to OpenAI, Mistral, Gemini, or local models alongside Anthropic:
 
 ```bash
-docker compose --profile litellm up -d
+# Find the current pinned digest first
+docker pull ghcr.io/berriai/litellm:main-v1.82.6
+docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/berriai/litellm:main-v1.82.6
+
+# Start with digest pinning
+LITELLM_DIGEST=sha256:<digest> docker compose --profile litellm up -d
 ```
 
-Then set `LITELLM_GATEWAY_URL=http://litellm:4000` in `.env` (already the default in Compose).
+Then set `litellm.enabled: true` in `orchestrator.yaml`. The app calls `http://litellm:4000` — raw provider keys are never exposed to the app container.
 
 ---
 
 ## npm scripts
 
 ```bash
-npm run dev              # Start local dev server (Next.js)
+npm run dev              # Local dev server (Next.js)
 npm run build            # Production build
 npm run test             # All tests (unit + integration)
-npm run test:unit        # Unit tests only
+npm run test:unit        # Unit tests only (mock LLM tier)
 npm run test:integration # Integration tests (requires live DB)
-npm run test:e2e         # E2E tests (Playwright — scaffold pending)
+npm run test:e2e         # E2E tests (Playwright)
 npm run lint             # ESLint
 npm run typecheck        # tsc --noEmit
-npm run db:migrate       # Run pending Prisma migrations
+npm run db:migrate       # Apply pending Prisma migrations
 npm run db:seed          # Seed DB with demo data
 npm run db:studio        # Open Prisma Studio
 npm run generate:openapi # Regenerate openapi/v1.yaml
@@ -154,21 +196,25 @@ npm run generate:openapi # Regenerate openapi/v1.yaml
 
 ## REST API
 
-OpenAPI spec: [`openapi/v1.yaml`](openapi/v1.yaml)
+Full spec: [`openapi/v1.yaml`](openapi/v1.yaml)
 
 Base URL: `http://localhost:3000/api/v1`
 
-Authentication: `Authorization: Bearer <project-api-key>` (prefix `hv1_`)
+Authentication: `Authorization: Bearer hv1_<32 hex chars>` — generate a key in **Project Settings → API Keys**.
 
 Key endpoints:
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/v1/runs` | Submit a prompt, start a pipeline run |
-| `GET` | `/v1/runs/:id` | Get run status + node outputs |
-| `GET` | `/v1/runs/:id/stream` | SSE stream of run events |
-| `POST` | `/v1/runs/:id/gate/:nodeId/approve` | Approve a human gate |
+| `POST` | `/v1/runs` | Submit a task, start a pipeline run |
+| `GET` | `/v1/runs/:id` | Run status, node outputs, cost |
+| `GET` | `/v1/runs/:id/stream` | SSE stream of all run events |
+| `DELETE` | `/v1/runs/:id` | Abort a running pipeline |
+| `POST` | `/v1/runs/:id/gate` | Approve or reject a human gate |
 | `GET` | `/v1/projects` | List accessible projects |
+| `GET` | `/api/analytics` | KPI board data (admin / project admin) |
+
+Rate limit: **60 requests / minute per API key**. Excess returns HTTP 429 with `Retry-After`.
 
 ---
 
@@ -178,47 +224,62 @@ Key endpoints:
 Browser / API client
         │
         ▼
-  Next.js App Router (Server Components + API routes)
+  Next.js 15 App Router
+  (Server Components + API routes)
         │
         ▼
-  Execution Engine (lib/execution/)
-  ┌─────────────────────────────────────┐
-  │  DAG  →  Node queue                 │
-  │  CLASSIFIER → PLANNER → WRITER      │
-  │           → REVIEWER                │
-  │  HumanGate (pause / resume)         │
-  └─────────────────────────────────────┘
+  Execution Engine  (lib/execution/)
+  ┌──────────────────────────────────────────┐
+  │  DAG executor (custom / Temporal / Restate)│
+  │  CLASSIFIER → PLANNER → WRITER           │
+  │           ↘ REVIEWER → CRITICAL REVIEWER │
+  │  HumanGate  (pause / inject / replay)    │
+  │  Budget guard · heartbeat watchdog       │
+  └──────────────────────────────────────────┘
         │
         ▼
-  LLM Router (lib/llm/)
-  ┌──────────────────────────────────┐
-  │ selectLlm(confidentiality,       │
-  │           jurisdiction, tokens)  │
-  │ → Anthropic direct               │
-  │ → LiteLLM gateway (opt-in)       │
-  └──────────────────────────────────┘
+  LLM Router  (lib/llm/)
+  ┌──────────────────────────────────────────┐
+  │  selectLlm(confidentiality, jurisdiction,│
+  │            tokens, budget)               │
+  │  → Anthropic direct                      │
+  │  → OpenAI / Gemini / CometAPI            │
+  │  → LiteLLM gateway sidecar (opt-in)      │
+  └──────────────────────────────────────────┘
         │
         ▼
-  PostgreSQL 16  (via Prisma)
-  ┌──────────────────────────────────┐
-  │ Projects · Runs · Nodes          │
-  │ AuditLog (immutable, DB-enforced)│
-  │ ProjectMember · RBAC roles       │
-  └──────────────────────────────────┘
+  PostgreSQL 16  (Prisma ORM)
+  ┌──────────────────────────────────────────┐
+  │  Projects · Runs · Nodes · Handoffs      │
+  │  AuditLog (immutable, DB-enforced)       │
+  │  ProjectMember · RBAC · API keys         │
+  │  MCP skills · Pipeline templates         │
+  └──────────────────────────────────────────┘
 ```
+
+---
+
+## Permission model
+
+27 permissions are organised into 7 built-in roles with additive inheritance:
+
+`viewer` ⊂ `operator` ⊂ `user` ⊂ `user_with_costs` ⊂ `developer` ⊂ `admin` ⊂ `instance_admin`
+
+Custom roles can extend any built-in role. Roles are scoped per project; a user can be `admin` in one project and `viewer` in another.
 
 ---
 
 ## Security highlights
 
-- Argon2id password hashing, timing-safe API key comparison
-- MFA (TOTP + Passkey) enforced for `instance_admin`
-- SSRF protection: DNS + private IP block, fails closed
-- CSP without `unsafe-eval` in production, HSTS 2 years
-- Docker images pinned by SHA256 digest
-- Immutable audit log (PostgreSQL-level, UPDATE/DELETE blocked)
-- Rate limiting: 20 sign-in attempts / 15 min, 200 global
-- Zero secrets in Docker images
+- Argon2id password hashing; timing-safe API key comparison
+- MFA (TOTP or Passkey) enforced for all `instance_admin` accounts
+- SSRF protection: DNS + private IP block on all outbound agent calls, fails closed
+- CSP without `unsafe-eval` in production; HSTS 2 years
+- Docker images and marketplace packs pinned by SHA-256 digest
+- Immutable audit log (PostgreSQL UPDATE/DELETE blocked at DB level)
+- Sign-in rate limit: 5 attempts / IP / 15 min; API key limit: 60 req / min
+- Zero secrets in Docker images or `orchestrator.yaml`
+- Cosign image verification (opt-in via `orchestrator.yaml → security.supply_chain`)
 
 See [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) for the full security audit.
 
@@ -228,11 +289,12 @@ See [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) for the full security aud
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `/setup` shows blank page | `SETUP_TOKEN` not set | Check `docker compose logs app \| grep token` |
-| `PrismaClientInitializationError` | DB not ready | Run `docker compose up db -d`, wait 5s, retry |
-| `AUTH_SECRET` error on startup | Missing or short secret | `openssl rand -base64 32` → paste into `.env` |
-| Dev server crashes instantly | `CONFIG_GIT_DIR` not set | Prefix command with `CONFIG_GIT_DIR=/tmp/hv-cfg` |
-| LLM calls fail with 401 | Wrong API key | Verify `ANTHROPIC_API_KEY` in `.env`, no trailing space |
+| `/setup` blank page | Setup token not printed yet | `docker compose logs app \| grep "setup token"` |
+| `PrismaClientInitializationError` | DB not ready | `docker compose up db -d`, wait 10 s, restart app |
+| `AUTH_SECRET` error on startup | Missing or too-short secret | `openssl rand -base64 32` → paste into `.env` |
+| Dev server crashes immediately | `CONFIG_GIT_DIR` not set | Prefix with `CONFIG_GIT_DIR=/tmp/hv-cfg npm run dev` |
+| LLM calls fail with 401 | Wrong or trailing-space API key | Verify `ANTHROPIC_API_KEY` in `.env` |
+| Gate never resolves | Gate timeout expired | Check `orchestrator.yaml → execution_engine` timeout settings |
 
 ---
 
@@ -277,62 +339,3 @@ Key patterns implemented in this plugin:
 - **Continuous learning** — Automatically builds specific skills the agent needs to implement a task, which it might otherwise be unable to perform from scratch.
 - **Spec-driven development pattern** — Based on the arc42 specification standard adjusted for LLM capabilities, this pattern eliminates elements of the specification that do not add value to implementation quality.
 - **MAKER** — An agent reliability pattern introduced in [Solving a Million-Step LLM Task with Zero Errors](https://arxiv.org/abs/2511.09030). It minimizes agent mistakes caused by context accumulation and hallucinations by utilizing clean-state agent launches, filesystem-based memory storage, and multi-agent voting during critical decisions.
-
-## Vibe Coding vs. Specification-Driven Development
-
-This plugin is not a "vibe coding" solution, though it can function like one out of the box. By default, it is designed to work from a single prompt through to task completion, making reasonable assumptions and evidence-based decisions instead of constantly asking for clarification. This is because developer time is more valuable than model time, allowing the developer to decide how much time is worth spending on a task. The plugin will always produce functional results, but quality may be sub-optimal without human feedback.
-
-To improve quality, you can correct the generated specification or leave comments using `//`, then run the `/sdd:plan` command again with the `--refine` flag. You can also verify each planning and implementation phase by adding the `--human-in-the-loop` flag. Majority of researches show that human feedback is the most effective way to improve results.
-
-Our tests showed that even when the initially generated specification was incorrect due to missing information or task complexity, the agent was still able to self-correct until it reached a working solution. However, this process often took longer, as the agent explored incorrect paths and stopped more frequently. To avoid this, we strongly recommend decomposing complex tasks into smaller, separate tasks with dependencies and reviewing the specification for each one. You can add dependencies between tasks as arguments to the `/sdd:add-task` command, and the model will link them by adding a `depends_on` section to the task file's frontmatter.
-
-Even if you prefer a less hands-on approach, you can still use the plugin for complex tasks without decomposition or human verification — though you may need tools to keep the session active for longer periods, for example ralph-loop.
-
-Learn more about available customization options in [Customization](customization.md).
-
-## FAQ
-
-**Do I need to re-run `/plan` or `/implement` after context compaction (`/compact`)?**
-
-After compaction, close the terminal and resume with `/plan --continue` or `/implement --continue`. This produces more predictable results than continuing in a compacted context. Using `/model sonnet[1m]` reduces compaction frequency.
-
-**Do I need to prefix every prompt with `/plan` or `/implement`?**
-
-No. Run these commands once to start the workflow. The only time to invoke them again is when you change the specification or code and want agents to update misaligned sections — use `/plan --refine` or `/implement --refine`.
-
-**Should I clear context between `/plan` and `/implement`?**
-
-Yes. Run `/clear` (or re-open Claude Code) after `/plan` completes and before running `/implement`. The planning phase fills the context with analysis artifacts; a clean context gives implementation agents better results.
-
-## Theoretical Foundation
-
-The SDD plugin is based on established software engineering methodologies and research:
-
-### Core Methodologies
-
-- [GitHub Spec Kit](https://github.com/github/spec-kit) - Specification-driven development templates and workflows
-- [OpenSpec](https://github.com/Fission-AI/OpenSpec) - Open specification format for software requirements
-- [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) - Structured approach to breaking down complex features
-
-### Supporting Research
-
-- [Specification-Driven Development](https://en.wikipedia.org/wiki/Design_by_contract) - Design by contract and formal specification approaches
-- [Agile Requirements Engineering](https://www.agilealliance.org/agile101/) - User stories, acceptance criteria, and iterative refinement
-- [Test-Driven Development](https://www.agilealliance.org/glossary/tdd/) - Writing tests before implementation
-- [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) - Separation of concerns and dependency inversion
-- [Vertical Slice Architecture](https://jimmybogard.com/vertical-slice-architecture/) - Feature-based organization for incremental delivery
-- [Verbalized Sampling](https://arxiv.org/abs/2510.01171) - A training-free prompting strategy for diverse idea generation. It achieves a **2-3x diversity improvement** while maintaining quality. Used for the `create-ideas`, `brainstorm`, and `plan` commands.
-- [Solving a Million-Step LLM Task with Zero Errors](https://arxiv.org/abs/2511.09030) - Reliability pattern for LLM-based agents that enables solving complex tasks with zero errors.
-- [LLM-as-a-Judge](https://arxiv.org/abs/2306.05685) - Evaluation patterns for grading LLM output.
-- [Multi-Agent Debate](https://arxiv.org/abs/2305.14325) - Leveraging multiple perspectives for higher accuracy.
-- [Chain-of-Verification](https://arxiv.org/abs/2309.11495) - Reducing hallucinations through verification steps.
-- [Tree of Thoughts](https://arxiv.org/abs/2305.10601) - Structured exploration of complex solution spaces.
-- [Constitutional AI](https://arxiv.org/abs/2212.08073) - Defining core principles for agent behavior.
-- [Chain of Thought Prompting](https://arxiv.org/abs/2201.11903) - Enabling step-by-step reasoning.
-- [TICKing All the Boxes](https://arxiv.org/abs/2410.03608) - Checklist decomposition for LLM evaluation and generation.
-- [RocketEval](https://arxiv.org/abs/2503.05142) - Efficient automated LLM evaluation via grading checklists (0.986 Spearman).
-- [AutoChecklist](https://arxiv.org/abs/2603.07019) - Composable pipelines for checklist generation and scoring.
-- [Branch-Solve-Merge](https://arxiv.org/abs/2310.15123) - Decomposed evaluation improving LLM evaluation and generation.
-- [InFoBench](https://arxiv.org/abs/2401.03601) - Decomposed requirements following ratio for instruction-following evaluation.
-- [Rethinking Rubric Generation](https://arxiv.org/pdf/2602.05125) - Automatic rubric generation for improving LLM judges.
-- [LLM-as-a-Meta-Judge](https://arxiv.org/pdf/2407.19594) - Meta-evaluation of LLM judges for quality assurance.
