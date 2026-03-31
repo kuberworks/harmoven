@@ -51,12 +51,14 @@ interface Props {
 
 // ─── 4-column layout matching mockup scr-runs ─────────────────────────────────
 
+type KanbanVarKey = 'pending' | 'running' | 'gate' | 'done'
+
 type KanbanColumn = {
   key: string
   label: string
   statuses: string[]
-  headerClass: string
-  countClass: string
+  /** CSS variable prefix — matches --kc-{varKey}-{bg|text|count} in globals.css */
+  varKey: KanbanVarKey
 }
 
 const COLUMNS: KanbanColumn[] = [
@@ -64,29 +66,25 @@ const COLUMNS: KanbanColumn[] = [
     key: 'pending',
     label: 'Pending',
     statuses: ['PENDING'],
-    headerClass: 'bg-surface-hover text-muted-foreground',
-    countClass:  'bg-surface-overlay text-muted-foreground',
+    varKey: 'pending',
   },
   {
     key: 'running',
     label: 'Running',
     statuses: ['RUNNING'],
-    headerClass: 'bg-blue-500/8 text-blue-400',
-    countClass:  'bg-blue-500/15 text-blue-400',
+    varKey: 'running',
   },
   {
     key: 'gate',
     label: '⏸ Gate open',
     statuses: ['PAUSED', 'SUSPENDED'],
-    headerClass: 'bg-amber-500/8 text-amber-400',
-    countClass:  'bg-amber-500/15 text-amber-400',
+    varKey: 'gate',
   },
   {
     key: 'done',
     label: 'Completed',
     statuses: ['COMPLETED', 'FAILED'],
-    headerClass: 'bg-emerald-500/8 text-emerald-400',
-    countClass:  'bg-emerald-500/15 text-emerald-400',
+    varKey: 'done',
   },
 ]
 
@@ -252,9 +250,18 @@ export function RunsKanbanClient({ projectId, initialRuns }: Props) {
           return (
             <div key={col.key} className="w-[240px] shrink-0 flex flex-col gap-2">
               {/* Column header */}
-              <div className={`flex items-center justify-between px-2.5 py-2 rounded-md mb-0.5 ${col.headerClass}`}>
+              <div
+                className="flex items-center justify-between px-2.5 py-2 rounded-md mb-0.5"
+                style={{
+                  background: `var(--kc-${col.varKey}-bg)`,
+                  color: `var(--kc-${col.varKey}-text)`,
+                }}
+              >
                 <span className="text-[11px] font-medium uppercase tracking-[0.07em]">{col.label}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${col.countClass}`}>
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
+                  style={{ background: `var(--kc-${col.varKey}-count)` }}
+                >
                   {colRuns.length}
                 </span>
               </div>
