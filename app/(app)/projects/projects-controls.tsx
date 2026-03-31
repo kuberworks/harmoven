@@ -95,7 +95,7 @@ export function PageSizePicker({ currentSize }: { currentSize: number }) {
 
   function pick(size: number) {
     const params = new URLSearchParams(searchParams.toString())
-    if (size === 20) params.delete('size') // 20 is default — keep URL clean
+    if (size === 10) params.delete('size') // 10 is default — keep URL clean
     else params.set('size', String(size))
     params.delete('page')
     router.replace(`${pathname}?${params.toString()}`)
