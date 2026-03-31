@@ -889,3 +889,21 @@ model PipelineTemplateVersion {
   @@unique([template_id, version])
   @@index([template_id])
 }
+
+// ─── GitHub Import Preview ────────────────────────────────────────────────────
+// Staging row created by POST /api/admin/skills/from-url.
+// Stores the content_sha256 at preview time so the approval step can
+// detect if the remote file changed between preview and approve (SEC-10).
+// Expires automatically — rows older than 24 h should be purged by a cron.
+model GitHubImportPreview {
+  id              String   @id
+  actor           String   // userId of the admin who initiated the preview
+  source_url      String   // original GitHub raw URL
+  content_sha256  String   // SHA-256 of content at preview time (SEC-10)
+  scaffold        Json     // serialized GitHubImportPreview (all fields + inferred flags)
+  created_at      DateTime @default(now())
+  expires_at      DateTime // created_at + 24h — must be checked on approve
+
+  @@index([actor])
+  @@index([expires_at])
+}
