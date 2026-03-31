@@ -47,6 +47,7 @@ import type { RunStatus, NodeStatus } from '@/types/run.types'
 interface InitialRun {
   id: string
   status: string
+  task_input: string | null
   cost_actual_usd: number
   tokens_actual: number
   paused_at: string | null
@@ -533,6 +534,11 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
+            {initialRun.task_input && (
+              <span className="text-sm font-medium text-foreground truncate max-w-xs" title={initialRun.task_input}>
+                {initialRun.task_input.trim().split(/\s+/).slice(0, 8).join(' ')}{initialRun.task_input.trim().split(/\s+/).length > 8 ? '…' : ''}
+              </span>
+            )}
             <Badge variant={STATUS_VARIANT[run.status] ?? 'pending'} className="text-sm px-3 py-1">
               {run.status}
             </Badge>

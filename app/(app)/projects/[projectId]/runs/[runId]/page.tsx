@@ -73,6 +73,7 @@ export default async function RunPage({ params }: Props) {
   const serialisedRun = {
     id: run.id,
     status: run.status,
+    task_input: run.task_input ?? null,
     // Cost fields only exposed when caller has stream:costs
     cost_actual_usd: permissions.has('stream:costs') ? Number(run.cost_actual_usd) : 0,
     tokens_actual:   permissions.has('stream:costs') ? run.tokens_actual : 0,
