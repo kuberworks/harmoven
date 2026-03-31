@@ -44,7 +44,7 @@ export function ProjectSearch({ defaultValue }: { defaultValue: string }) {
 
 // ─── Sortable column header ───────────────────────────────────────────────────
 
-export type SortField = 'updated_at' | 'created_at' | 'name' | 'runs' | 'cost'
+export type SortField = 'updated_at' | 'created_at' | 'name' | 'runs' | 'cost' | 'domain' | 'active'
 
 interface SortHeaderProps {
   field:        SortField

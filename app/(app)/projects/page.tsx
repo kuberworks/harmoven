@@ -20,7 +20,7 @@ import { BUILT_IN_ROLES } from '@/lib/auth/built-in-roles'
 export const metadata: Metadata = { title: 'Projects' }
 
 const DEFAULT_PAGE_SIZE: PageSize = 10
-const VALID_SORTS: SortField[] = ['updated_at', 'created_at', 'name', 'runs', 'cost']
+const VALID_SORTS: SortField[] = ['updated_at', 'created_at', 'name', 'runs', 'cost', 'domain', 'active']
 
 interface PageProps {
   searchParams: Promise<{ sort?: string; order?: string; page?: string; q?: string; size?: string }>
@@ -80,21 +80,32 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
   let projects: Awaited<ReturnType<typeof db.project.findMany<{ include: typeof projectInclude }>>>
   let total: number
 
-  if (sort === 'cost') {
-    // Cost sort: aggregate SUM per project, sort in JS, paginate by sliced IDs.
+  if (sort === 'cost' || sort === 'active') {
+    // JS sorts: aggregate per project, sort in memory, paginate by sliced IDs.
     // take: 10_000 caps memory footprint for instance_admin on large installations.
     const allIds = (await db.project.findMany({ where: baseWhere, select: { id: true }, take: 10_000 })).map(p => p.id)
     total = allIds.length
 
-    const costRows = await db.run.groupBy({
-      by: ['project_id'],
-      where: { project_id: { in: allIds } },
-      _sum: { cost_actual_usd: true },
-    })
-    const costById = new Map(costRows.map(r => [r.project_id, Number(r._sum.cost_actual_usd ?? 0)]))
+    let valueById: Map<string, number>
+    if (sort === 'cost') {
+      const costRows = await db.run.groupBy({
+        by: ['project_id'],
+        where: { project_id: { in: allIds } },
+        _sum: { cost_actual_usd: true },
+      })
+      valueById = new Map(costRows.map(r => [r.project_id, Number(r._sum.cost_actual_usd ?? 0)]))
+    } else {
+      // active: count runs with status RUNNING | PAUSED | PENDING
+      const activeRows = await db.run.groupBy({
+        by: ['project_id'],
+        where: { project_id: { in: allIds }, status: { in: ['RUNNING', 'PAUSED', 'PENDING'] } },
+        _count: { _all: true },
+      })
+      valueById = new Map(activeRows.map(r => [r.project_id, r._count._all]))
+    }
 
     const sortedIds = [...allIds].sort((a, b) => {
-      const diff = (costById.get(a) ?? 0) - (costById.get(b) ?? 0)
+      const diff = (valueById.get(a) ?? 0) - (valueById.get(b) ?? 0)
       return order === 'asc' ? diff : -diff
     })
 
@@ -106,6 +117,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
     const orderBy =
       sort === 'runs'       ? { runs: { _count: order } } :
       sort === 'name'       ? { name: order } :
+      sort === 'domain'     ? { domain_profile: order } :
       sort === 'created_at' ? { created_at: order } :
                               { updated_at: order }
 
@@ -182,9 +194,9 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
                   <SortHeader field="created_at" label="Created"  currentSort={sort} currentOrder={order} className="hidden md:table-cell" />
                   <SortHeader field="runs"       label="Runs"     currentSort={sort} currentOrder={order} className="hidden sm:table-cell" />
                   <SortHeader field="cost"       label="Cost"     currentSort={sort} currentOrder={order} className="hidden sm:table-cell" />
+                  <SortHeader field="domain"     label="Domain"   currentSort={sort} currentOrder={order} className="hidden sm:table-cell" />
+                  <SortHeader field="active"     label="Active"   currentSort={sort} currentOrder={order} className="hidden sm:table-cell" />
                 </Suspense>
-                <th className="px-3 py-2 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-[0.06em]">Domain</th>
-                <th className="px-3 py-2 text-left text-[11px] font-medium text-muted-foreground uppercase tracking-[0.06em] hidden sm:table-cell">Active</th>
               </tr>
             </thead>
             <tbody>
