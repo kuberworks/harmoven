@@ -30,7 +30,7 @@ export function LocaleSwitcher({ currentLocale }: LocaleSwitcherProps) {
         await fetch('/api/users/me/locale', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locale: next }),
+          body: JSON.stringify({ ui_locale: next }),
         })
         setLocale(next)
         // Use router.refresh() instead of window.location.reload():
