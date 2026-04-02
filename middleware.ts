@@ -1,5 +1,7 @@
 // middleware.ts — Next.js edge middleware
 // Session guard: redirects unauthenticated requests to /login.
+// First-run guard: redirects any unauthenticated request to /setup when no admin
+// account exists yet, and redirects /setup to /login once setup is complete.
 //
 // Protected routes: all paths except:
 //   - /login, /setup         — public auth/first-run pages
@@ -66,6 +68,27 @@ interface BetterAuthSession {
   session?: { twoFactorVerified?: boolean }
 }
 
+/** In-memory cache for /api/auth/setup-status — refreshed every 60 s. */
+let setupCache: { setup_required: boolean; until: number } | null = null
+
+/**
+ * Fetch setup status with a 60 s in-memory TTL.
+ * Returns true when no admin account exists yet (i.e. /setup should be shown).
+ */
+async function fetchSetupRequired(base: string): Promise<boolean> {
+  const now = Date.now()
+  if (setupCache && now < setupCache.until) return setupCache.setup_required
+  try {
+    const res = await fetch(`${base}/api/auth/setup-status`)
+    if (res.ok) {
+      const data = await res.json() as { setup_required?: boolean }
+      setupCache = { setup_required: data.setup_required ?? false, until: now + 60_000 }
+      return setupCache.setup_required
+    }
+  } catch { /* ignore — assume setup complete to fail safe */ }
+  return false
+}
+
 /** In-memory cache for /api/instance/policy — refreshed every 60 s. */
 let policyCache: { mfa_required_for_admin: boolean; until: number } | null = null
 
@@ -94,6 +117,23 @@ const SESSION_COOKIE_NAME = 'better-auth.session_token'
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl
+
+  const authBase = (process.env.AUTH_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+
+  // ── First-run guard ──────────────────────────────────────────────────────────
+  // If no admin account exists yet, every non-/setup request is redirected to /setup
+  // so the wizard runs automatically on first launch.
+  // Conversely, once setup is complete, visiting /setup redirects to /login.
+  // API routes are exempted — the setup wizard itself calls /api/auth/* and /api/health.
+  if (!isApiRoute(pathname)) {
+    const setupRequired = await fetchSetupRequired(authBase)
+    if (setupRequired && pathname !== '/setup' && !pathname.startsWith('/setup/')) {
+      return NextResponse.redirect(new URL('/setup', request.url))
+    }
+    if (!setupRequired && (pathname === '/setup' || pathname.startsWith('/setup/'))) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+  }
 
   if (isPublic(pathname)) {
     return NextResponse.next()
@@ -136,7 +176,6 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   // vulnerable to SSRF via a forged Host header — an attacker could redirect the session
   // check to an internal network endpoint. AUTH_URL is set at deploy time and never
   // influenced by the incoming request.
-  const authBase = (process.env.AUTH_URL ?? 'http://localhost:3000').replace(/\/$/, '')
   const sessionUrl = `${authBase}/api/auth/get-session`
 
   // Fetch session + policy in parallel — policy has a 60 s in-memory cache so the
