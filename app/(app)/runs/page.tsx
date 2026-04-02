@@ -115,10 +115,10 @@ export default async function RunsPage() {
                         <div className="shrink-0 text-right">
                           <p className="text-xs text-muted-foreground">
                             {run.started_at
-                              ? new Date(run.started_at).toLocaleString([], {
+                              ? new Date(run.started_at).toLocaleString('en', {
                                   dateStyle: 'short', timeStyle: 'short',
                                 })
-                              : new Date(run.created_at).toLocaleString([], {
+                              : new Date(run.created_at).toLocaleString('en', {
                                   dateStyle: 'short', timeStyle: 'short',
                                 })}
                           </p>

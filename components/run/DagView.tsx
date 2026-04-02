@@ -234,8 +234,8 @@ function DetailPanel({
             <div className="rounded-lg overflow-hidden divide-y divide-border border border-border">
               {[
                 ['Model',      state?.llm_profile_id ?? '—',  false],
-                ['Tokens in',  state?.tokens_in  != null ? state.tokens_in.toLocaleString()  : '—', true],
-                ['Tokens out', state?.tokens_out != null ? state.tokens_out.toLocaleString() : '—', true],
+                ['Tokens in',  state?.tokens_in  != null ? state.tokens_in.toLocaleString('en')  : '—', true],
+                ['Tokens out', state?.tokens_out != null ? state.tokens_out.toLocaleString('en') : '—', true],
                 ['Cost',       state?.cost_usd != null && state.cost_usd > 0 ? `€${state.cost_usd.toFixed(4)}` : '—', true],
                 ['Duration',   duration, false],
               ].map(([k, v]) => (

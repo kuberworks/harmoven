@@ -355,7 +355,7 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
             )}
             {node.tokens_in > 0 && uiLevel !== 'GUIDED' && (
               <span className="text-xs text-muted-foreground font-mono">
-                ↑{node.tokens_in.toLocaleString()} ↓{node.tokens_out.toLocaleString()} tok
+                ↑{node.tokens_in.toLocaleString('en')} ↓{node.tokens_out.toLocaleString('en')} tok
               </span>
             )}
             {node.cost_usd > 0 && uiLevel !== 'GUIDED' && (
@@ -894,7 +894,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Tokens</span>
-                <span className="font-mono">{run.tokens_actual.toLocaleString()}</span>
+                <span className="font-mono">{run.tokens_actual.toLocaleString('en')}</span>
               </div>
               {run.started_at && (
                 <div className="flex justify-between gap-2">
