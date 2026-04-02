@@ -69,7 +69,7 @@ export function PreferencesClient({
         fetch('/api/users/me/locale', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locale }),
+          body: JSON.stringify({ ui_locale: locale }),
         }),
         fetch('/api/users/me', {
           method: 'PATCH',
