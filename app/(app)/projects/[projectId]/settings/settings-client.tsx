@@ -97,7 +97,16 @@ export function ProjectSettingsClient({
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-6 animate-stagger">
+    <form
+      onSubmit={handleSave}
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target instanceof HTMLTextAreaElement) {
+          e.preventDefault()
+          e.currentTarget.requestSubmit()
+        }
+      }}
+      className="space-y-6 animate-stagger"
+    >
       {/* Core settings */}
       <Card>
         <CardHeader className="pb-3">

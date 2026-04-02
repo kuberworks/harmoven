@@ -203,7 +203,16 @@ export function ImportFromUrlClient() {
 
       {/* ── Step 2: Review form ───────────────────────────────────────────── */}
       {preview && confirmed && (
-        <form onSubmit={handleApprove} className="space-y-4">
+        <form
+          onSubmit={handleApprove}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target instanceof HTMLTextAreaElement) {
+              e.preventDefault()
+              e.currentTarget.requestSubmit()
+            }
+          }}
+          className="space-y-4"
+        >
 
           {/* Warning banner — always visible */}
           <div className="flex items-start gap-2 rounded-md bg-amber-500/8 border border-amber-500/20 px-3 py-2.5 text-xs text-amber-200">

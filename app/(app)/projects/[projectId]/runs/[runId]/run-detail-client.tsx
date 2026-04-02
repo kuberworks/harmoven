@@ -193,6 +193,12 @@ function FeedbackPanel({ runId }: { runId: string }) {
           <textarea
             value={valueNote}
             onChange={(e) => setValueNote(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && rating && !submitting) {
+                e.preventDefault()
+                submit()
+              }
+            }}
             placeholder="Any notes on business value or quality…"
             rows={2}
             className="w-full rounded-input border border-border bg-surface-raised px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
