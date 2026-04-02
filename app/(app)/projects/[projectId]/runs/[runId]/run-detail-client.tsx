@@ -18,7 +18,7 @@ import { ContextInjectionPanel } from '@/components/run/ContextInjectionPanel'
 import { DagView } from '@/components/run/DagView'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { useT } from '@/lib/i18n/client'
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText } from 'lucide-react'
 
 /**
  * Extract readable text from a partial LLM JSON response.
@@ -420,7 +420,92 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
   )
 }
 
-// ─── Activity feed entry ────────────────────────────────────────────────────
+// ─── Result tab ─────────────────────────────────────────────────────────────
+
+/**
+ * Displays the final output of a completed run.
+ * Finds terminal nodes (no outgoing DAG edges) and renders their output content
+ * as plain text. React JSX text nodes escape automatically — no XSS risk.
+ */
+function ResultTab({
+  nodes,
+  dag,
+}: {
+  nodes: (InitialNode | NodeState)[]
+  dag: Dag
+}) {
+  // Terminal nodes = nodes that are never the *source* of a dependency edge
+  const sourceIds = new Set(dag.edges.map((e) => e.from))
+  const terminalIds = new Set(dag.nodes.filter((n) => !sourceIds.has(n.id)).map((n) => n.id))
+
+  // Collect outputs from completed terminal nodes, preserving DAG order
+  const terminalOutputs = dag.nodes
+    .filter((dn) => terminalIds.has(dn.id))
+    .flatMap((dn) => {
+      const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
+      if (!node) return []
+      const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
+      const output  = handoff?.['output'] as Record<string, unknown> | undefined
+      const content = (output?.['content'] ?? output?.['text'] ?? null) as string | null
+      if (!content) return []
+      return [{ node_id: dn.id, agent_type: dn.agent_type, content }]
+    })
+
+  // Fallback: most-recently-completed node that has output text
+  const fallbackOutputs = (): Array<{ node_id: string; agent_type: string; content: string }> => {
+    const sorted = [...nodes]
+      .filter((n) => n.status === 'COMPLETED')
+      .sort((a, b) => {
+        const ta = a.completed_at ? new Date(a.completed_at).getTime() : 0
+        const tb = b.completed_at ? new Date(b.completed_at).getTime() : 0
+        return tb - ta
+      })
+    for (const n of sorted) {
+      const handoff = (n.handoff_out as Record<string, unknown> | null) ?? null
+      const output  = handoff?.['output'] as Record<string, unknown> | undefined
+      const content = (output?.['content'] ?? output?.['text'] ?? null) as string | null
+      if (content) return [{ node_id: n.node_id, agent_type: n.agent_type, content }]
+    }
+    return []
+  }
+
+  const outputs = terminalOutputs.length > 0 ? terminalOutputs : fallbackOutputs()
+
+  if (outputs.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+          <FileText className="h-8 w-8 opacity-30" />
+          <p className="text-sm">No output available for this run.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {outputs.map((o) => (
+        <Card key={o.node_id}>
+          {outputs.length > 1 && (
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-muted-foreground font-mono">
+                {o.agent_type} · {o.node_id}
+              </CardTitle>
+            </CardHeader>
+          )}
+          <CardContent className={outputs.length > 1 ? 'pt-0' : ''}>
+            {/* Plain text rendering — React escapes all content, no XSS risk */}
+            <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+              {o.content}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+// ─── Activity feed entry ─────────────────────────────────────────────────────
 
 const ACTIVITY_ICONS: Record<string, [emoji: string, label: string]> = {
   error:      ['🔴', 'Error'],
@@ -514,6 +599,18 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
   const isLive = run.status === 'RUNNING' || run.status === 'PAUSED'
   const isTerminal = run.status === 'COMPLETED' || run.status === 'FAILED'
 
+  // Active tab — defaults to 'result' for completed runs, auto-switches once on completion
+  const autoSwitchedRef = useRef(false)
+  const [activeTab, setActiveTab] = useState(
+    initialRun.status === 'COMPLETED' ? 'result' : 'agents'
+  )
+  useEffect(() => {
+    if (run.status === 'COMPLETED' && !autoSwitchedRef.current) {
+      autoSwitchedRef.current = true
+      setActiveTab('result')
+    }
+  }, [run.status])
+
   // Elapsed run time
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
@@ -603,9 +700,12 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
         <div className="lg:col-span-2 space-y-4">
           <RunProgress nodes={nodes} />
 
-          <Tabs defaultValue="agents">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="overflow-x-auto">
             <TabsList>
+              {run.status === 'COMPLETED' && (
+                <TabsTrigger value="result">Result</TabsTrigger>
+              )}
               <TabsTrigger value="agents">Agents ({nodes.length})</TabsTrigger>
               <TabsTrigger value="dag">DAG</TabsTrigger>
               <TabsTrigger value="activity">Activity ({stream.events.length + initialEvents.length})</TabsTrigger>
@@ -614,6 +714,12 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               )}
             </TabsList>
             </div>
+
+            {run.status === 'COMPLETED' && (
+              <TabsContent value="result">
+                <ResultTab nodes={nodes} dag={initialRun.dag} />
+              </TabsContent>
+            )}
 
             <TabsContent value="agents">
               <div className="space-y-2">
