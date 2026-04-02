@@ -70,6 +70,7 @@ const canSeeCosts = perms.has('runs:read_costs')
 ### API route pattern
 ```ts
 // Always: validate input → check auth → check permission → business logic → return JSON (no throw)
+// Also: update openapi/v1.yaml for any new or modified public endpoint or model
 export async function POST(req: Request) {
   const body = await req.json()
   const parsed = schema.safeParse(body)
@@ -128,6 +129,7 @@ Never push to `main` directly. All merges target `develop`.
 
 ## Hard rules (never break)
 
+- Do NOT add/modify a public API endpoint or Prisma model exposed via API without updating `openapi/v1.yaml`
 - Do NOT import `lib/auth.ts` or `lib/db/` in Client Components
 - Do NOT `throw` in API routes — always `NextResponse.json({ error }, { status })`
 - Do NOT modify files under `components/ui/` (shadcn generated)

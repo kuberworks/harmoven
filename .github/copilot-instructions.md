@@ -106,6 +106,8 @@ const es = new EventSource(`/api/runs/${runId}/stream`)
 - Input validation via Zod at every route boundary
 - Return `NextResponse.json({ error }, { status })` — no raw `throw`
 - Auth check first, permission check second, then business logic
+- **Any new or modified public API endpoint → update `openapi/v1.yaml`**
+- **Any new Prisma model or field exposed via API → update `openapi/v1.yaml`**
 
 ### i18n
 - All user-visible strings via `t('key')` — never hardcode English text in components
@@ -150,6 +152,7 @@ Never push directly to `main`. All merges into `develop` first.
 
 ## What to avoid
 
+- Do NOT add or change a public API route/model without updating `openapi/v1.yaml`
 - Do NOT import `lib/auth.ts` or Prisma directly in Client Components
 - Do NOT use `db.user.count()` on dashboards without explicit admin gate
 - Do NOT `throw` in API routes — return error JSON
