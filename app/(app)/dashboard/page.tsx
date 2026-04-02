@@ -5,8 +5,8 @@
 //
 // Section order:
 //   1. Overview / stats          — adapts to user role + permissions
-//   2. Recent projects           — all users
-//   3. Runs needing action       — PAUSED/SUSPENDED, scoped to membership
+//   2. Needs your action         — PAUSED/SUSPENDED runs (only shown when non-empty)
+//   3. Recent projects           — all users
 //   4. Active runs               — RUNNING/PENDING, scoped to membership
 
 import type { Metadata } from 'next'
@@ -18,7 +18,7 @@ import { db } from '@/lib/db/client'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Play, FolderOpen, Plus, Users, FolderKanban, CheckCircle2, XCircle, Zap, DollarSign, AlertCircle } from 'lucide-react'
+import { Play, FolderOpen, Plus, FolderKanban, CheckCircle2, XCircle, Zap, DollarSign, AlertCircle } from 'lucide-react'
 import { redirect } from 'next/navigation'
 import { RUN_STATUS_VARIANT } from '@/lib/utils/run-status'
 
@@ -85,7 +85,6 @@ export default async function DashboardPage() {
   const adminQueries = isAdmin
     ? [
         db.project.count({ where: { archived_at: null } }),
-        db.user.count(),
         db.run.count({ where: { status: 'FAILED', completed_at: { gte: startOfDay } } }),
       ] as const
     : []
@@ -106,16 +105,14 @@ export default async function DashboardPage() {
 
   // Unpack admin results (positions depend on whether costQuery is present).
   let totalProjects: number | undefined
-  let totalUsers: number | undefined
   let failedToday: number | undefined
   let costTodayUsd: number | undefined
 
   if (isAdmin) {
     totalProjects = rest[0] as number
-    totalUsers    = rest[1] as number
-    failedToday   = rest[2] as number
+    failedToday   = rest[1] as number
     if (canSeeCosts) {
-      const agg = rest[3] as Awaited<typeof costQuery>
+      const agg = rest[2] as Awaited<typeof costQuery>
       costTodayUsd = Number(agg?._sum?.cost_actual_usd ?? 0)
     }
   } else if (canSeeCosts) {
@@ -179,12 +176,6 @@ export default async function DashboardPage() {
                 href="/projects"
               />
               <StatCard
-                icon={<Users className="h-4 w-4" />}
-                label="Users"
-                value={(totalUsers ?? 0).toLocaleString()}
-                href="/admin/users"
-              />
-              <StatCard
                 icon={<XCircle className="h-4 w-4" />}
                 label="Failed today"
                 value={(failedToday ?? 0).toLocaleString()}
@@ -196,7 +187,26 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* ── 2. Recent projects ──────────────────────────────────────── */}
+      {/* ── 2. Runs needing action ─────────────────────────────────── */}
+      {(runsNeedingAction as unknown[]).length > 0 && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              Needs your action ({(runsNeedingAction as unknown[]).length})
+            </h2>
+            <Link href="/runs?status=PAUSED" className="text-xs text-[var(--accent-amber-9)] hover:underline">
+              All →
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {(runsNeedingAction as RunRow[]).map(run => (
+              <RunCard key={run.id} run={run} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── 3. Recent projects ──────────────────────────────────────── */}
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
@@ -232,32 +242,6 @@ export default async function DashboardPage() {
                   </CardContent>
                 </Card>
               </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ── 3. Runs needing action ─────────────────────────────────── */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            Needs your action {(runsNeedingAction as unknown[]).length > 0 && `(${(runsNeedingAction as unknown[]).length})`}
-          </h2>
-          <Link href="/runs?status=PAUSED" className="text-xs text-[var(--accent-amber-9)] hover:underline">
-            All →
-          </Link>
-        </div>
-        {(runsNeedingAction as unknown[]).length === 0 ? (
-          <Card>
-            <CardContent className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
-              <AlertCircle className="h-4 w-4 shrink-0 opacity-40" />
-              No runs waiting for your input
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {(runsNeedingAction as RunRow[]).map(run => (
-              <RunCard key={run.id} run={run} />
             ))}
           </div>
         )}
