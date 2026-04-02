@@ -355,7 +355,7 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
             )}
             {node.tokens_in > 0 && uiLevel !== 'GUIDED' && (
               <span className="text-xs text-muted-foreground font-mono">
-                ↑{node.tokens_in.toLocaleString()} ↓{node.tokens_out.toLocaleString()} tok
+                ↑{node.tokens_in.toLocaleString('en')} ↓{node.tokens_out.toLocaleString('en')} tok
               </span>
             )}
             {node.cost_usd > 0 && uiLevel !== 'GUIDED' && (
@@ -451,6 +451,45 @@ const SANITIZE_SCHEMA = {
   },
 }
 
+const PRINT_CSS = `
+/* @page margin is the ONLY mechanism that correctly adds top/bottom margins
+   on ALL printed pages (page 1, 2, 3…). div padding only applies at document
+   start/end, not between pages.
+   Safari bug: document.write() does not trigger @page rule parsing properly.
+   Fix: use Blob URL so Safari treats it as a real document load. */
+@page { size: A4; margin: 2cm 2.5cm; }
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: white; }
+body {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 11pt;
+  line-height: 1.65;
+  color: #111;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+h1 { font-size: 20pt; margin: 0 0 14pt; color: #000; }
+h2 { font-size: 15pt; margin: 18pt 0 8pt; color: #111; border-bottom: 1px solid #ddd; padding-bottom: 4pt; }
+h3 { font-size: 12pt; margin: 14pt 0 6pt; color: #111; }
+h4, h5, h6 { font-size: 11pt; margin: 10pt 0 4pt; color: #333; }
+p { margin: 0 0 8pt; }
+ul, ol { padding-left: 20pt; margin: 0 0 8pt; }
+li { margin-bottom: 3pt; }
+blockquote { border-left: 3px solid #aaa; padding-left: 10pt; color: #444; font-style: italic; margin: 8pt 0; background: transparent; }
+code { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; background: #f4f4f4; color: #c00; border: 1px solid #ddd; border-radius: 2px; padding: 0 2pt; }
+pre { font-family: Consolas, 'Courier New', monospace; font-size: 8.5pt; background: #f8f8f8; border: 1px solid #ccc; border-radius: 3px; padding: 8pt; white-space: pre-wrap; word-break: break-all; margin: 8pt 0; overflow: visible; }
+pre code { background: transparent; border: none; color: inherit; font-size: inherit; padding: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 10pt; margin: 8pt 0; }
+th, td { border: 1px solid #bbb; padding: 4pt 8pt; text-align: left; background: transparent; }
+th { background: #eee; font-weight: 700; }
+a { color: #1a56db; text-decoration: underline; }
+a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; color: #666; word-break: break-all; }
+h1, h2 { page-break-after: avoid; break-after: avoid; }
+pre, blockquote, table { page-break-inside: avoid; break-inside: avoid; }
+.section-label { font-family: monospace; font-size: 9pt; color: #666; margin: 0 0 16pt; }
+.plain-text { white-space: pre-wrap; word-break: break-word; font-size: 11pt; }
+`
+
 function ResultTab({
   nodes,
   dag,
@@ -458,6 +497,69 @@ function ResultTab({
   nodes: (InitialNode | NodeState)[]
   dag: Dag
 }) {
+  const printRef = useRef<HTMLDivElement>(null)
+
+  function handlePrint() {
+    const container = printRef.current
+    if (!container) return
+
+    const cards = Array.from(container.querySelectorAll('[data-output-card]'))
+    const sectionsHtml = cards.length > 0
+      ? cards.map((card) => {
+          const label = card.getAttribute('data-label')
+          const content = card.querySelector('[data-output-content]')?.innerHTML ?? ''
+          return label
+            ? `<p class="section-label">${label}</p>${content}`
+            : content
+        }).join('<hr style="border:none;border-top:1px solid #eee;margin:16pt 0">')
+      : container.innerHTML
+
+    const html = `<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Run Result</title>
+<style>${PRINT_CSS}</style>
+</head><body>${sectionsHtml}</body></html>`
+
+    // Use Blob URL instead of document.write() — Safari does not apply @page
+    // rules to documents written via document.write() in a popup, but does
+    // apply them when the popup navigates to a real URL (including blob:).
+    // window.open(blobUrl) must still be called synchronously (no await) to
+    // avoid popup blockers on all platforms.
+    let blobUrl: string | null = null
+    try {
+      const blob = new Blob([html], { type: 'text/html' })
+      blobUrl = URL.createObjectURL(blob)
+    } catch {
+      // Blob API unavailable — fall back to document.write
+    }
+
+    const win = blobUrl
+      ? window.open(blobUrl, '_blank', 'width=900,height=700')
+      : window.open('', '_blank', 'width=900,height=700')
+
+    if (!win) {
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+      window.print() // popup blocked fallback
+      return
+    }
+
+    // If we couldn't create a blob URL, write directly (non-Safari fallback)
+    if (!blobUrl) {
+      win.document.write(html)
+      win.document.close()
+    }
+
+    win.onload = () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+      setTimeout(() => {
+        win.focus()
+        win.print()
+        win.onafterprint = () => win.close()
+      }, 300)
+    }
+  }
+
   // Terminal nodes = nodes that are never the *source* of a dependency edge
   const sourceIds = new Set(dag.edges.map((e) => e.from))
   const terminalIds = new Set(dag.nodes.filter((n) => !sourceIds.has(n.id)).map((n) => n.id))
@@ -507,9 +609,13 @@ function ResultTab({
   }
 
   return (
-    <div data-print-result>
+    <div data-print-result ref={printRef}>
       {outputs.map((o, i) => (
-        <Card key={o.node_id} className="mb-4 print:shadow-none print:border-0">
+        <Card
+          key={o.node_id}
+          data-output-card
+          data-label={outputs.length > 1 ? `${o.agent_type} · ${o.node_id}` : undefined}
+        >
           {outputs.length > 1 && (
             <CardHeader className="pb-2">
               <CardTitle className="text-xs text-muted-foreground font-mono">
@@ -517,33 +623,33 @@ function ResultTab({
               </CardTitle>
             </CardHeader>
           )}
-          <CardContent className={outputs.length > 1 ? 'pt-0' : undefined}>
-            {/* relative wrapper so the print button sits top-right of the prose,
-                visually aligned with the first heading of the MD output */}
+          <CardContent className={outputs.length > 1 ? 'pt-0' : 'pt-6'}>
             <div className="relative">
               {i === 0 && (
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={handlePrint}
                   aria-label="Print / Save as PDF"
                   title="Print / Save as PDF"
-                  className="print:hidden absolute top-0 right-0 inline-flex items-center justify-center h-11 w-11 rounded-md border border-surface-border text-muted-foreground hover:text-foreground hover:border-amber-500/60 hover:bg-surface-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                  className="absolute top-0 right-0 inline-flex items-center justify-center h-11 w-11 rounded-md border border-surface-border text-muted-foreground hover:text-foreground hover:border-amber-500/60 hover:bg-surface-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
                 >
                   <Printer className="h-4 w-4" />
                 </button>
               )}
               {looksLikeMarkdown(o.content) ? (
-                // Markdown path: rehype-sanitize strips dangerous HTML before render.
-                // No dangerouslySetInnerHTML — ReactMarkdown renders to React elements.
-                // pr-14 leaves room for the absolute print button next to the first heading.
-                <div className={`prose prose-sm prose-invert max-w-none text-foreground print:prose-neutral print:text-black${i === 0 ? ' pr-14' : ''}`}>
+                <div
+                  data-output-content
+                  className={`prose prose-sm dark:prose-invert max-w-none text-foreground${i === 0 ? ' pr-14' : ''}`}
+                >
                   <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
                     {o.content}
                   </ReactMarkdown>
                 </div>
               ) : (
-                // Plain text path — React auto-escapes, no XSS risk.
-                <div className={`text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words print:text-black${i === 0 ? ' pr-14' : ''}`}>
+                <div
+                  data-output-content
+                  className={`plain-text text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words${i === 0 ? ' pr-14' : ''}`}
+                >
                   {o.content}
                 </div>
               )}
@@ -894,7 +1000,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Tokens</span>
-                <span className="font-mono">{run.tokens_actual.toLocaleString()}</span>
+                <span className="font-mono">{run.tokens_actual.toLocaleString('en')}</span>
               </div>
               {run.started_at && (
                 <div className="flex justify-between gap-2">
