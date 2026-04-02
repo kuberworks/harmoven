@@ -18,7 +18,7 @@ import { ContextInjectionPanel } from '@/components/run/ContextInjectionPanel'
 import { DagView } from '@/components/run/DagView'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { useT } from '@/lib/i18n/client'
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText, Printer } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 
@@ -508,8 +508,21 @@ function ResultTab({
 
   return (
     <div className="space-y-4">
+      {/* Print / Save as PDF button — hidden in print view itself */}
+      <div className="flex justify-end print:hidden">
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-surface-raised px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+        >
+          <Printer className="h-3.5 w-3.5" />
+          Imprimer / Enregistrer en PDF
+        </button>
+      </div>
+
+      <div data-print-result>
       {outputs.map((o) => (
-        <Card key={o.node_id}>
+        <Card key={o.node_id} className="mb-4 print:shadow-none print:border-0">
           {outputs.length > 1 && (
             <CardHeader className="pb-2">
               <CardTitle className="text-xs text-muted-foreground font-mono">
@@ -521,20 +534,21 @@ function ResultTab({
             {looksLikeMarkdown(o.content) ? (
               // Markdown path: rehype-sanitize strips dangerous HTML before render.
               // No dangerouslySetInnerHTML — ReactMarkdown renders to React elements.
-              <div className="prose prose-sm prose-invert max-w-none text-foreground">
+              <div className="prose prose-sm prose-invert max-w-none text-foreground print:prose-neutral print:text-black">
                 <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
                   {o.content}
                 </ReactMarkdown>
               </div>
             ) : (
               // Plain text path — React auto-escapes, no XSS risk.
-              <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+              <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words print:text-black">
                 {o.content}
               </div>
             )}
           </CardContent>
         </Card>
       ))}
+      </div>
     </div>
   )
 }
