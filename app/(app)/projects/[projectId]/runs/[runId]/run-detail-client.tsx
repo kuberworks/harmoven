@@ -19,6 +19,8 @@ import { DagView } from '@/components/run/DagView'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { useT } from '@/lib/i18n/client'
 import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 
 /**
  * Extract readable text from a partial LLM JSON response.
@@ -427,6 +429,28 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
  * Finds terminal nodes (no outgoing DAG edges) and renders their output content
  * as plain text. React JSX text nodes escape automatically — no XSS risk.
  */
+
+/**
+ * Heuristic: does the string look like Markdown?
+ * Checks for common structural indicators — not exhaustive, just enough to
+ * avoid rendering plain prose through the Markdown pipeline.
+ */
+function looksLikeMarkdown(text: string): boolean {
+  return /^#{1,6}\s|^[-*+]\s|^\d+\.\s|^>\s|```|\|.+\||\*\*.+\*\*|__.+__|\[.+\]\(/.test(text)
+}
+
+// rehype-sanitize schema: default allowlist, no iframes, no forms, no scripts.
+// javascript: URLs stripped automatically by the default schema.
+const SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': (defaultSchema.attributes?.['*'] ?? []).filter(
+      (a) => typeof a !== 'string' || !a.startsWith('on')
+    ),
+  },
+}
+
 function ResultTab({
   nodes,
   dag,
@@ -494,10 +518,20 @@ function ResultTab({
             </CardHeader>
           )}
           <CardContent className={outputs.length > 1 ? 'pt-0' : ''}>
-            {/* Plain text rendering — React escapes all content, no XSS risk */}
-            <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
-              {o.content}
-            </div>
+            {looksLikeMarkdown(o.content) ? (
+              // Markdown path: rehype-sanitize strips dangerous HTML before render.
+              // No dangerouslySetInnerHTML — ReactMarkdown renders to React elements.
+              <div className="prose prose-sm prose-invert max-w-none text-foreground">
+                <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
+                  {o.content}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              // Plain text path — React auto-escapes, no XSS risk.
+              <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                {o.content}
+              </div>
+            )}
           </CardContent>
         </Card>
       ))}
