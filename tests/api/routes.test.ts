@@ -106,13 +106,11 @@ function makeRequest(
   opts: { body?: unknown; headers?: Record<string, string> } = {},
 ): NextRequest {
   const url = `http://localhost:3000${path}`
-  const init: RequestInit = { method }
-  if (opts.headers) init.headers = opts.headers
-  if (opts.body) {
-    init.body    = JSON.stringify(opts.body)
-    init.headers = { 'Content-Type': 'application/json', ...(opts.headers ?? {}) }
-  }
-  return new NextRequest(url, init)
+  const headers = opts.body
+    ? { 'Content-Type': 'application/json', ...(opts.headers ?? {}) }
+    : opts.headers
+  const body = opts.body ? JSON.stringify(opts.body) : undefined
+  return new NextRequest(url, { method, headers, body })
 }
 
 const SESSION_CALLER = {

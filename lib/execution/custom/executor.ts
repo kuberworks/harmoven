@@ -861,7 +861,6 @@ export class CustomExecutor implements IExecutionEngine {
             // Emit full node list so SSE subscribers see newly created nodes immediately.
             const allNodesAfterExpansion = await this.db.node.findMany({
               where: { run_id: runId },
-              orderBy: { node_id: 'asc' },
             })
             this._emit(runId, {
               type: 'nodes_refresh',
@@ -933,11 +932,10 @@ export class CustomExecutor implements IExecutionEngine {
           where: { id: node.id },
           data: { cost_usd: partialCost.costUsd, tokens_in: partialCost.tokensIn, tokens_out: partialCost.tokensOut },
         }).catch(() => {})
-        const currentRun = await this.db.run.findUnique({ where: { id: runId } })
-        if (currentRun) {
+        await this.db.run.findUniqueOrThrow({ where: { id: runId } }).then((currentRun) => {
           const newCost   = Number(currentRun.cost_actual_usd ?? 0) + partialCost.costUsd
           const newTokens = (currentRun.tokens_actual ?? 0) + partialCost.tokensIn + partialCost.tokensOut
-          await this.db.run.update({
+          void this.db.run.update({
             where: { id: runId },
             data: { cost_actual_usd: newCost, tokens_actual: newTokens },
           }).catch(() => {})
@@ -948,7 +946,7 @@ export class CustomExecutor implements IExecutionEngine {
             tokens: newTokens,
             percent_of_budget: budget > 0 ? Math.round((newCost / budget) * 100) : 0,
           })
-        }
+        }).catch(() => {})
       }
 
       if (isAbort) {

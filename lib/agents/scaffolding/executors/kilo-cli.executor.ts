@@ -73,11 +73,11 @@ function safeBaseEnv(): NodeJS.ProcessEnv {
     // Kilocode may need the LLM API provider keys set via its own config,
     // but those are in ~/.kilocode/config, not injected here.
   ])
-  const env: NodeJS.ProcessEnv = {}
+  const env: { [key: string]: string | undefined } = {}
   for (const key of ALLOWED_KEYS) {
     if (process.env[key] !== undefined) env[key] = process.env[key]
   }
-  return env
+  return env as NodeJS.ProcessEnv
 }
 
 /**
@@ -193,7 +193,7 @@ export class KiloCliExecutor implements ILayerAgentExecutor {
       // Extract the last complete JSON object from stdout.
       const jsonMatch = rawOutput.match(/(\{[\s\S]*\})\s*$/)
       if (!jsonMatch) throw new Error('No JSON object found in kilocode output')
-      parsed = JSON.parse(jsonMatch[1]) as KiloJsonOutput
+      parsed = JSON.parse(jsonMatch[1]!) as KiloJsonOutput
     } catch (e) {
       return {
         success:        false,
