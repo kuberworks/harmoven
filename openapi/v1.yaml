@@ -63,7 +63,7 @@ info:
     | `project:credentials` | `admin` | `GET/POST/PATCH/DELETE /projects/{id}/api-keys`, credentials |
     | `admin:skills` | `admin` | `GET/POST/PATCH/DELETE /admin/skills` |
     | `admin:models` | `instance_admin` | `GET/POST/PATCH /admin/models` |
-    | `admin:users` | `instance_admin` | `GET /admin/users`, ban/unban |
+    | `admin:users` | `instance_admin` | `GET/POST /admin/users`, `PATCH/DELETE /admin/users/{id}`, ban/unban |
     | `admin:audit` | `instance_admin` | `GET /analytics` |
     | `admin:instance` | `instance_admin` | `DELETE /projects/{id}`, `GET/POST /updates` |
 
@@ -185,6 +185,33 @@ components:
 
   # ─── Reusable schemas ──────────────────────────────────────────────────────
   schemas:
+
+    # ── User management ───────────────────────────────────────────────────────
+    CreateUserRequest:
+      type: object
+      required: [name, email, password]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: "Full display name for the new account."
+        email:
+          type: string
+          format: email
+          maxLength: 512
+          description: "Email address. Must be unique. Used as login identifier."
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: "Temporary password. The user should change it on first login."
+        role:
+          type: string
+          enum: [user, instance_admin]
+          default: user
+          description: "Initial role. Defaults to `user`."
 
     # ── RGPD ──────────────────────────────────────────────────────────────────
     RgpdConfig:
@@ -5042,6 +5069,136 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+    post:
+      operationId: createUser
+      x-required-permissions: [admin:users]
+      summary: Create a user account
+      description: |
+        > **Required permission:** `admin:users` — minimum role: `instance_admin`
+
+        Creates a new user with an email/password credential. The account is immediately
+        verified (admin vouch). The caller must provide a temporary password which the
+        user should change on first login.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: "User created. Returns the new user's ID."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  userId:
+                    type: string
+                    format: uuid
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: "Email already registered."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+  /admin/users/{userId}:
+    patch:
+      operationId: updateUserRole
+      x-required-permissions: [admin:users]
+      summary: Change a user's role
+      description: |
+        > **Required permission:** `admin:users` — minimum role: `instance_admin`
+
+        Promotes a user to `instance_admin` or demotes them back to `user`.
+        Cannot change your own role. Cannot demote the last `instance_admin`.
+      tags: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              additionalProperties: false
+              properties:
+                role:
+                  type: string
+                  enum: [user, instance_admin]
+      responses:
+        '200':
+          description: "Role updated."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  userId:
+                    type: string
+                    format: uuid
+                  role:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+    delete:
+      operationId: deleteUser
+      x-required-permissions: [admin:users]
+      summary: Delete a user account
+      description: |
+        > **Required permission:** `admin:users` — minimum role: `instance_admin`
+
+        Permanently deletes the user and all their data (sessions, projects, runs, etc.)
+        via cascade. Cannot delete yourself. Cannot delete the last `instance_admin`.
+        This action is irreversible.
+      tags: [admin]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: "User deleted."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  userId:
+                    type: string
+                    format: uuid
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
         '429':
           $ref: '#/components/responses/RateLimit'
   /admin/users/{userId}/ban:
