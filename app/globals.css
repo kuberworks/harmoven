@@ -224,3 +224,72 @@
     animation: pulse-gate 2s ease-in-out infinite;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Print styles — "Imprimer / Enregistrer en PDF" in Result tab
+   ───────────────────────────────────────────────────────────── */
+@media print {
+  /* Reset to white page */
+  html, body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide everything except the result content */
+  body > * { display: none !important; }
+  #__next, [data-nextjs-root] { display: block !important; }
+
+  /* Hide all UI chrome; only show [data-print-result] */
+  nav, header, aside, footer,
+  [role="navigation"],
+  [data-print-hide],
+  .print\:hidden { display: none !important; }
+
+  /* Show only the marked result container */
+  [data-print-result] {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 2rem !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Cards: flat on paper */
+  [data-print-result] .card,
+  [data-print-result] [class*="rounded"] {
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  /* Prose: ensure black text, standard font size */
+  [data-print-result] .prose {
+    color: black !important;
+    max-width: 100% !important;
+  }
+  [data-print-result] .prose h1,
+  [data-print-result] .prose h2,
+  [data-print-result] .prose h3,
+  [data-print-result] .prose h4 {
+    color: black !important;
+  }
+  [data-print-result] .prose code,
+  [data-print-result] .prose pre {
+    background: #f5f5f5 !important;
+    color: black !important;
+    border: 1px solid #ddd !important;
+  }
+  [data-print-result] .prose a {
+    color: #1a56db !important;
+  }
+
+  /* Plain text output */
+  [data-print-result] .whitespace-pre-wrap {
+    color: black !important;
+  }
+
+  /* Page breaks */
+  [data-print-result] .mb-4 { page-break-inside: avoid; }
+}
