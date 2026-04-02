@@ -240,6 +240,7 @@ components:
           type: object
           properties:
             rate_limit_provider: { type: string, enum: [memory, upstash] }
+            allow_public_signup: { type: boolean, description: "When true, anyone can self-register at /register. When false (default), only admins can create accounts. Override: HARMOVEN_ALLOW_PUBLIC_SIGNUP env var." }
         updates:
           type: object
           properties:
@@ -295,6 +296,7 @@ components:
           type: object
           properties:
             rate_limit_provider: { type: string, enum: [memory, upstash] }
+            allow_public_signup: { type: boolean }
           additionalProperties: false
         updates:
           type: object

@@ -47,6 +47,10 @@ security:
   session_timeout_minutes: 480     # 8 hours
   setup_token_required: true       # /setup route protected by token shown in Docker logs
   rate_limit_provider: memory      # memory (default, Electron-safe) | upstash (production)
+  allow_public_signup: false       # opt-in — set true for SaaS / open registration
+                                   # When false, only instance_admin can create accounts
+                                   # (via admin → users) or invite users to projects.
+                                   # Override: HARMOVEN_ALLOW_PUBLIC_SIGNUP=true env var.
   supply_chain:                    # Amendment 91 — T3.8 supply chain security
     verify_image_digest: true      # reject Docker image updates without digest match
     verify_pack_signatures: false  # GPG verification for marketplace packs (enable after key setup)

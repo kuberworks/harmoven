@@ -42,7 +42,8 @@ export const OrchestratorPatchSchema = z.object({
   }).optional(),
 
   security: z.object({
-    rate_limit_provider: z.enum(['memory', 'upstash']).optional(),
+    rate_limit_provider:   z.enum(['memory', 'upstash']).optional(),
+    allow_public_signup:   z.boolean().optional(),
   }).optional(),
 
   updates: z.object({
