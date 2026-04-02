@@ -291,6 +291,11 @@ model Run {
   project_id           String
   project              Project   @relation(fields: [project_id], references: [id])
   created_by           String?   // null for trigger-initiated runs
+  // Marketplace v2 — Smart Import (A.4.2)
+  // run_type: null = normal run; 'marketplace_import' = phantom LLM call (excluded from normal lists)
+  run_type             String?   // null | 'marketplace_import'
+  // triggered_by: userId for phantom runs; null for normal runs
+  triggered_by         String?
   trigger_id           String?
   status               RunStatus @default(PENDING)
   suspended_reason     String?   // human_gate | crash_recovery | budget_exceeded |
@@ -343,6 +348,7 @@ model Run {
   @@index([project_id])
   @@index([status])
   @@index([created_by])
+  @@index([run_type])
   @@index([pipeline_template_id])
   @@index([data_expires_at])
 }

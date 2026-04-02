@@ -198,6 +198,11 @@ All other fields are optional but displayed when present.
 ---
 
 ### A.4  Smart Import — Relevance Gate & LLM Adapter
+<!-- IMPLEMENTED: feat/smart-import, 2026-04-03 -->
+<!-- Files: lib/marketplace/smart-import.ts, app/api/admin/marketplace/analyze-command/route.ts,
+     app/api/admin/marketplace/smart-import-settings/route.ts, app/api/admin/marketplace/import-history/route.ts,
+     app/(app)/admin/marketplace/smart-import-section.tsx, app/(app)/marketplace/import-from-url-client.tsx,
+     prisma/migrations/20260403000000_smart_import_run_type/ -->
 
 Two complementary features that run **after** B.2.3 static detection and **before** any DB write,
 for every "Add from Git" import request, when Smart Import is enabled:
