@@ -204,6 +204,114 @@ components:
           type: boolean
           description: "True when the `RGPD_MAINTENANCE_ENABLED=false` environment variable is set. In this case the DB setting is ignored and maintenance is forcibly disabled. Update the environment variable (not the DB) to re-enable."
 
+    # ── Orchestrator config ───────────────────────────────────────────────────
+    OrchestratorConfig:
+      type: object
+      description: "Parsed content of orchestrator.yaml. All fields are optional — only fields present in the file are returned."
+      properties:
+        organization:
+          type: object
+          properties:
+            name:   { type: string }
+            preset: { type: string, enum: [small_business, enterprise, developer] }
+        execution_engine:
+          type: object
+          properties:
+            provider:             { type: string, enum: [custom, temporal, restate] }
+            max_concurrent_nodes: { type: integer, minimum: 1, maximum: 64 }
+        privacy:
+          type: object
+          properties:
+            presidio:
+              type: object
+              properties:
+                enabled: { type: boolean }
+        litellm:
+          type: object
+          properties:
+            enabled: { type: boolean }
+        proactivity:
+          type: object
+          properties:
+            full_auto_enabled:     { type: boolean }
+            max_auto_runs_per_day: { type: integer, minimum: 1 }
+            max_cost_usd_per_day:  { type: number, minimum: 0.01 }
+        security:
+          type: object
+          properties:
+            rate_limit_provider: { type: string, enum: [memory, upstash] }
+        updates:
+          type: object
+          properties:
+            auto_install:    { type: string, enum: [notify, auto, manual] }
+            update_channel:  { type: string, enum: [stable, edge] }
+            auto_check:      { type: boolean }
+            auto_download:   { type: boolean }
+        marketplace:
+          type: object
+          properties:
+            default_update_policy: { type: string, enum: [auto, notify, manual] }
+            auto_check_updates:    { type: boolean }
+      additionalProperties: true
+
+    OrchestratorConfigPatch:
+      type: object
+      description: "Partial update for orchestrator.yaml. All fields are optional; only supplied fields are merged."
+      properties:
+        organization:
+          type: object
+          properties:
+            name:   { type: string, minLength: 1, maxLength: 120 }
+            preset: { type: string, enum: [small_business, enterprise, developer] }
+          additionalProperties: false
+        execution_engine:
+          type: object
+          properties:
+            provider:             { type: string, enum: [custom, temporal, restate] }
+            max_concurrent_nodes: { type: integer, minimum: 1, maximum: 64 }
+          additionalProperties: false
+        privacy:
+          type: object
+          properties:
+            presidio:
+              type: object
+              properties:
+                enabled: { type: boolean }
+              additionalProperties: false
+          additionalProperties: false
+        litellm:
+          type: object
+          properties:
+            enabled: { type: boolean }
+          additionalProperties: false
+        proactivity:
+          type: object
+          properties:
+            full_auto_enabled:     { type: boolean }
+            max_auto_runs_per_day: { type: integer, minimum: 1, maximum: 1000 }
+            max_cost_usd_per_day:  { type: number, minimum: 0.01, maximum: 10000 }
+          additionalProperties: false
+        security:
+          type: object
+          properties:
+            rate_limit_provider: { type: string, enum: [memory, upstash] }
+          additionalProperties: false
+        updates:
+          type: object
+          properties:
+            auto_install:    { type: string, enum: [notify, auto, manual] }
+            update_channel:  { type: string, enum: [stable, edge] }
+            auto_check:      { type: boolean }
+            auto_download:   { type: boolean }
+          additionalProperties: false
+        marketplace:
+          type: object
+          properties:
+            default_update_policy: { type: string, enum: [auto, notify, manual] }
+            auto_check_updates:    { type: boolean }
+          additionalProperties: false
+      additionalProperties: false
+
     # ── Error ─────────────────────────────────────────────────────────────────
     ApiError:
       type: object
@@ -5150,6 +5258,93 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /admin/instance/orchestrator:
+    get:
+      operationId: getOrchestratorConfig
+      x-required-permissions: [admin:instance]
+      summary: Read orchestrator.yaml opt-in configuration
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Returns the parsed contents of `orchestrator.yaml`. All fields are
+        returned as-is from the file; unknown or future fields are included.
+        Secrets are never stored in `orchestrator.yaml` — this endpoint is safe
+        to read without exposing credentials.
+      tags: [admin]
+      responses:
+        '200':
+          description: "Parsed orchestrator.yaml content."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrchestratorConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      operationId: updateOrchestratorConfig
+      x-required-permissions: [admin:instance]
+      summary: Update orchestrator.yaml opt-in configuration
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Deep-merges the supplied fields into `orchestrator.yaml`, writes the
+        result to disk, and commits the new version to config.git.
+
+        All fields are optional and validated with strict Zod schema — unknown
+        keys are rejected with `422`. Returns coherence warnings (e.g. missing
+        env vars for enabled opt-in services) without blocking the save.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrchestratorConfigPatch'
+      responses:
+        '200':
+          description: "Configuration saved. `warnings` lists coherence issues (missing env vars, risky settings) but does not block the save."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  warnings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          description: "Dot-path of the affected field, e.g. `litellm.enabled`."
+                        message:
+                          type: string
+                          description: "Human-readable coherence warning."
+                      required: [field, message]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: "Validation failed — unknown key or type mismatch."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:   { type: string, example: Validation failed }
+                  details: { type: object }
+        '500':
+          description: "Failed to write orchestrator.yaml (disk error or config.git sync failure)."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 
   # ── Analytics (internal) ───────────────────────────────────────────────────
   /analytics:
