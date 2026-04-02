@@ -135,7 +135,19 @@ export function LoginForm({ allowSignup }: Props) {
         </div>
 
         {/* Email + password */}
-        <form onSubmit={handlePasswordLogin} className="space-y-3">
+        <form
+          onSubmit={handlePasswordLogin}
+          onKeyDown={(e) => {
+            // Belt-and-suspenders: explicitly trigger submit on Enter in any input.
+            // Bypasses implicit form submission which can be silently blocked
+            // by some browser/hydration edge cases.
+            if (e.key === 'Enter' && e.target instanceof HTMLInputElement && !isPendingEmail) {
+              e.preventDefault()
+              e.currentTarget.requestSubmit()
+            }
+          }}
+          className="space-y-3"
+        >
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
             <Input
