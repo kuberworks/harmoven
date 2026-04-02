@@ -9,7 +9,9 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { InstanceSecurityClient } from './security-client'
+import { InstanceSecurityClient }    from './security-client'
+import { OrchestratorConfigClient }  from '@/components/admin/OrchestratorConfigClient'
+import { readOrchestratorYaml }      from '@/lib/config-git/orchestrator-config'
 
 export const metadata: Metadata = { title: 'Instance — Admin' }
 
@@ -35,7 +37,7 @@ export default async function AdminInstancePage() {
   const hdrs   = await headers()
   const base   = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-  const [security, health] = await Promise.all([
+  const [security, health, orchestratorRaw] = await Promise.all([
     fetchJson<{
       mfa_required_for_admin: boolean
       env_override_active: boolean
@@ -44,6 +46,7 @@ export default async function AdminInstancePage() {
       `${base}/api/health`,
       hdrs,
     ),
+    readOrchestratorYaml(),
   ])
 
   return (
@@ -103,6 +106,15 @@ export default async function AdminInstancePage() {
           mfaRequiredForAdmin={security?.mfa_required_for_admin ?? true}
           envOverrideActive={security?.env_override_active ?? false}
         />
+      </section>
+
+      {/* Instance configuration (orchestrator.yaml) */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Instance configuration</h2>
+        <p className="text-xs text-muted-foreground">
+          These settings are persisted to <span className="font-mono">orchestrator.yaml</span> and versioned in config.git.
+        </p>
+        <OrchestratorConfigClient initial={orchestratorRaw} />
       </section>
 
       {/* Instance info */}
