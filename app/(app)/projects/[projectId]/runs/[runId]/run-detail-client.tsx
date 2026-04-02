@@ -517,7 +517,7 @@ function ResultTab({
               </CardTitle>
             </CardHeader>
           )}
-          <CardContent className={outputs.length > 1 ? 'pt-0' : ''}>
+          <CardContent className={outputs.length > 1 ? 'pt-0' : 'pt-5'}>
             {looksLikeMarkdown(o.content) ? (
               // Markdown path: rehype-sanitize strips dangerous HTML before render.
               // No dangerouslySetInnerHTML — ReactMarkdown renders to React elements.
