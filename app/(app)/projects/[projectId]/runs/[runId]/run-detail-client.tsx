@@ -355,7 +355,7 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
             )}
             {node.tokens_in > 0 && uiLevel !== 'GUIDED' && (
               <span className="text-xs text-muted-foreground font-mono">
-                ↑{node.tokens_in.toLocaleString('en')} ↓{node.tokens_out.toLocaleString('en')} tok
+                ↑{node.tokens_in.toLocaleString()} ↓{node.tokens_out.toLocaleString()} tok
               </span>
             )}
             {node.cost_usd > 0 && uiLevel !== 'GUIDED' && (
@@ -517,35 +517,37 @@ function ResultTab({
               </CardTitle>
             </CardHeader>
           )}
-          <CardContent className={outputs.length > 1 ? 'pt-0' : 'pt-4'}>
-            {/* Print button — only on first card, right-aligned above content, 44×44px (WCAG 2.5.5) */}
-            {i === 0 && (
-              <div className="print:hidden flex justify-end mb-3">
+          <CardContent className={outputs.length > 1 ? 'pt-0' : undefined}>
+            {/* relative wrapper so the print button sits top-right of the prose,
+                visually aligned with the first heading of the MD output */}
+            <div className="relative">
+              {i === 0 && (
                 <button
                   type="button"
                   onClick={() => window.print()}
                   aria-label="Print / Save as PDF"
                   title="Print / Save as PDF"
-                  className="inline-flex items-center justify-center h-11 w-11 rounded-md border border-surface-border text-muted-foreground hover:text-foreground hover:border-amber-500/60 hover:bg-surface-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                  className="print:hidden absolute top-0 right-0 inline-flex items-center justify-center h-11 w-11 rounded-md border border-surface-border text-muted-foreground hover:text-foreground hover:border-amber-500/60 hover:bg-surface-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
                 >
                   <Printer className="h-4 w-4" />
                 </button>
-              </div>
-            )}
-            {looksLikeMarkdown(o.content) ? (
-              // Markdown path: rehype-sanitize strips dangerous HTML before render.
-              // No dangerouslySetInnerHTML — ReactMarkdown renders to React elements.
-              <div className="prose prose-sm prose-invert max-w-none text-foreground print:prose-neutral print:text-black">
-                <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
+              )}
+              {looksLikeMarkdown(o.content) ? (
+                // Markdown path: rehype-sanitize strips dangerous HTML before render.
+                // No dangerouslySetInnerHTML — ReactMarkdown renders to React elements.
+                // pr-14 leaves room for the absolute print button next to the first heading.
+                <div className={`prose prose-sm prose-invert max-w-none text-foreground print:prose-neutral print:text-black${i === 0 ? ' pr-14' : ''}`}>
+                  <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
+                    {o.content}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                // Plain text path — React auto-escapes, no XSS risk.
+                <div className={`text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words print:text-black${i === 0 ? ' pr-14' : ''}`}>
                   {o.content}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              // Plain text path — React auto-escapes, no XSS risk.
-              <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words print:text-black">
-                {o.content}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       ))}
@@ -892,7 +894,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Tokens</span>
-                <span className="font-mono">{run.tokens_actual.toLocaleString('en')}</span>
+                <span className="font-mono">{run.tokens_actual.toLocaleString()}</span>
               </div>
               {run.started_at && (
                 <div className="flex justify-between gap-2">
