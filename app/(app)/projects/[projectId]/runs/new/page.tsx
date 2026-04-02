@@ -111,7 +111,16 @@ export default function NewRunPage({ params }: Props) {
 
       <Card>
         <CardContent className="pt-5">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target instanceof HTMLTextAreaElement) {
+                e.preventDefault()
+                e.currentTarget.requestSubmit()
+              }
+            }}
+            className="space-y-4"
+          >
             <div className="space-y-1.5">
               <TaskInput
                 value={taskInput}

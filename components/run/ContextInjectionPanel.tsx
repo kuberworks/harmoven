@@ -92,9 +92,17 @@ export function ContextInjectionPanel({ runId, runStatus, onInjected }: ContextI
     )
   }
 
+  function handleFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target instanceof HTMLTextAreaElement) {
+      e.preventDefault()
+      e.currentTarget.requestSubmit()
+    }
+  }
+
   return (
     <form
       onSubmit={handleSubmit}
+      onKeyDown={handleFormKeyDown}
       aria-labelledby={labelId}
       className="flex flex-col gap-2 rounded-lg border border-surface-border bg-surface-raised/60 p-4"
     >
