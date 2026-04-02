@@ -519,15 +519,16 @@ function ResultTab({
               ) : (
                 <span />
               )}
-              {/* Print button — only on first card, icon-only to save space */}
+              {/* Print button — only on first card, 44×44px touch target (WCAG 2.5.5) */}
               {i === 0 && (
                 <button
                   type="button"
                   onClick={() => window.print()}
+                  aria-label="Print / Save as PDF"
                   title="Print / Save as PDF"
-                  className="print:hidden text-muted-foreground hover:text-foreground transition-colors rounded p-1 hover:bg-surface-hover"
+                  className="print:hidden inline-flex items-center justify-center h-11 w-11 rounded-md border border-surface-border text-muted-foreground hover:text-foreground hover:border-amber-500/60 hover:bg-surface-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-1 focus-visible:ring-offset-background"
                 >
-                  <Printer className="h-3.5 w-3.5" />
+                  <Printer className="h-4 w-4" />
                 </button>
               )}
             </div>
