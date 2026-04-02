@@ -481,7 +481,7 @@ model McpSkill {
   id           String    @id @default(uuid())
   name         String
   source_url   String?
-  source_type  String    // official | git | local
+  source_type  String    // official | git | local | upload | registry
   version      String?
   approved_by  String?
   approved_at  DateTime?
@@ -490,6 +490,21 @@ model McpSkill {
   enabled      Boolean   @default(false)
   config       Json      @default("{}")
   installed_at DateTime  @default(now())
+
+  // Marketplace v2 additions
+  capability_type      String?   // domain_pack | mcp_skill | harmoven_agent | js_ts_plugin | slash_command
+  pack_id              String?   @unique // validated slug /^[a-z0-9_]{1,64}$/
+  author               String?
+  tags                 String[]  @default([])
+  registry_id          String?   // FK reference label (denormalised — MarketplaceRegistry.id)
+  upload_sha256        String?   // SHA-256 of uploaded .hpkg file bytes (traceability, B.3.2 V13)
+  source_ref           String?   // resolved branch/tag/commit ref at import time
+  installed_sha256     String?   // SHA-256 of primary file at last install or update
+  last_update_check_at DateTime? // last time cron checked this skill
+  pending_update       Json?     // { changed_fields, new_sha256, detected_at } — written by cron
+
+  @@index([source_type])
+  @@index([last_update_check_at])
 }
 
 // ─── Codebase Memory ─────────────────────────────────────────────────────────
@@ -891,19 +906,78 @@ model PipelineTemplateVersion {
 }
 
 // ─── GitHub Import Preview ────────────────────────────────────────────────────
-// Staging row created by POST /api/admin/skills/from-url.
-// Stores the content_sha256 at preview time so the approval step can
-// detect if the remote file changed between preview and approve (SEC-10).
-// Expires automatically — rows older than 24 h should be purged by a cron.
+// Staging row created by POST /api/admin/skills/from-url (single-file flow)
+// and POST /api/admin/marketplace/… routes (repo/update flows — marketplace v2).
+// Stores the content_sha256 / file_hashes at preview time so the approval step
+// can detect if the remote file changed between preview and approve (SEC-10).
+// Expires automatically — rows older than TTL are purged at each cron run.
 model GitHubImportPreview {
   id              String   @id
+  // Legacy single-file fields (from-url v1 flow)
   actor           String   // userId of the admin who initiated the preview
   source_url      String   // original GitHub raw URL
   content_sha256  String   // SHA-256 of content at preview time (SEC-10)
   scaffold        Json     // serialized GitHubImportPreview (all fields + inferred flags)
+  // Marketplace v2 fields — nullable for backward compat with existing rows
+  created_by      String?  // same as actor — used by v2 code for ownership checks
+  file_hashes     Json?    // { "path/to/file.md": "sha256hex", ... } — multi-file support
+  context         String?  // 'smart_import' | 'update_check' | 'git_import'
   created_at      DateTime @default(now())
   expires_at      DateTime // created_at + 24h — must be checked on approve
 
   @@index([actor])
   @@index([expires_at])
+}
+
+// ─── Marketplace v2: Git URL Whitelist ────────────────────────────────────────
+// Controls which git hosts are allowed as import sources (SEC-01).
+
+model GitUrlWhitelistEntry {
+  id          String   @id @default(uuid())
+  label       String   // human name, e.g. "Internal GitLab"
+  pattern     String   // hostname or glob, e.g. "github.com" | "*.internal.corp"
+  description String?
+  is_builtin  Boolean  @default(false)
+  enabled     Boolean  @default(true)
+  created_by  String
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([pattern])
+}
+
+// ─── Marketplace v2: Remote Registry Feeds ────────────────────────────────────
+// Configures remote marketplace registry URLs (B.1).
+
+model MarketplaceRegistry {
+  id                String    @id @default(uuid())
+  label             String
+  feed_url          String
+  auth_header_enc   String?   // AES-256-GCM encrypted; never returned via API (SEC-14)
+  is_builtin        Boolean   @default(false)
+  enabled           Boolean   @default(true)
+  last_fetched_at   DateTime?
+  last_fetch_status String?   // "ok" | "error: <opaque code>"
+  created_by        String
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@unique([feed_url])
+}
+
+// ─── Marketplace v2: Git Provider Tokens ─────────────────────────────────────
+// Per-host access tokens for private Git repositories (A.5).
+
+model GitProviderToken {
+  id           String    @id @default(uuid())
+  label        String
+  host_pattern String
+  token_enc    String    // AES-256-GCM encrypted — never returned via API (SEC-46)
+  enabled      Boolean   @default(true)
+  expires_at   DateTime? // optional: admin-declared expiration date
+  created_by   String
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  @@unique([host_pattern])
 }

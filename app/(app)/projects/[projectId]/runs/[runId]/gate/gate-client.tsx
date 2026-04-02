@@ -337,7 +337,7 @@ export function GateClient({
                     <span className="text-xs text-muted-foreground/50 font-mono ml-2">{n.node_id}</span>
                   </span>
                   <span className="text-xs text-muted-foreground font-mono text-right">
-                    {n.tokens_in.toLocaleString('en')} / {n.tokens_out.toLocaleString('en')}
+                    {n.tokens_in.toLocaleString()} / {n.tokens_out.toLocaleString()}
                   </span>
                   <span className="text-xs font-mono text-right w-20 text-muted-foreground">
                     {n.cost_usd > 0 ? `€${n.cost_usd.toFixed(4)}` : '—'}

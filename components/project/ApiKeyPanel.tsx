@@ -70,10 +70,10 @@ function KeyRow({
         <span className="text-xs text-muted-foreground">
           Role: <span className="text-muted-foreground">{k.role.display_name}</span>
           {k.expires_at && (
-            <> · Expires: <span className={expired ? 'text-destructive' : 'text-muted-foreground'}>{new Date(k.expires_at).toLocaleDateString('en')}</span></>
+            <> · Expires: <span className={expired ? 'text-destructive' : 'text-muted-foreground'}>{new Date(k.expires_at).toLocaleDateString()}</span></>
           )}
           {k.last_used && (
-            <> · Last used: <span className="text-muted-foreground">{new Date(k.last_used).toLocaleDateString('en')}</span></>
+            <> · Last used: <span className="text-muted-foreground">{new Date(k.last_used).toLocaleDateString()}</span></>
           )}
           {revoked && <> · <span className="text-destructive">Revoked</span></>}
           {expired && !revoked && <> · <span className="text-[var(--accent-amber-9)]">Expired</span></>}

@@ -52,7 +52,7 @@ export function TaskInput({
         <Label htmlFor="task-input-textarea">Task description</Label>
         <div className="flex items-center gap-2">
           <span className={cn('text-xs font-mono', chars > maxLength * 0.9 ? 'text-amber-400' : 'text-muted-foreground')}>
-            {chars.toLocaleString('en')} / {maxLength.toLocaleString('en')}
+            {chars.toLocaleString()} / {maxLength.toLocaleString()}
           </span>
           {expertMode && onSchemaChange && (
             <Button

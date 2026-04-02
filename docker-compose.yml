@@ -164,6 +164,45 @@ services:
     restart: unless-stopped
     # No ports exposed — app connects via internal Docker network only
 
+  # Marketplace auto-update cron (B.5.1).
+  # Calls /api/internal/run-update-checks on a configurable interval.
+  # Activated with: docker compose --profile marketplace-cron up
+  #
+  # Required env vars:
+  #   INTERNAL_CRON_SECRET   — shared secret for the cron endpoint (constant-time compare)
+  #   CHECK_INTERVAL_SECONDS — polling interval (default: 86400 = 24 h)
+  #
+  # Security: only app_net; no DB access; no auth secret; no LLM keys.
+  marketplace-cron:
+    image: curlimages/curl:8.9.1
+    command: >-
+      sh -c '
+        echo "[cron] Waiting for app to be ready...";
+        sleep 10;
+        echo "[cron] Running initial update check...";
+        curl -sf -X POST
+             -H "X-Cron-Secret: $${INTERNAL_CRON_SECRET}"
+             http://app:3000/api/internal/run-update-checks || true;
+        while true; do
+          echo "[cron] Sleeping $${CHECK_INTERVAL_SECONDS:-86400}s...";
+          sleep $${CHECK_INTERVAL_SECONDS:-86400};
+          echo "[cron] Running scheduled update check...";
+          curl -sf -X POST
+               -H "X-Cron-Secret: $${INTERNAL_CRON_SECRET}"
+               http://app:3000/api/internal/run-update-checks || true;
+        done'
+    environment:
+      - INTERNAL_CRON_SECRET=${INTERNAL_CRON_SECRET:?INTERNAL_CRON_SECRET must be set in .env}
+      - CHECK_INTERVAL_SECONDS=${CHECK_INTERVAL_SECONDS:-86400}
+    networks:
+      - app_net
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - marketplace-cron   # docker compose --profile marketplace-cron up
+
 volumes:
   postgres_data:
 

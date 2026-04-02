@@ -144,14 +144,14 @@ export default async function DashboardPage() {
           <StatCard
             icon={<Zap className="h-4 w-4" />}
             label="Running now"
-            value={(runningNow as number).toLocaleString('en')}
+            value={(runningNow as number).toLocaleString()}
             href="/runs"
             highlight={(runningNow as number) > 0}
           />
           <StatCard
             icon={<CheckCircle2 className="h-4 w-4" />}
             label="Completed today"
-            value={(completedToday as number).toLocaleString('en')}
+            value={(completedToday as number).toLocaleString()}
             href="/runs"
           />
 
@@ -172,13 +172,13 @@ export default async function DashboardPage() {
               <StatCard
                 icon={<FolderKanban className="h-4 w-4" />}
                 label="Projects"
-                value={(totalProjects ?? 0).toLocaleString('en')}
+                value={(totalProjects ?? 0).toLocaleString()}
                 href="/projects"
               />
               <StatCard
                 icon={<XCircle className="h-4 w-4" />}
                 label="Failed today"
-                value={(failedToday ?? 0).toLocaleString('en')}
+                value={(failedToday ?? 0).toLocaleString()}
                 href="/analytics"
                 danger={(failedToday ?? 0) > 0}
               />
@@ -315,7 +315,7 @@ function RunCard({ run }: { run: RunRow }) {
           </div>
           <span className="text-xs text-muted-foreground shrink-0">
             {run.started_at
-              ? new Date(run.started_at).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })
+              ? new Date(run.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               : '—'}
           </span>
         </CardContent>
