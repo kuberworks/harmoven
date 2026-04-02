@@ -12,6 +12,7 @@ import { db } from '@/lib/db/client'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { UserActionsClient } from './user-actions-client'
+import { CreateUserClient } from './create-user-client'
 
 export const metadata: Metadata = { title: 'Users — Admin' }
 
@@ -37,11 +38,16 @@ export default async function AdminUsersPage() {
     },
   })
 
+  const adminCount = users.filter(u => u.role === 'instance_admin').length
+
   return (
     <div className="space-y-6 animate-stagger">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Users</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">{users.length} accounts</p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Users</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{users.length} accounts</p>
+        </div>
+        <CreateUserClient />
       </div>
 
       <Card>
@@ -72,6 +78,8 @@ export default async function AdminUsersPage() {
               <UserActionsClient
                 userId={u.id}
                 banned={u.banned ?? false}
+                role={u.role ?? 'user'}
+                isLastAdmin={u.role === 'instance_admin' && adminCount <= 1}
                 isSelf={u.id === session.user.id}
               />
             </div>
