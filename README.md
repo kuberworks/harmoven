@@ -281,7 +281,7 @@ Custom roles can extend any built-in role. Roles are scoped per project; a user 
 - Zero secrets in Docker images or `orchestrator.yaml`
 - Cosign image verification (opt-in via `orchestrator.yaml → security.supply_chain`)
 
-See [`ARCHITECTURE_REVIEW.md`](ARCHITECTURE_REVIEW.md) for the full security audit.
+See [`.specs/analysis/architecture-review.md`](.specs/analysis/architecture-review.md) for the full security audit.
 
 ---
 
