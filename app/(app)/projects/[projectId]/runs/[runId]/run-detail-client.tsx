@@ -507,30 +507,32 @@ function ResultTab({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Print / Save as PDF button — hidden in print view itself */}
-      <div className="flex justify-end print:hidden">
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-surface-raised px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-        >
-          <Printer className="h-3.5 w-3.5" />
-          Imprimer / Enregistrer en PDF
-        </button>
-      </div>
-
-      <div data-print-result>
-      {outputs.map((o) => (
+    <div data-print-result>
+      {outputs.map((o, i) => (
         <Card key={o.node_id} className="mb-4 print:shadow-none print:border-0">
-          {outputs.length > 1 && (
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-muted-foreground font-mono">
-                {o.agent_type} · {o.node_id}
-              </CardTitle>
-            </CardHeader>
-          )}
-          <CardContent className={outputs.length > 1 ? 'pt-0' : 'pt-5'}>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2">
+              {outputs.length > 1 ? (
+                <CardTitle className="text-xs text-muted-foreground font-mono">
+                  {o.agent_type} · {o.node_id}
+                </CardTitle>
+              ) : (
+                <span />
+              )}
+              {/* Print button — only on first card, icon-only to save space */}
+              {i === 0 && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  title="Print / Save as PDF"
+                  className="print:hidden text-muted-foreground hover:text-foreground transition-colors rounded p-1 hover:bg-surface-hover"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
             {looksLikeMarkdown(o.content) ? (
               // Markdown path: rehype-sanitize strips dangerous HTML before render.
               // No dangerouslySetInnerHTML — ReactMarkdown renders to React elements.
@@ -548,7 +550,6 @@ function ResultTab({
           </CardContent>
         </Card>
       ))}
-      </div>
     </div>
   )
 }
