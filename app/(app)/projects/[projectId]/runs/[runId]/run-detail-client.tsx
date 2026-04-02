@@ -473,9 +473,10 @@ body {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
-table.print-layout { width: 100%; border-collapse: collapse; }
+table.print-layout { width: 100%; border-collapse: collapse; border: none; margin: 0; }
 table.print-layout > thead > tr > td,
-table.print-layout > tfoot > tr > td { height: 2cm; line-height: 0; font-size: 0; }
+table.print-layout > tfoot > tr > td { height: 2cm; line-height: 0; font-size: 0; border: none !important; padding: 0 !important; background: transparent !important; }
+table.print-layout > tbody > tr > td { border: none !important; padding: 0 !important; background: transparent !important; vertical-align: top; }
 h1 { font-size: 20pt; margin: 0 0 14pt; color: #000; }
 h2 { font-size: 15pt; margin: 18pt 0 8pt; color: #111; border-bottom: 1px solid #ddd; padding-bottom: 4pt; }
 h3 { font-size: 12pt; margin: 14pt 0 6pt; color: #111; }
