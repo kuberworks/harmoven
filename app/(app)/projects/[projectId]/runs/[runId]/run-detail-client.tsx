@@ -452,16 +452,14 @@ const SANITIZE_SCHEMA = {
 }
 
 const PRINT_CSS = `
-/* Hybrid margin strategy (cross-browser reliable):
-   - @page margin-top/bottom: correct top/bottom gap on EVERY page (requires
-     blob URL on Safari; document.write breaks @page in Safari)
-   - body padding-left/right: correct left/right gap on EVERY page regardless
-     of @page support (padding constrains the content BOX width, so it applies
-     to every rasterised line on every page, unlike padding-top/bottom which
-     only renders at document start/end)
-   - @page margin-left/right = 0 so body padding is the only left/right offset
-     and we don't get double-indentation when @page is also honoured */
-@page { size: A4; margin-top: 2cm; margin-bottom: 2cm; margin-left: 0; margin-right: 0; }
+/* Margin strategy — all-browser reliable including Safari:
+   LEFT/RIGHT: body { padding: 0 2.5cm } constrains content-box width so every
+     line on every page is indented. @page margin-left/right = 0 to avoid double.
+   TOP/BOTTOM: CSS table thead/tfoot trick. The browser repeats <thead> and <tfoot>
+     natively at the top/bottom of EVERY printed page. Empty cells with a fixed
+     height act as per-page top/bottom margins. This works in Safari, Chrome,
+     Firefox, Edge — no @page support needed for margins. */
+@page { size: A4; margin: 0; }
 *, *::before, *::after { box-sizing: border-box; }
 html { margin: 0; padding: 0; background: white; }
 body {
@@ -475,6 +473,9 @@ body {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
+table.print-layout { width: 100%; border-collapse: collapse; }
+table.print-layout > thead > tr > td,
+table.print-layout > tfoot > tr > td { height: 2cm; line-height: 0; font-size: 0; }
 h1 { font-size: 20pt; margin: 0 0 14pt; color: #000; }
 h2 { font-size: 15pt; margin: 18pt 0 8pt; color: #111; border-bottom: 1px solid #ddd; padding-bottom: 4pt; }
 h3 { font-size: 12pt; margin: 14pt 0 6pt; color: #111; }
@@ -526,7 +527,11 @@ function ResultTab({
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Run Result</title>
 <style>${PRINT_CSS}</style>
-</head><body>${sectionsHtml}</body></html>`
+</head><body><table class="print-layout">
+<thead><tr><td></td></tr></thead>
+<tfoot><tr><td></td></tr></tfoot>
+<tbody><tr><td>${sectionsHtml}</td></tr></tbody>
+</table></body></html>`
 
     // Use Blob URL instead of document.write() — Safari does not apply @page
     // rules to documents written via document.write() in a popup, but does
