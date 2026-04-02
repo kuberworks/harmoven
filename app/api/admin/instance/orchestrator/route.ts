@@ -6,8 +6,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 
+import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
+import { uuidv7 }                    from '@/lib/utils/uuidv7'
 import {
   readOrchestratorYaml,
   patchOrchestratorYaml,
@@ -59,6 +61,19 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const { warnings } = await patchOrchestratorYaml(parsed.data, caller.userId)
+
+    // AuditLog: orchestrator.yaml changes affect critical system behaviour
+    // (full_auto mode, execution engine, opt-in services) — must always be
+    // recorded (spec MISS-01 / same policy as admin.security.updated).
+    await db.auditLog.create({
+      data: {
+        id:          uuidv7(),
+        actor:       caller.userId,
+        action_type: 'admin.orchestrator.updated',
+        payload:     parsed.data,
+      },
+    })
+
     return NextResponse.json({ ok: true, warnings })
   } catch (e) {
     console.error('[PATCH /api/admin/instance/orchestrator]', e)

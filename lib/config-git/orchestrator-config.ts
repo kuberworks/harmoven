@@ -144,7 +144,7 @@ const FILE_HEADER = `# orchestrator.yaml — Harmoven instance configuration
 
 export async function patchOrchestratorYaml(
   patch:  OrchestratorPatch,
-  actor:  string,
+  _actor: string,
 ): Promise<{ warnings: CoherenceWarning[] }> {
   const current  = await readOrchestratorYaml()
   const warnings = checkCoherence(patch, current)
@@ -165,8 +165,6 @@ export async function patchOrchestratorYaml(
   await syncInstanceConfig().catch((err: unknown) => {
     console.warn('[orchestrator-config] config.git sync failed after patch:', err)
   })
-
-  void actor // used for future audit log
 
   return { warnings }
 }
