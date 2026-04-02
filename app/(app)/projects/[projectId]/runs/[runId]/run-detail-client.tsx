@@ -452,15 +452,22 @@ const SANITIZE_SCHEMA = {
 }
 
 const PRINT_CSS = `
-/* @page margin is the ONLY mechanism that correctly adds top/bottom margins
-   on ALL printed pages (page 1, 2, 3…). div padding only applies at document
-   start/end, not between pages.
-   Safari bug: document.write() does not trigger @page rule parsing properly.
-   Fix: use Blob URL so Safari treats it as a real document load. */
-@page { size: A4; margin: 2cm 2.5cm; }
+/* Hybrid margin strategy (cross-browser reliable):
+   - @page margin-top/bottom: correct top/bottom gap on EVERY page (requires
+     blob URL on Safari; document.write breaks @page in Safari)
+   - body padding-left/right: correct left/right gap on EVERY page regardless
+     of @page support (padding constrains the content BOX width, so it applies
+     to every rasterised line on every page, unlike padding-top/bottom which
+     only renders at document start/end)
+   - @page margin-left/right = 0 so body padding is the only left/right offset
+     and we don't get double-indentation when @page is also honoured */
+@page { size: A4; margin-top: 2cm; margin-bottom: 2cm; margin-left: 0; margin-right: 0; }
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; background: white; }
+html { margin: 0; padding: 0; background: white; }
 body {
+  margin: 0;
+  padding: 0 2.5cm;
+  background: white;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 11pt;
   line-height: 1.65;
