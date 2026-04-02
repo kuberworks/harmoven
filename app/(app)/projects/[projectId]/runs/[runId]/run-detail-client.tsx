@@ -459,7 +459,7 @@ const PRINT_CSS = `
      natively at the top/bottom of EVERY printed page. Empty cells with a fixed
      height act as per-page top/bottom margins. This works in Safari, Chrome,
      Firefox, Edge — no @page support needed for margins. */
-@page { size: A4; margin: 0; }
+@page { margin: 0; }
 *, *::before, *::after { box-sizing: border-box; }
 html { margin: 0; padding: 0; background: white; }
 body {
