@@ -4,7 +4,7 @@
 // Login screen — email/password and passkey (magic link deferred: needs server plugin).
 // Spec: FRONTEND-SDD-PROMPT.md Priority 1, UX.md §3.1, SKILLS.md §3.
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, Fingerprint } from 'lucide-react'
@@ -54,17 +54,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isPending, startTransition] = useTransition()
-  const [setupRequired, setSetupRequired] = useState(false)
-
-  // Only show the setup wizard link when the instance has not been configured yet.
-  useEffect(() => {
-    fetch('/api/auth/setup-status')
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { setup_required?: boolean } | null) => {
-        if (data?.setup_required) setSetupRequired(true)
-      })
-      .catch(() => { /* silently ignore — link stays hidden */ })
-  }, [])
 
   // ── Email + password ──────────────────────────────────────────────
   function handlePasswordLogin(e: React.FormEvent) {
@@ -163,15 +152,6 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-xs text-muted-foreground">
-          {setupRequired && (
-            <>
-              New instance?{' '}
-              <Link href="/setup" className="text-[var(--accent-amber-9)] hover:underline">
-                Run setup wizard
-              </Link>
-              {' · '}
-            </>
-          )}
           <Link href="/register" className="text-[var(--accent-amber-9)] hover:underline">
             Create account
           </Link>
