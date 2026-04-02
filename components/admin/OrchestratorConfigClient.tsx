@@ -21,7 +21,7 @@ interface OrchestratorConfig {
   privacy?:          { presidio?: { enabled?: boolean } }
   litellm?:          { enabled?: boolean }
   proactivity?:      { full_auto_enabled?: boolean; max_auto_runs_per_day?: number; max_cost_usd_per_day?: number }
-  security?:         { rate_limit_provider?: string }
+  security?:         { rate_limit_provider?: string; allow_public_signup?: boolean }
   updates?:          { auto_install?: string; update_channel?: string; auto_check?: boolean; auto_download?: boolean }
   marketplace?:      { default_update_policy?: string; auto_check_updates?: boolean }
 }
@@ -123,7 +123,8 @@ export function OrchestratorConfigClient({ initial }: Props) {
   const litellmEnabled   = cfg.litellm?.enabled          ?? false
   const presidioEnabled  = cfg.privacy?.presidio?.enabled ?? false
   const fullAuto         = cfg.proactivity?.full_auto_enabled ?? false
-  const rateLimitProv    = cfg.security?.rate_limit_provider ?? 'memory'
+  const rateLimitProv    = cfg.security?.rate_limit_provider  ?? 'memory'
+  const allowPublicSignup = cfg.security?.allow_public_signup ?? false
   const execProvider     = cfg.execution_engine?.provider    ?? 'custom'
   const autoInstall      = cfg.updates?.auto_install         ?? 'notify'
   const updateChannel    = cfg.updates?.update_channel       ?? 'stable'
@@ -200,6 +201,18 @@ export function OrchestratorConfigClient({ initial }: Props) {
             </Row>
             <Row label="Presidio PII detection" description="Strip personally-identifiable information before sending to LLMs. Requires PRESIDIO_ENDPOINT.">
               <Toggle checked={presidioEnabled} onChange={(v) => patch(['privacy', 'presidio', 'enabled'], v)} />
+            </Row>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Rate limiting ──────────────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Registration &amp; access</h3>
+        <Card>
+          <CardContent className="pt-4 pb-2">
+            <Row label="Public sign-up" description="Allow anyone with the URL to create an account. Disable for private / invite-only instances (default). Enable for SaaS / open registration.">
+              <Toggle checked={allowPublicSignup} onChange={(v) => patch(['security', 'allow_public_signup'], v)} />
             </Row>
           </CardContent>
         </Card>
