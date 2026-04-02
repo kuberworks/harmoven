@@ -4,7 +4,7 @@
 // Login form extracted from page.tsx so the parent server component
 // can read allow_public_signup and pass it as a prop.
 
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, Fingerprint } from 'lucide-react'
@@ -54,12 +54,15 @@ export function LoginForm({ allowSignup }: Props) {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [isPending, startTransition] = useTransition()
+  const [isPendingEmail, setIsPendingEmail] = useState(false)
+  const [isPendingPasskey, setIsPendingPasskey] = useState(false)
 
   // ── Email + password ──────────────────────────────────────────────
-  function handlePasswordLogin(e: React.FormEvent) {
+  async function handlePasswordLogin(e: React.FormEvent) {
     e.preventDefault()
-    startTransition(async () => {
+    if (isPendingEmail) return
+    setIsPendingEmail(true)
+    try {
       const { error } = await authClient.signIn.email({
         email,
         password,
@@ -74,12 +77,18 @@ export function LoginForm({ allowSignup }: Props) {
       } else {
         router.push(callbackURL)
       }
-    })
+    } catch {
+      toast({ variant: 'destructive', title: 'Sign in failed', description: 'An unexpected error occurred.' })
+    } finally {
+      setIsPendingEmail(false)
+    }
   }
 
   // ── Passkey ───────────────────────────────────────────────────────
-  function handlePasskey() {
-    startTransition(async () => {
+  async function handlePasskey() {
+    if (isPendingPasskey) return
+    setIsPendingPasskey(true)
+    try {
       const signInPasskey = (authClient.signIn as Record<string, unknown>).passkey as PasskeySignIn | undefined
       if (!signInPasskey) {
         toast({ variant: 'destructive', title: 'Passkey not available', description: 'Configure @better-auth/passkey on the server.' })
@@ -91,7 +100,11 @@ export function LoginForm({ allowSignup }: Props) {
       } else {
         router.push(callbackURL)
       }
-    })
+    } catch {
+      toast({ variant: 'destructive', title: 'Passkey sign in failed', description: 'An unexpected error occurred.' })
+    } finally {
+      setIsPendingPasskey(false)
+    }
   }
 
   return (
@@ -104,12 +117,13 @@ export function LoginForm({ allowSignup }: Props) {
       <CardContent className="space-y-4">
         {/* Passkey — primary CTA */}
         <Button
+          type="button"
           variant="outline"
           className="w-full gap-2"
           onClick={handlePasskey}
-          disabled={isPending}
+          disabled={isPendingPasskey}
         >
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
+          {isPendingPasskey ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
           Sign in with passkey
         </Button>
 
@@ -132,6 +146,8 @@ export function LoginForm({ allowSignup }: Props) {
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
             />
           </div>
           <div className="space-y-1.5">
@@ -146,8 +162,8 @@ export function LoginForm({ allowSignup }: Props) {
               required
             />
           </div>
-          <Button type="submit" className="w-full" disabled={isPending}>
-            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+          <Button type="submit" className="w-full" disabled={isPendingEmail}>
+            {isPendingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
             Sign in
           </Button>
         </form>
