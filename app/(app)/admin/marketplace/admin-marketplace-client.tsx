@@ -46,8 +46,10 @@ import {
   Store,
   Key,
   Activity,
+  Sparkles,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import { SmartImportSection } from './smart-import-section'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,11 +97,29 @@ interface CronHealth {
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
+interface LlmProfile {
+  id:           string
+  provider:     string
+  model_string: string
+  tier:         string
+}
+
+interface SmartImportConfig {
+  enabled:            boolean
+  provider_id:        string | null
+  model:              string | null
+  max_tokens:         number
+  preview_ttl_hours:  number
+  monthly_budget_usd: number | null
+}
+
 interface AdminMarketplaceClientProps {
-  initialWhitelist:  WhitelistEntry[]
-  initialRegistries: Registry[]
-  initialTokens:     GitProviderToken[]
-  cronHealth:        CronHealth
+  initialWhitelist:        WhitelistEntry[]
+  initialRegistries:       Registry[]
+  initialTokens:           GitProviderToken[]
+  cronHealth:              CronHealth
+  initialSmartImport:      SmartImportConfig
+  llmProfiles:             LlmProfile[]
 }
 
 // ─── Whitelist Section ────────────────────────────────────────────────────────
@@ -784,6 +804,8 @@ export function AdminMarketplaceClient({
   initialRegistries,
   initialTokens,
   cronHealth,
+  initialSmartImport,
+  llmProfiles,
 }: AdminMarketplaceClientProps) {
   return (
     <Tabs defaultValue="whitelist" className="space-y-4">
@@ -792,6 +814,10 @@ export function AdminMarketplaceClient({
         <TabsTrigger value="registries" className="text-xs h-7">Registries</TabsTrigger>
         <TabsTrigger value="tokens" className="text-xs h-7">Tokens Git</TabsTrigger>
         <TabsTrigger value="cron" className="text-xs h-7">Cron</TabsTrigger>
+        <TabsTrigger value="smart-import" className="text-xs h-7 gap-1">
+          <Sparkles className="h-3 w-3" />
+          Smart Import
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="whitelist" className="space-y-0">
@@ -808,6 +834,10 @@ export function AdminMarketplaceClient({
 
       <TabsContent value="cron" className="space-y-0">
         <CronStatusSection initial={cronHealth} />
+      </TabsContent>
+
+      <TabsContent value="smart-import" className="space-y-0">
+        <SmartImportSection initialConfig={initialSmartImport} profiles={llmProfiles} />
       </TabsContent>
     </Tabs>
   )

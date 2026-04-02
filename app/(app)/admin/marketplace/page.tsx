@@ -18,12 +18,20 @@ export default async function AdminMarketplacePage() {
   const instanceRole = (session.user as Record<string, unknown>).role as string | null
   if (instanceRole !== 'instance_admin') redirect('/dashboard')
 
-  const [whitelist, registries, tokens, cronSetting, lastScheduled] = await Promise.all([
+  const [whitelist, registries, tokens, cronSetting, lastScheduled, siSettings, llmProfiles] = await Promise.all([
     db.gitUrlWhitelistEntry.findMany({ orderBy: { created_at: 'asc' } }),
     db.marketplaceRegistry.findMany({ orderBy: { created_at: 'asc' } }),
     db.gitProviderToken.findMany({ orderBy: { created_at: 'asc' } }),
     db.systemSetting.findUnique({ where: { key: 'marketplace.cron.last_scheduled_run_at' } }),
     db.systemSetting.findUnique({ where: { key: 'marketplace.cron.last_run_at' } }),
+    db.systemSetting.findMany({
+      where: { key: { startsWith: 'marketplace.smart_import.' } },
+    }),
+    db.llmProfile.findMany({
+      where:   { enabled: true },
+      orderBy: { id: 'asc' },
+      select:  { id: true, provider: true, model_string: true, tier: true },
+    }),
   ])
 
   const now = new Date()
@@ -98,6 +106,20 @@ export default async function AdminMarketplacePage() {
     pending_updates_count: pendingCount,
   }
 
+  // Smart Import config
+  const siMap: Record<string, string> = {}
+  for (const row of siSettings) { siMap[row.key] = row.value as string }
+  const initialSmartImport = {
+    enabled:            siMap['marketplace.smart_import.enabled'] !== 'false',
+    provider_id:        siMap['marketplace.smart_import.provider_id'] ?? null,
+    model:              siMap['marketplace.smart_import.model'] ?? null,
+    max_tokens:         parseInt(siMap['marketplace.smart_import.max_tokens'] ?? '4000', 10),
+    preview_ttl_hours:  parseInt(siMap['marketplace.smart_import.preview_ttl_hours'] ?? '24', 10),
+    monthly_budget_usd: siMap['marketplace.smart_import.monthly_budget_usd']
+      ? parseFloat(siMap['marketplace.smart_import.monthly_budget_usd'])
+      : null,
+  }
+
   return (
     <div className="space-y-6 animate-stagger">
       <div>
@@ -112,6 +134,8 @@ export default async function AdminMarketplacePage() {
         initialRegistries={serialisedRegistries}
         initialTokens={serialisedTokens}
         cronHealth={cronHealth}
+        initialSmartImport={initialSmartImport}
+        llmProfiles={llmProfiles}
       />
     </div>
   )

@@ -36,19 +36,24 @@ export default async function MarketplacePage() {
   const isAdmin      = instanceRole === 'instance_admin'
 
   // Show installed packs (all source types) ordered by recency
-  const installed = await db.mcpSkill.findMany({
-    orderBy: { installed_at: 'desc' },
-    select: {
-      id:           true,
-      name:         true,
-      source_type:  true,
-      version:      true,
-      enabled:      true,
-      scan_status:  true,
-      installed_at: true,
-      pending_update: true,
-    },
-  })
+  const [installed, siEnabledSetting] = await Promise.all([
+    db.mcpSkill.findMany({
+      orderBy: { installed_at: 'desc' },
+      select: {
+        id:           true,
+        name:         true,
+        source_type:  true,
+        version:      true,
+        enabled:      true,
+        scan_status:  true,
+        installed_at: true,
+        pending_update: true,
+      },
+    }),
+    db.systemSetting.findUnique({ where: { key: 'marketplace.smart_import.enabled' } }),
+  ])
+
+  const smartImportEnabled = siEnabledSetting?.value !== 'false'
 
   return (
     <div className="space-y-6 animate-stagger">
@@ -84,7 +89,7 @@ export default async function MarketplacePage() {
               <p className="text-xs text-muted-foreground">
                 Fetch d&apos;un fichier GitHub raw et conversion en pack. Revue humaine obligatoire avant activation.
               </p>
-              <ImportFromUrlClient />
+              <ImportFromUrlClient smartImportEnabled={smartImportEnabled} />
             </div>
           </TabsContent>
 

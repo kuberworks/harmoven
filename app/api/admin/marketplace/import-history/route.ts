@@ -1,8 +1,10 @@
 // app/api/admin/marketplace/import-history/route.ts
 // GET /api/admin/marketplace/import-history
-// List marketplace import + upload audit events. Admin only.
+// List marketplace import + upload audit events + Smart Import LLM cost tracking. Admin only.
 //
-// A.4.2 / SEC-21 — uses AuditLog as source of truth for import history.
+// A.4.2 — Smart Import phantom runs are the cost source of truth.
+// Non-LLM imports visible via AuditLog action_type filter.
+// Monthly cost = SUM(cost_actual_usd) on phantom Runs (run_type='marketplace_import').
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -20,6 +22,7 @@ const IMPORT_ACTION_TYPES = [
   'claude_plugin_conversion_approved',
   'github_import_approved',
   'marketplace_smart_import_approved',
+  'marketplace_smart_import_llm_call',
 ]
 
 export async function GET(req: NextRequest) {
@@ -54,36 +57,45 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  // Monthly cost aggregate — stored in AuditLog payload.cost_usd where present
+  // Monthly LLM cost — sum cost_actual_usd on phantom runs for current UTC calendar month (A.4.2)
   const monthStart = new Date()
   monthStart.setUTCDate(1)
   monthStart.setUTCHours(0, 0, 0, 0)
 
-  const monthlyEntries = await db.auditLog.findMany({
+  const costAgg = await db.run.aggregate({
+    _sum: { cost_actual_usd: true },
     where: {
-      action_type: 'marketplace_smart_import_approved',
-      timestamp:   { gte: monthStart },
+      run_type:   'marketplace_import',
+      created_at: { gte: monthStart },
+      status:     { in: ['COMPLETED', 'FAILED'] },
     },
-    select: { payload: true },
   })
-  const monthlyCost = monthlyEntries.reduce((sum, e) => {
-    const p = e.payload as Record<string, unknown>
-    const cost = typeof p?.cost_usd === 'number' ? p.cost_usd : 0
-    return sum + cost
-  }, 0)
+  const monthlyCost = Number(costAgg._sum.cost_actual_usd ?? 0)
+
+  // Monthly phantom run count
+  const monthlyCallCount = await db.run.count({
+    where: {
+      run_type:   'marketplace_import',
+      created_at: { gte: monthStart },
+    },
+  })
 
   // Budget setting
   const budgetSetting = await db.systemSetting.findUnique({
     where: { key: 'marketplace.smart_import.monthly_budget_usd' },
   })
-  const monthlyBudget = budgetSetting?.value ? parseFloat(budgetSetting.value) : null
+  const monthlyBudget = budgetSetting?.value ? parseFloat(String(budgetSetting.value)) : null
 
   return NextResponse.json({
-    data:               entries,
+    data:                  entries,
     total,
     page,
     size,
-    monthly_cost_usd:   monthlyCost,
-    monthly_budget_usd: monthlyBudget,
+    monthly_cost_usd:      monthlyCost,
+    monthly_budget_usd:    monthlyBudget,
+    monthly_llm_calls:     monthlyCallCount,
+    budget_percent_used:   monthlyBudget
+      ? Math.round((monthlyCost / monthlyBudget) * 100)
+      : null,
   })
 }
