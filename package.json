@@ -87,6 +87,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
+    "@types/micromatch": "^4.0.10",
     "@types/node": "^22.0.0",
     "@types/node-cron": "^3.0.11",
     "@types/react": "^18.3.0",
