@@ -9,14 +9,15 @@
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { getInstanceRole } from '@/lib/auth/session-helpers'
 import { db } from '@/lib/db/client'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { Users } from 'lucide-react'
+import { Users, Info, ArrowRight } from 'lucide-react'
 
-export const metadata: Metadata = { title: 'Members' }
+export const metadata: Metadata = { title: 'Organisation members' }
 
 export default async function MembersPage() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -49,15 +50,50 @@ export default async function MembersPage() {
   }
 
   const grouped = Array.from(byUser.values())
+  const projectCount = new Set(memberships.map((m) => m.project.id)).size
+
+  // Collect all projects for the "add member" hint
+  const projects = await db.project.findMany({
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true },
+    take: 50,
+  })
 
   return (
     <div className="space-y-6 animate-stagger">
       <div>
-        <h1 className="text-xl font-semibold text-foreground">Members</h1>
+        <h1 className="text-xl font-semibold text-foreground">Organisation members</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          {grouped.length} members across{' '}
-          {new Set(memberships.map((m) => m.project.id)).size} projects
+          Who has access to what — {grouped.length} {grouped.length === 1 ? 'person' : 'people'} across {projectCount} {projectCount === 1 ? 'project' : 'projects'}.
         </p>
+      </div>
+
+      {/* Context banner */}
+      <div className="flex items-start gap-3 rounded-lg border border-surface-border bg-surface-raised px-4 py-3 text-sm text-muted-foreground">
+        <Info className="h-4 w-4 mt-0.5 shrink-0 text-[var(--accent-amber-9)]" />
+        <div className="space-y-1">
+          <p>
+            This page shows <strong className="text-foreground">project memberships</strong> — who can access which project and with what role.
+            It does <em>not</em> manage user accounts.
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-xs">
+            <span className="flex items-center gap-1">
+              To <strong className="text-foreground">add someone to a project</strong>, go to
+              <Link href="/projects" className="inline-flex items-center gap-0.5 text-[var(--accent-amber-9)] hover:underline">
+                Projects <ArrowRight className="h-3 w-3" />
+              </Link>
+              then <span className="font-medium text-foreground">Settings → Members</span>.
+            </span>
+            {instanceRole === 'instance_admin' && (
+              <span className="flex items-center gap-1">
+                To <strong className="text-foreground">create or delete accounts</strong>, go to
+                <Link href="/admin/users" className="inline-flex items-center gap-0.5 text-[var(--accent-amber-9)] hover:underline">
+                  Admin → Users <ArrowRight className="h-3 w-3" />
+                </Link>.
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {grouped.length === 0 ? (
@@ -65,8 +101,16 @@ export default async function MembersPage() {
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Users className="h-8 w-8 text-muted-foreground/50" />
             <p className="text-sm text-muted-foreground">
-              No project members yet. Add members from a project's settings page.
+              No project members yet.
             </p>
+            {projects.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Add members from a project's{' '}
+                <Link href={`/projects/${projects[0].id}/members`} className="text-[var(--accent-amber-9)] hover:underline">
+                  Members settings page
+                </Link>.
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -89,16 +133,17 @@ export default async function MembersPage() {
                 {/* Project memberships */}
                 <div className="mt-2 flex flex-wrap gap-2">
                   {entries.map((e) => (
-                    <span
+                    <Link
                       key={e.project.id}
-                      className="inline-flex items-center gap-1 rounded-md border border-surface-border bg-surface-hover px-2 py-0.5 text-xs text-foreground"
+                      href={`/projects/${e.project.id}/members`}
+                      className="inline-flex items-center gap-1 rounded-md border border-surface-border bg-surface-hover px-2 py-0.5 text-xs text-foreground hover:border-muted-foreground transition-colors"
                     >
                       <span className="font-medium">{e.project.name}</span>
                       <span className="text-muted-foreground">·</span>
                       <span className="text-muted-foreground">
                         {e.role.display_name ?? e.role.name}
                       </span>
-                    </span>
+                    </Link>
                   ))}
                 </div>
               </div>
