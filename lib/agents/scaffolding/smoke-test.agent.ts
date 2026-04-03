@@ -17,6 +17,8 @@
 // Port:   kept alive — caller must call releasePreviewPort() on gate resolution
 
 import path from 'path'
+import fs   from 'fs'
+import yaml from 'js-yaml'
 import type { ILLMClient } from '@/lib/llm/interface'
 import { safeBaseEnv } from '@/lib/utils/safe-env'
 import { execFileAsync } from '@/lib/utils/exec-safe'
@@ -47,6 +49,124 @@ function assertWorktreeIsSafe(worktree: string): string {
     )
   }
   return resolved
+}
+
+// ─── Compose file security validator ─────────────────────────────────────────
+// Am.91 — Verify that the generated app's docker-compose.yml does not declare
+// dangerous container capabilities before we execute `docker compose up`.
+//
+// Threat: a tampered DAG or a malicious compose template could declare
+// `privileged: true`, `cap_add: ALL`, host network mode, or host PID namespace,
+// allowing a container to escape to the Docker host.
+//
+// Defence-in-depth: Tecnativa docker-socket-proxy (in our own compose) already
+// blocks exec+build from the Harmoven app, but a malicious compose file could
+// map an explicit --cap-add at container-create time (CONTAINERS:1 allows POST
+// /containers/create with unchecked body). This validator catches it before
+// the request ever reaches the daemon.
+
+const COMPOSE_FILENAMES = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']
+
+function findComposeFile(worktree: string): string | null {
+  for (const name of COMPOSE_FILENAMES) {
+    const candidate = path.join(worktree, name)
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+function validateComposeFile(worktree: string): void {
+  const composePath = findComposeFile(worktree)
+  if (!composePath) return   // no compose file — docker compose up will fail naturally
+
+  let parsed: unknown
+  try {
+    const raw = fs.readFileSync(composePath, 'utf8')
+    parsed = yaml.load(raw)
+  } catch (err) {
+    throw new Error(
+      `[SmokeTestAgent] Could not parse compose file "${composePath}": ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return
+
+  const services = (parsed as Record<string, unknown>)['services']
+  if (typeof services !== 'object' || services === null) return
+
+  const violations: string[] = []
+
+  for (const [svcName, svcRaw] of Object.entries(services as Record<string, unknown>)) {
+    const svc = svcRaw as Record<string, unknown>
+    const cfg = (svc?.['deploy'] as Record<string, unknown> | undefined) ?? {}
+
+    // 1. Privileged mode — full host capability set
+    if (svc?.['privileged'] === true) {
+      violations.push(`service "${svcName}": privileged: true is not allowed`)
+    }
+
+    // 2. cap_add — adding specific Linux capabilities
+    const capAdd = svc?.['cap_add']
+    if (Array.isArray(capAdd) && capAdd.length > 0) {
+      violations.push(`service "${svcName}": cap_add is not allowed (${(capAdd as string[]).join(', ')})`)
+    }
+
+    // 3. network_mode: host — bypasses Docker network isolation
+    if (svc?.['network_mode'] === 'host') {
+      violations.push(`service "${svcName}": network_mode: host is not allowed`)
+    }
+
+    // 4. pid: host — shares host PID namespace
+    if (svc?.['pid'] === 'host') {
+      violations.push(`service "${svcName}": pid: host is not allowed`)
+    }
+
+    // 5. ipc: host — shares host IPC namespace
+    if (svc?.['ipc'] === 'host') {
+      violations.push(`service "${svcName}": ipc: host is not allowed`)
+    }
+
+    // 6. security_opt: no-new-privileges:false — explicitly permits privilege escalation
+    const secOpt = svc?.['security_opt']
+    if (Array.isArray(secOpt)) {
+      for (const opt of secOpt as string[]) {
+        if (typeof opt === 'string' && opt === 'no-new-privileges:false') {
+          violations.push(`service "${svcName}": security_opt no-new-privileges:false is not allowed`)
+        }
+      }
+    }
+
+    // 7. volumes binding /var/run/docker.sock or /proc or /sys (not via proxy)
+    const volumes = svc?.['volumes']
+    if (Array.isArray(volumes)) {
+      for (const vol of volumes as unknown[]) {
+        const src = typeof vol === 'string'
+          ? vol.split(':')[0]
+          : typeof vol === 'object' && vol !== null
+            ? ((vol as Record<string, unknown>)['source'] as string | undefined)
+            : undefined
+        if (src && (
+          src === '/var/run/docker.sock' ||
+          src === '/proc' ||
+          src.startsWith('/proc/') ||
+          src === '/sys' ||
+          src.startsWith('/sys/')
+        )) {
+          violations.push(`service "${svcName}": mounting "${src}" is not allowed`)
+        }
+      }
+    }
+
+    // Suppress TS "unused variable" warning — cfg is used as a guard for deploy key
+    void cfg
+  }
+
+  if (violations.length > 0) {
+    throw new Error(
+      `[SmokeTestAgent] Compose file security check failed — ${violations.length} violation(s):\n` +
+      violations.map(v => `  • ${v}`).join('\n')
+    )
+  }
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -152,6 +272,9 @@ export async function runSmokeTest(
 
   // #4 — path traversal guard: validate worktree before any fs/exec call
   const worktree = assertWorktreeIsSafe(rawWorktree)
+
+  // #5 — Am.91: validate compose file for dangerous capabilities before exec
+  validateComposeFile(worktree)
 
   const timeoutMs = timeout_s * 1000
   const config    = loadPreviewConfig()
