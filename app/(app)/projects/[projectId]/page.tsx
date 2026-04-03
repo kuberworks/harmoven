@@ -20,6 +20,7 @@ import ConfigHistory from '@/components/project/ConfigHistory'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { RunsViewClient } from './runs-view-client'
 import { ChevronRight, Plus } from 'lucide-react'
+import { PageBreadcrumb } from '@/components/shared/PageBreadcrumb'
 
 interface Props {
   params: Promise<{ projectId: string }>
@@ -88,6 +89,10 @@ export default async function ProjectPage({ params }: Props) {
   }))
   return (
     <div className="space-y-6 animate-stagger">
+      <PageBreadcrumb items={[
+        { label: 'Projects', href: '/projects' },
+        { label: project.name },
+      ]} />
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>

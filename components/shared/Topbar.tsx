@@ -15,6 +15,8 @@ import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils/cn'
 import { useT } from '@/lib/i18n/client'
 import { useMobileSidebar } from '@/components/shared/MobileSidebarContext'
+import { useBreadcrumbContext } from '@/components/shared/BreadcrumbContext'
+import { ChevronRight as BreadcrumbSep } from 'lucide-react'
 
 interface TopbarProps {
   userName?: string
@@ -27,6 +29,7 @@ export function Topbar({ userName, userEmail, locale = 'en' }: TopbarProps) {
   const { toast } = useToast()
   const t = useT()
   const { open: openMobileSidebar } = useMobileSidebar()
+  const { items: breadcrumbItems } = useBreadcrumbContext()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const firstMenuItemRef = useRef<HTMLAnchorElement>(null)
@@ -86,7 +89,17 @@ export function Topbar({ userName, userEmail, locale = 'en' }: TopbarProps) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <div id="topbar-breadcrumb" className="text-sm text-muted-foreground" />
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted-foreground">
+          {breadcrumbItems.map((item, i) => (
+            <span key={i} className="flex items-center gap-1">
+              {i > 0 && <BreadcrumbSep className="h-3 w-3 shrink-0 opacity-40" />}
+              {item.href
+                ? <Link href={item.href} className="hover:text-foreground transition-colors truncate max-w-[160px]">{item.label}</Link>
+                : <span className="text-foreground font-medium truncate max-w-[160px]">{item.label}</span>
+              }
+            </span>
+          ))}
+        </nav>
       </div>
 
       {/* Right — controls */}

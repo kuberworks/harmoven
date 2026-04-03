@@ -12,6 +12,7 @@ import { db } from '@/lib/db/client'
 import { resolvePermissions } from '@/lib/auth/rbac'
 import { ChevronRight } from 'lucide-react'
 import { RunDetailClient } from './run-detail-client'
+import { PageBreadcrumb } from '@/components/shared/PageBreadcrumb'
 
 interface Props {
   params: Promise<{ projectId: string; runId: string }>
@@ -107,6 +108,11 @@ export default async function RunPage({ params }: Props) {
 
   return (
     <div className="space-y-6 animate-stagger">
+      <PageBreadcrumb items={[
+        { label: 'Projects', href: '/projects' },
+        { label: project.name, href: `/projects/${projectId}` },
+        { label: `Run ${runId.slice(0, 8)}` },
+      ]} />
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
         <Link href="/projects" className="hover:text-foreground transition-colors">Projects</Link>

@@ -223,6 +223,20 @@
   .gate-pulse {
     animation: pulse-gate 2s ease-in-out infinite;
   }
+
+  /* ── Kanban status colors via design tokens (avoids hardcoded Tailwind palette) ── */
+  .kanban-running-card {
+    border-left-color: var(--color-status-running);
+    background: linear-gradient(to right, color-mix(in srgb, var(--color-status-running) 5%, transparent), transparent);
+  }
+  .kanban-running-progress {
+    background: linear-gradient(to right, var(--color-status-running), color-mix(in srgb, var(--color-status-running) 60%, transparent));
+  }
+  .kanban-running-badge {
+    border-color:     color-mix(in srgb, var(--color-status-running) 30%, transparent);
+    background-color: color-mix(in srgb, var(--color-status-running) 10%, transparent);
+    color:            var(--color-status-running);
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────

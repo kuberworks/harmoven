@@ -115,32 +115,10 @@ export function LoginForm({ allowSignup }: Props) {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Passkey — primary CTA */}
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full gap-2"
-          onClick={handlePasskey}
-          disabled={isPendingPasskey}
-        >
-          {isPendingPasskey ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
-          Sign in with passkey
-        </Button>
-
-        <div className="relative">
-          <Separator />
-          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
-            or continue with email
-          </span>
-        </div>
-
-        {/* Email + password */}
+        {/* Email + password — primary method */}
         <form
           onSubmit={handlePasswordLogin}
           onKeyDown={(e) => {
-            // Belt-and-suspenders: explicitly trigger submit on Enter in any input.
-            // Bypasses implicit form submission which can be silently blocked
-            // by some browser/hydration edge cases.
             if (e.key === 'Enter' && e.target instanceof HTMLInputElement && !isPendingEmail) {
               e.preventDefault()
               e.currentTarget.requestSubmit()
@@ -163,7 +141,10 @@ export function LoginForm({ allowSignup }: Props) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <span className="text-xs text-muted-foreground">Forgot? Contact your administrator.</span>
+            </div>
             <Input
               id="password"
               type="password"
@@ -179,6 +160,25 @@ export function LoginForm({ allowSignup }: Props) {
             Sign in
           </Button>
         </form>
+
+        {/* Passkey — secondary option */}
+        <div className="relative">
+          <Separator />
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
+            or
+          </span>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full gap-2"
+          onClick={handlePasskey}
+          disabled={isPendingPasskey}
+        >
+          {isPendingPasskey ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
+          Sign in with passkey
+        </Button>
 
         {allowSignup && (
           <p className="text-center text-xs text-muted-foreground">
