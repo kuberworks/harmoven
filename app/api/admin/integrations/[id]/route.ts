@@ -124,7 +124,7 @@ export async function PATCH(
   let newSourceUrl: string | undefined
 
   if (source_ref !== undefined && source_ref !== existing.source_ref) {
-    let fetched: { rawUrl: string; content: string; sha256: string }
+    let fetched: { rawUrl: string; content: string; sha256: string; externalUrls: string[] }
     try {
       fetched = await refetchAtRef(existing.source_url ?? '', source_ref)
     } catch (e) {

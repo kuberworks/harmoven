@@ -54,7 +54,7 @@ const PERM_GROUPS: { label: string; perms: Permission[] }[] = [
   { label: 'Project',     perms: ['project:read', 'project:edit', 'project:members', 'project:credentials'] },
   { label: 'Streams',     perms: ['stream:state', 'stream:gates', 'stream:costs', 'stream:project'] },
   { label: 'Marketplace', perms: ['marketplace:install'] },
-  { label: 'Admin',       perms: ['admin:models', 'admin:skills', 'admin:users', 'admin:triggers', 'admin:audit', 'admin:instance'] },
+  { label: 'Admin',       perms: ['admin:models', 'admin:integrations', 'admin:users', 'admin:triggers', 'admin:audit', 'admin:instance'] },
 ]
 
 // ─── 1. Permission matrix ────────────────────────────────────────────────────

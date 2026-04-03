@@ -657,7 +657,7 @@ export async function normalizeGitHubUrl(rawUrl: string): Promise<string> {
   // github.com/{owner}/{repo}  (bare repo — no blob/tree/file path)
   const repoOnly = parsed.pathname.match(/^\/([^/]+)\/([^/]+?)\/?$/)
   if (repoOnly) {
-    const [, owner, repo] = repoOnly
+    const [, owner, repo] = repoOnly as [string, string, string]
     return resolveRepoBestFile(owner, repo)
   }
 
@@ -864,7 +864,7 @@ export async function refetchAtRef(
     throw new GitHubImportError('PARSE_FAILED', `Cannot extract file path from source_url: ${rawSourceUrl.slice(0, 200)}`)
   }
 
-  const [owner, repo, , ...fileParts] = parts
+  const [owner, repo, , ...fileParts] = parts as [string, string, string, ...string[]]
 
   // Ref resolution rules:
   //   - Full 40-char SHA  → use directly in the raw URL (raw.githubusercontent.com accepts it natively)
