@@ -46,12 +46,12 @@ Deploy in minutes on Docker Compose. Built for teams that need data sovereignty 
 
 ## Requirements
 
-| Dependency | Minimum version |
-|---|---|
-| Node.js | 22 |
-| Docker + Docker Compose | v2 |
-| PostgreSQL | 16 (bundled in Compose) |
-| Anthropic API key | Required for default LLM profiles |
+| Dependency | Minimum version | Notes |
+|---|---|---|
+| Docker + Docker Compose | v2 | Required for Docker install |
+| Node.js | 22 | Only for local dev (not needed with Docker) |
+| PostgreSQL | 16 | Bundled in Docker Compose |
+| LLM API key | — | Anthropic, OpenAI, Gemini, or Mistral |
 
 ---
 
@@ -135,9 +135,8 @@ npm install
 docker compose up db -d
 cp .env.example .env   # point DATABASE_URL to localhost:5432
 
-# Apply migrations and generate Prisma client
+# Apply migrations (also regenerates the Prisma client)
 npm run db:migrate
-npm run db:generate
 
 # Start the dev server
 CONFIG_GIT_DIR=/tmp/harmoven-config-git npm run dev
