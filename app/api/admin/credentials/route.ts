@@ -20,6 +20,7 @@ import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
 import { checkRateLimitAsync }       from '@/lib/auth/rate-limit'
+import { getRateLimitConfig }        from '@/lib/auth/rate-limit-config'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
@@ -113,8 +114,9 @@ const CreateCredentialBody = z.object({
 }).strict()
 
 export async function POST(req: NextRequest) {
-  // LOW-4: prevent credential-creation spam (20 per hour per IP, even for instance_admin)
-  const rl = await checkRateLimitAsync(req, 'admin-cred-create', 20, 60 * 60 * 1000)
+  // LOW-4: prevent credential-creation spam (DB-configurable, default 20 per hour per IP)
+  const { max: rlMax, window_ms: rlWin } = await getRateLimitConfig('admin-cred-create')
+  const rl = await checkRateLimitAsync(req, 'admin-cred-create', rlMax, rlWin)
   if (rl) return rl
 
   const { caller, err } = await guardAdminCreds(req)

@@ -6,6 +6,11 @@
 // would obtain RCE through the MCP StdioClientTransport. This allowlist ensures
 // only well-known package runners and interpreters can be specified.
 //
+// SEC-HARM-011: prevents inline code execution via interpreter flags.
+// node -e "...", python3 -c "...", bun -e "...", deno eval "..." etc. allow
+// arbitrary code execution even when the command basename is on the allowlist.
+// These flags are therefore explicitly blocked.
+//
 // Also enforced at execution time in lib/mcp/client.ts (belt-and-suspenders).
 
 /**
@@ -18,6 +23,23 @@ export const ALLOWED_MCP_COMMANDS = new Set([
   'uvx', 'uv',
   'deno',
   'bun',
+])
+
+/**
+ * Argument flags that trigger inline code execution on common interpreters.
+ * Blocking these prevents CVE-HARM-005 bypass via `node -e "..."` etc.
+ *
+ * Normalised to lowercase for comparison.
+ */
+const INLINE_EVAL_FLAGS = new Set([
+  // Node.js / Bun
+  '-e', '--eval', '-p', '--print',
+  // Python
+  '-c',
+  // Deno
+  'eval',
+  // Generic shell-like
+  '-x', '--execute', '--run',
 ])
 
 /**
@@ -47,6 +69,15 @@ export function validateMcpConfig(config: unknown): string | null {
     }
     for (const arg of c['args'] as unknown[]) {
       if (typeof arg !== 'string') return 'all args must be strings'
+      // SEC-HARM-011: block inline-eval flags that allow arbitrary code execution
+      // even when the command is on the allowlist (e.g. node -e "require('child_process')...").
+      const normalised = arg.trim().toLowerCase()
+      if (INLINE_EVAL_FLAGS.has(normalised)) {
+        return (
+          `MCP skill arg "${arg}" is a code-execution flag and is not allowed. `
+          + `Use a proper entry-point file instead.`
+        )
+      }
     }
   }
 

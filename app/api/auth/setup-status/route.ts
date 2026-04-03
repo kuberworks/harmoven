@@ -13,22 +13,17 @@ import { db }           from '@/lib/db/client'
 
 export async function GET() {
   const userCount = await db.user.count()
-  const modelCount = await db.llmProfile.count()
 
-  const hasAdmin      = userCount > 0
-  const hasLlmProfile = modelCount > 0
+  const hasAdmin = userCount > 0
   // setup_complete: all mandatory steps are done (admin created).
-  // LLM profile is strongly recommended but not blocking — the wizard
-  // shows has_llm_profile separately so the UI can guide configuration.
   const setupComplete = hasAdmin
 
-  // WARN-005 FIX: expose both `setup_complete` (canonical) and `setup_required`
-  // (inverse, consumed by some frontend components via types/api.ts generated types).
-  // Both are present so consumers can use whichever reads more naturally.
+  // L-3 fix: has_llm_profile removed — it is not needed by the setup wizard
+  // and leaks instance occupancy to unauthenticated callers.
+  // WARN-005 FIX: expose both `setup_complete` (canonical) and `setup_required` (inverse alias).
   return NextResponse.json({
-    setup_complete:  setupComplete,
-    setup_required:  !setupComplete,   // inverse alias — keeps frontend contract unambiguous
-    has_admin:       hasAdmin,
-    has_llm_profile: hasLlmProfile,
+    setup_complete: setupComplete,
+    setup_required: !setupComplete,
+    has_admin:      hasAdmin,
   })
 }

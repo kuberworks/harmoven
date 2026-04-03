@@ -104,17 +104,17 @@ export async function POST(req: NextRequest) {
 
   const { url } = parsed.data
 
-  // SEC-07: rate limit check — skipped for instance_admin (SEC-11: throws = blocks if DB fails)
-  if (caller.instanceRole !== 'instance_admin') {
-    try {
-      await checkRateLimit(caller.userId)
-    } catch (e) {
-      if (e instanceof GitHubImportError && e.code === 'RATE_LIMITED') {
-        return NextResponse.json({ error: CLIENT_MESSAGES['RATE_LIMITED'], code: 'RATE_LIMITED' }, { status: 429 })
-      }
-      // DB failure — fail closed
-      return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+  // SEC-07: rate limit check — applied to ALL callers including instance_admin.
+  // The previous guard `if (caller.instanceRole !== 'instance_admin')` was a dead
+  // branch because assertInstanceAdmin() ensures the caller IS instance_admin (M-4 fix).
+  try {
+    await checkRateLimit(caller.userId)
+  } catch (e) {
+    if (e instanceof GitHubImportError && e.code === 'RATE_LIMITED') {
+      return NextResponse.json({ error: CLIENT_MESSAGES['RATE_LIMITED'], code: 'RATE_LIMITED' }, { status: 429 })
     }
+    // DB failure — fail closed
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
   }
 
   // Normalise github.com web URLs (blob → raw, tree → best file via API)
