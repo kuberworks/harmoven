@@ -92,7 +92,7 @@ const COLUMNS: KanbanColumn[] = [
 
 function cardAccent(status: string): string {
   switch (status) {
-    case 'RUNNING':   return 'border-l-blue-500/70 bg-gradient-to-r from-blue-500/5 to-transparent'
+    case 'RUNNING':   return 'kanban-running-card'
     case 'PAUSED':
     case 'SUSPENDED': return 'border-l-amber-500/70 bg-gradient-to-r from-amber-500/5 to-transparent'
     case 'COMPLETED': return 'border-l-emerald-500/50'
@@ -162,7 +162,7 @@ function RunCard({ run, projectId }: { run: RunSummary; projectId: string }) {
       {/* Progress bar for RUNNING */}
       {isRunning && (
         <div className="h-[5px] rounded-full bg-surface-border overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full animate-pulse w-[60%]" />
+          <div className="h-full kanban-running-progress rounded-full animate-pulse w-[60%]" />
         </div>
       )}
 
@@ -178,7 +178,7 @@ function RunCard({ run, projectId }: { run: RunSummary; projectId: string }) {
       {/* Recovering badge — crash-suspended, no gate open */}
       {isGateRecovering && (
         <div className="mt-1.5">
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-blue-500/30 bg-blue-500/10 text-blue-400">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border kanban-running-badge">
             ⟳ interrupted
           </span>
         </div>
