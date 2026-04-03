@@ -127,11 +127,12 @@ services:
   # The Smoke Test Agent needs Docker to launch preview containers but must NOT
   # have full Docker socket access. This proxy restricts it to the minimum needed.
   #
-  # DOCKER_PROXY_DIGEST must be set in .env — use an immutable digest, not a tag.
+  # Opt-in: activate with: docker compose --profile smoke-agent up
+  # DOCKER_PROXY_DIGEST must be set in .env when this profile is active — use an immutable digest, not a tag.
   # Find digest: docker pull ghcr.io/tecnativa/docker-socket-proxy:latest &&
   #   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/tecnativa/docker-socket-proxy:latest
   docker-proxy:
-    image: ghcr.io/tecnativa/docker-socket-proxy@${DOCKER_PROXY_DIGEST:?DOCKER_PROXY_DIGEST must be set in .env — use immutable digest, not a tag}
+    image: ghcr.io/tecnativa/docker-socket-proxy@${DOCKER_PROXY_DIGEST:-sha256:0000000000000000000000000000000000000000000000000000000000000000}
     environment:
       # ── Allow what the Smoke Test Agent needs ─────────────────────────────
       CONTAINERS: 1    # list, inspect, start, stop containers
@@ -162,6 +163,8 @@ services:
     networks:
       - app_net          # reachable from app only (no other service is on app_net)
     restart: unless-stopped
+    profiles:
+      - smoke-agent   # only started when: docker compose --profile smoke-agent up
     # No ports exposed — app connects via internal Docker network only
 
   # Marketplace auto-update cron (B.5.1).
