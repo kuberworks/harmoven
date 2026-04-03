@@ -496,6 +496,7 @@
       "review_warning_body": "This pack comes from an unofficial source. No GPG signature — no cryptographic integrity guarantee.",
       "review_warning_inferred": " Fields marked ⚠ Inferred were deduced automatically — verify them.",
       "sha_disclaimer": "This hash is computed locally. Without a GPG signature, it does not guarantee content integrity in transit.",
+      "field_version": "Version / ref",
       "approve": "Approve pack",
       "approving": "Approving…",
       "approved_disabled": "The pack will be created disabled. Activate it manually in Admin → Integrations.",
