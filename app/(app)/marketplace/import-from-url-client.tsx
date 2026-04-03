@@ -13,14 +13,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Loader2, AlertTriangle, CheckCircle2, Info, Sparkles, X } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle2, Info, Sparkles, X, BookOpen, Wrench, FileText, Bot, Puzzle, Slash } from 'lucide-react'
 import type { GitHubImportPreview } from '@/lib/marketplace/from-github-url'
 import { useT } from '@/lib/i18n/client'
 
@@ -57,6 +50,24 @@ const CAPABILITY_TYPES: CapabilityType[] = [
   'js_ts_plugin',
   'slash_command',
 ]
+
+const CAP_ICON: Record<CapabilityType, React.ElementType> = {
+  domain_pack:    BookOpen,
+  mcp_skill:      Wrench,
+  prompt_only:    FileText,
+  harmoven_agent: Bot,
+  js_ts_plugin:   Puzzle,
+  slash_command:  Slash,
+}
+
+const CAP_COLOR: Record<CapabilityType, string> = {
+  domain_pack:    'text-purple-400',
+  mcp_skill:      'text-blue-400',
+  prompt_only:    'text-slate-300',
+  harmoven_agent: 'text-emerald-400',
+  js_ts_plugin:   'text-amber-400',
+  slash_command:  'text-rose-400',
+}
 
 // Relevance gate API response
 interface RelevanceGateResponse {
@@ -563,7 +574,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
         >
 
           {/* ── Component type selector — MOST IMPORTANT, always first ─────── */}
-          <div className="rounded-md border-2 border-primary/30 bg-primary/5 px-4 py-3 space-y-2">
+          <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-foreground">
                 {t('marketplace.add_from_git.component_type_label')}
@@ -575,24 +586,34 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
                 </span>
               )}
             </div>
-            <Select
-              value={confirmed.capability_type}
-              onValueChange={(v) => setConfirmed({ ...confirmed, capability_type: v as CapabilityType })}
-            >
-              <SelectTrigger className="h-9 text-sm font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CAPABILITY_TYPES.map((ct) => (
-                  <SelectItem key={ct} value={ct}>
-                    <div className="flex flex-col gap-0.5 py-0.5">
-                      <span className="font-medium">{t(`marketplace.capability_type.${ct}`)}</span>
-                      <span className="text-xs text-muted-foreground">{t(`marketplace.capability_type_desc.${ct}`)}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {CAPABILITY_TYPES.map((ct) => {
+                const Icon    = CAP_ICON[ct]
+                const color   = CAP_COLOR[ct]
+                const active  = confirmed.capability_type === ct
+                return (
+                  <button
+                    key={ct}
+                    type="button"
+                    onClick={() => setConfirmed({ ...confirmed, capability_type: ct })}
+                    className={[
+                      'flex flex-col gap-1.5 rounded-md border px-3 py-2.5 text-left transition-colors',
+                      active
+                        ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
+                        : 'border-border bg-surface-overlay hover:border-primary/40 hover:bg-primary/5',
+                    ].join(' ')}
+                  >
+                    <Icon className={`h-4 w-4 ${color}`} />
+                    <span className="text-xs font-medium text-foreground leading-tight">
+                      {t(`marketplace.capability_type.${ct}`)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground leading-snug">
+                      {t(`marketplace.capability_type_desc.${ct}`)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {/* Warning banner — always visible */}
