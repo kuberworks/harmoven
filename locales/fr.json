@@ -499,6 +499,7 @@
       "field_version": "Version / ref",
       "approve": "Approuver le pack",
       "approving": "Approbation…",
+      "success": "Pack enregistré. Il est désactivé par défaut — activez-le dans Admin → Intégrations.",
       "approved_disabled": "Le pack sera créé désactivé. Activez-le manuellement dans Admin → Integrations.",
       "smart_import_disabled_title": "Smart Import disponible mais désactivé",
       "smart_import_disabled_body": "Activez Smart Import dans Admin → Marketplace → Smart Import pour bénéficier de l'analyse de pertinence et de la génération automatique de manifeste.",

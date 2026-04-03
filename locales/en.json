@@ -499,6 +499,7 @@
       "field_version": "Version / ref",
       "approve": "Approve pack",
       "approving": "Approving…",
+      "success": "Pack saved. It is disabled by default — activate it in Admin → Integrations.",
       "approved_disabled": "The pack will be created disabled. Activate it manually in Admin → Integrations.",
       "smart_import_disabled_title": "Smart Import available but disabled",
       "smart_import_disabled_body": "Enable Smart Import in Admin → Marketplace → Smart Import to benefit from relevance analysis and automatic manifest generation.",
