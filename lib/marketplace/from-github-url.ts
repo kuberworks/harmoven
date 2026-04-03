@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto'
 import { parse as parseToml } from 'smol-toml'
 import yaml from 'js-yaml'
-import { scanPackContent } from '@/lib/marketplace/scan'
+import { scanPackContent, type ScanViolation } from '@/lib/marketplace/scan'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -205,11 +205,11 @@ function parseMarkdownPack(raw: string): ParsedPack {
   // ── Frontmatter extraction ────────────────────────────────────────────────
   const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)
   if (fmMatch) {
-    const fmRaw = fmMatch[1]
+    const fmRaw = fmMatch[1]!
     // Simple key: value parser — no full YAML, untrusted input
     const get = (key: string): string | undefined => {
       const m = fmRaw.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))
-      return m ? m[1].trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '') : undefined
+      return m ? m[1]!.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '') : undefined
     }
     const name        = get('name') ?? get('display_name')
     const description = get('description')
@@ -233,7 +233,7 @@ function parseMarkdownPack(raw: string): ParsedPack {
   for (const line of lines) {
     const headingMatch = line.match(/^#{1,2}\s+(.+)$/)
     if (headingMatch && !name) {
-      name = headingMatch[1]
+      name = headingMatch[1]!
         .replace(/\*{1,2}|_{1,2}|`/g, '')
         .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
         .trim()
@@ -485,8 +485,8 @@ async function scanExternalUrlRefs(content: string): Promise<{
 
 // ─── SEC-04: Double scan ───────────────────────────────────────────────────────
 
-function runDoubleScan(rawContent: string, parsed: ParsedPack, filename: string): string[] {
-  const violations: string[] = []
+function runDoubleScan(rawContent: string, parsed: ParsedPack, filename: string): ScanViolation[] {
+  const violations: ScanViolation[] = []
   const isMarkdown = /\.(md|mdx|markdown)$/i.test(filename)
 
   // Pass 1: raw bytes before any interpretation.
@@ -498,14 +498,14 @@ function runDoubleScan(rawContent: string, parsed: ParsedPack, filename: string)
     ? rawScan.violations.filter((v) => v.type !== 'external_url')
     : rawScan.violations
   if (rawViolations.length > 0) {
-    violations.push(...rawViolations.map((v) => `[raw] ${v.reason}`))
+    violations.push(...rawViolations.map((v) => ({ ...v, reason: `[raw] ${v.reason}` })))
   }
 
   // Pass 2: extracted system_prompt field
   if (parsed.system_prompt) {
     const promptScan = scanPackContent(parsed.system_prompt)
     if (!promptScan.passed) {
-      violations.push(...promptScan.violations.map((v) => `[system_prompt] ${v.reason}`))
+      violations.push(...promptScan.violations.map((v) => ({ ...v, reason: `[system_prompt] ${v.reason}` })))
     }
   }
 
@@ -513,7 +513,7 @@ function runDoubleScan(rawContent: string, parsed: ParsedPack, filename: string)
   if (parsed.description) {
     const descScan = scanPackContent(parsed.description)
     if (!descScan.passed) {
-      violations.push(...descScan.violations.map((v) => `[description] ${v.reason}`))
+      violations.push(...descScan.violations.map((v) => ({ ...v, reason: `[description] ${v.reason}` })))
     }
   }
 
@@ -553,7 +553,7 @@ export async function normalizeGitHubUrl(rawUrl: string): Promise<string> {
   // github.com/{owner}/{repo}/blob/{ref}/{path…}
   const blobMatch = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/)
   if (blobMatch) {
-    const [, owner, repo, ref, filePath] = blobMatch
+    const [, owner, repo, ref, filePath] = blobMatch as [string, string, string, string, string]
     // Encode each segment individually — filePath may contain slashes (preserved) but
     // other special chars must be encoded to prevent URL injection.
     const encodedPath = filePath.split('/').map(encodeURIComponent).join('/')
@@ -563,7 +563,7 @@ export async function normalizeGitHubUrl(rawUrl: string): Promise<string> {
   // github.com/{owner}/{repo}/tree/{ref}/{dir…}
   const treeMatch = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)$/)
   if (treeMatch) {
-    const [, owner, repo, ref, dirPath] = treeMatch
+    const [, owner, repo, ref, dirPath] = treeMatch as [string, string, string, string, string]
     // Encode owner/repo individually; dirPath preserves slashes but encodes other special chars.
     const encodedDir = dirPath.split('/').map(encodeURIComponent).join('/')
     const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedDir}?ref=${encodeURIComponent(ref)}`
@@ -734,7 +734,7 @@ async function resolveGitHubMeta(parsedUrl: URL): Promise<GitHubMeta> {
           const commitText = new TextDecoder('utf-8', { fatal: false }).decode(commitCombined)
           // Best-effort JSON parse of truncated buffer — we only care about .sha at the top level
           const shaMatch = commitText.match(/"sha"\s*:\s*"([0-9a-f]{40})"/)
-          if (shaMatch) return { owner, version: ref, commit_sha: shaMatch[1].slice(0, 7) }
+          if (shaMatch) return { owner, version: ref, commit_sha: shaMatch[1]!.slice(0, 7) }
         }
       }
     }
@@ -823,7 +823,7 @@ export async function previewFromGitHubUrl(rawUrl: string): Promise<GitHubImport
   // Version: explicit field in pack > resolved from GitHub tags/commit > default
   const inferredVersion = !hasVersion
 
-  const fields: Omit<GitHubImportPreview, 'source_url' | 'content_sha256' | 'content_size' | 'scan_violations' | 'has_inferred_fields'> = {
+  const fields: Omit<GitHubImportPreview, 'source_url' | 'content_sha256' | 'content_size' | 'scan_violations' | 'scan_warnings' | 'has_inferred_fields'> = {
     pack_id:        { value: pack_id,                                              inferred: !hasId },
     name:           { value: parsed.display_name ?? parsed.name ?? pack_id,        inferred: !hasId },
     version:        { value: parsed.version ?? ghMeta.version,                     inferred: inferredVersion },

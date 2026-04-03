@@ -17,7 +17,8 @@
 //  - The export envelope carries a generated_at timestamp and schema_version
 //    so future consumers can detect format changes.
 
-import { db } from '@/lib/db/client'
+import { db }                    from '@/lib/db/client'
+import { EXCLUDE_PHANTOM_RUNS }  from '@/lib/db/run-filters'
 
 export const DATA_EXPORT_SCHEMA_VERSION = '1.0'
 
@@ -152,7 +153,7 @@ export async function buildUserDataExport(userId: string): Promise<UserDataExpor
     }),
 
     db.run.findMany({
-      where:   { created_by: userId },
+      where:   { created_by: userId, ...EXCLUDE_PHANTOM_RUNS },
       select:  { id: true, project_id: true, status: true, created_at: true },
       orderBy: { created_at: 'asc' },
     }),

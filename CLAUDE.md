@@ -140,6 +140,23 @@ Never push to `main` directly. All merges target `develop`.
 
 ---
 
+## Mandatory checks after every change
+
+### After any code modification
+```bash
+npx tsc --noEmit   # must pass with zero errors before committing
+```
+Use `get_errors` tool on modified files after each edit. Fix all TypeScript errors before considering the task done. Never commit with type errors.
+
+### After any `prisma/schema.prisma` modification
+```bash
+npx prisma migrate dev --name <description>   # creates and applies the migration
+npx prisma generate                           # regenerates the Prisma client
+```
+Never leave a schema change without a corresponding migration. Always run `npx prisma generate` at minimum so the TS client is in sync with the schema.
+
+---
+
 ## Detailed patterns
 
 See [`SKILLS.md`](SKILLS.md) for annotated code patterns (auth, RBAC, SSE, forms, toasts, dialogs, tables, confirmations, admin guards).

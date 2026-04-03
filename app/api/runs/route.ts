@@ -27,6 +27,7 @@ import { createRunRateLimitAsync }    from '@/lib/auth/rate-limit'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
 import { classifyConfidentiality }   from '@/lib/llm/confidentiality'
+import { EXCLUDE_PHANTOM_RUNS }      from '@/lib/db/run-filters'
 
 // ─── C-02: Zod schema for POST body ──────────────────────────────────────────
 // Spec: "All POST routes: Zod .strict() validation before business logic"
@@ -101,8 +102,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Build filter
-  const where: Prisma.RunWhereInput = {}
+  // Build filter — SEC-21: exclude phantom runs (marketplace_import) from all user-facing lists
+  const where: Prisma.RunWhereInput = { ...EXCLUDE_PHANTOM_RUNS }
   if (projectId) where.project_id = projectId
   // Cast statusFilter: spec values match RunStatus enum; invalid values yield empty result
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -138,3 +138,45 @@ export async function validateLLMBaseUrl(url: string): Promise<void> {
   }
   await assertNotPrivateHost(url)
 }
+
+/**
+ * Validate that a URL resolves only to a loopback or private-network host.
+ * Used for `local` jurisdiction LLM providers so that CRITICAL-confidentiality
+ * data cannot be sent to a public server even if `base_url` is misconfigured.
+ *
+ * This is the inverse of assertNotPrivateHost — it REQUIRES the host to be private.
+ *
+ * @throws ValidationError if the URL resolves to a public IP
+ */
+export async function assertLocalHost(url: string): Promise<void> {
+  if (!url || typeof url !== 'string') {
+    throw new ValidationError('LLM base URL must be a non-empty string')
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new ValidationError(`Invalid URL: "${url.slice(0, 100)}"`)
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new ValidationError(
+      `Blocked protocol: "${parsed.protocol}" — only http/https allowed`,
+    )
+  }
+  let addresses: { address: string; family: number }[]
+  try {
+    addresses = await dns.lookup(parsed.hostname, { all: true })
+  } catch {
+    throw new ValidationError(
+      `Local LLM host check failed: cannot resolve "${parsed.hostname}"`,
+    )
+  }
+  for (const { address } of addresses) {
+    if (!isPrivateIP(address)) {
+      throw new ValidationError(
+        `Local jurisdiction LLM provider "${parsed.hostname}" resolves to public IP "${address}" — ` +
+        `CRITICAL data must not be sent to an external server`,
+      )
+    }
+  }
+}
