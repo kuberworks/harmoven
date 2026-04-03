@@ -332,12 +332,12 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
         setApproveErr(data.error ?? t('marketplace.add_from_git.http_error', { status: String(res.status) }))
         return
       }
-      setSuccess(data.message ?? 'Pack enregistré.')
+      setSuccess(t('marketplace.add_from_git.success'))
       setUrl('')
       setPreview(null)
       setPreviewId(null)
       setConfirmed(null)
-      router.refresh()
+      router.push('/marketplace?tab=installed')
     } finally {
       setApproving(false)
     }

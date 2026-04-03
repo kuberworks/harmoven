@@ -20,10 +20,15 @@ import { createT } from '@/lib/i18n/t'
 
 export const metadata: Metadata = { title: 'Marketplace — Harmoven' }
 
-export default async function MarketplacePage() {
+export default async function MarketplacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
 
+  const { tab } = await searchParams
   const instanceRole = (session.user as Record<string, unknown>).role as string | null
   const isAdmin      = instanceRole === 'instance_admin'
   const locale       = getSessionLocale(session.user as Record<string, unknown>)
@@ -74,7 +79,7 @@ export default async function MarketplacePage() {
       </div>
 
       {/* Tabs — "Agent Skills" always first/default; admin import tabs appended */}
-      <Tabs defaultValue="installed" className="space-y-4">
+      <Tabs defaultValue={tab === 'browse' || tab === 'git' || tab === 'upload' ? tab : 'installed'} className="space-y-4">
         <TabsList className="h-9">
           <TabsTrigger value="installed" className="text-xs h-7">
             {t('marketplace.tab.installed')}
