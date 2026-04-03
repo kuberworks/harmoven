@@ -1,17 +1,17 @@
-// app/api/admin/skills/route.ts
-// Admin MCP Skill management — list + install
+// app/api/admin/integrations/route.ts
+// Admin Integration management — list + install
 //
-// GET  /api/admin/skills          — list all McpSkill rows
-// POST /api/admin/skills          — register / install a new skill
+// GET  /api/admin/integrations          — list all McpSkill rows
+// POST /api/admin/integrations          — register / install a new integration
 //
-// Required permission: admin:skills (held by project-admin and instance_admin)
+// Required permission: admin:integrations (held by project-admin and instance_admin)
 // Admin routes are instance-level — no projectId in path.
 // For non-project-scoped checks we verify the instanceRole directly:
 //   instance_admin → full access (matches resolvePermissions fast-path)
-//   project admin  → must have explicit admin:skills via their project role
+//   project admin  → must have explicit admin:integrations via their project role
 //
 // For simplicity and correctness, only instance_admin is accepted here because
-// MCP skills are instance-wide (not project-scoped) — a project admin should not
+// integrations are instance-wide (not project-scoped) — a project admin should not
 // install instance-level capabilities without instance_admin approval.
 //
 // Security: all inputs validated with Zod strict mode.
@@ -45,7 +45,7 @@ async function assertAdminSkills(req: NextRequest): Promise<AdminGuardResult> {
   }
 }
 
-// ─── GET /api/admin/skills ───────────────────────────────────────────────────
+// ─── GET /api/admin/integrations ─────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   const { caller, err } = await assertAdminSkills(req)
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ skills })
 }
 
-// ─── POST /api/admin/skills ──────────────────────────────────────────────────
+// ─── POST /api/admin/integrations ─────────────────────────────────────────────
 import { validateMcpConfig } from '@/lib/mcp/validate-config'
 
 const InstallSkillBody = z.object({

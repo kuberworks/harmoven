@@ -41,7 +41,7 @@ const PERM_GROUPS: { label: string; emoji: string; perms: Permission[] }[] = [
   },
   {
     label: 'Admin', emoji: '⚙️',
-    perms: ['admin:models', 'admin:skills', 'admin:users', 'admin:triggers', 'admin:audit', 'admin:instance'],
+    perms: ['admin:models', 'admin:integrations', 'admin:users', 'admin:triggers', 'admin:audit', 'admin:instance'],
   },
 ]
 

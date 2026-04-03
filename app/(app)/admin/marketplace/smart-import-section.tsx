@@ -19,6 +19,7 @@ import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Sparkles, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import { useT } from '@/lib/i18n/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,7 @@ interface SmartImportSectionProps {
 
 export function SmartImportSection({ initialConfig, profiles }: SmartImportSectionProps) {
   const { toast } = useToast()
+  const t = useT()
 
   const [config,   setConfig]   = useState<SmartImportConfig>(initialConfig)
   const [saving,   setSaving]   = useState(false)
@@ -100,11 +102,11 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
 
       if (!res.ok) {
         const err = await res.json() as { error: string }
-        toast({ title: 'Erreur lors de la sauvegarde', description: err.error, variant: 'destructive' })
+        toast({ title: t('admin.marketplace.smart_import.save_error'), description: err.error, variant: 'destructive' })
         return
       }
 
-      toast({ title: 'Configuration Smart Import sauvegardée' })
+      toast({ title: t('admin.marketplace.smart_import.saved') })
       setDirty(false)
     } finally {
       setSaving(false)
@@ -122,11 +124,10 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <Sparkles className="h-4 w-4 text-amber-500" />
-          Smart Import (analyse LLM)
+          {t('admin.marketplace.smart_import.title')}
         </CardTitle>
         <CardDescription className="text-xs mt-1">
-          Analyse de pertinence et génération automatique de manifeste via LLM pour les imports Git.
-          Désactivé par défaut — aucun appel LLM sans activation explicite.
+          {t('admin.marketplace.smart_import.description')}
         </CardDescription>
       </CardHeader>
 
@@ -134,9 +135,9 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
         {/* Master switch */}
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-sm font-medium">Activer Smart Import</Label>
+            <Label className="text-sm font-medium">{t('admin.marketplace.smart_import.enable')}</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Active la détection de pertinence et l&apos;adaptateur LLM dans l&apos;onglet &quot;Add from Git&quot;.
+              {t('admin.marketplace.smart_import.enable_hint')}
             </p>
           </div>
           <Switch
@@ -151,18 +152,18 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
             {/* LLM configuration */}
             <div className="space-y-3 border-t border-border/30 pt-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Configuration LLM
+                {t('admin.marketplace.smart_import.llm_config')}
               </p>
 
               {profiles.length === 0 ? (
                 <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
                   <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  Aucun provider LLM configuré. Activez un provider dans Admin → Modèles LLM.
+                  {t('admin.marketplace.smart_import.no_provider')}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Profil LLM</Label>
+                    <Label className="text-xs">{t('admin.marketplace.smart_import.llm_profile')}</Label>
                     <Select
                       value={config.provider_id ?? ''}
                       onValueChange={(v) => {
@@ -172,7 +173,7 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
                       }}
                     >
                       <SelectTrigger className="h-9 text-xs">
-                        <SelectValue placeholder="Sélectionner un profil…" />
+                        <SelectValue placeholder={t('admin.marketplace.smart_import.select_profile')} />
                       </SelectTrigger>
                       <SelectContent>
                         {profiles.map((p) => (
@@ -186,7 +187,7 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Max tokens par appel</Label>
+                    <Label className="text-xs">{t('admin.marketplace.smart_import.max_tokens')}</Label>
                     <Input
                       type="number"
                       min={500}
@@ -203,17 +204,17 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
             {/* Budget + TTL */}
             <div className="space-y-3 border-t border-border/30 pt-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Budget &amp; TTL
+                {t('admin.marketplace.smart_import.budget_ttl')}
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Budget mensuel LLM (USD, vide = illimité)</Label>
+                  <Label className="text-xs">{t('admin.marketplace.smart_import.monthly_budget')}</Label>
                   <Input
                     type="number"
                     min={0}
                     step={0.01}
-                    placeholder="ex. 50.00"
+                    placeholder={t('admin.marketplace.smart_import.budget_placeholder')}
                     value={config.monthly_budget_usd ?? ''}
                     onChange={(e) => {
                       const v = e.target.value
@@ -224,7 +225,7 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs">TTL preview (heures, 1–168)</Label>
+                  <Label className="text-xs">{t('admin.marketplace.smart_import.ttl')}</Label>
                   <Input
                     type="number"
                     min={1}
@@ -240,7 +241,7 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
               {budget && budget.monthly_budget_usd !== null && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Dépenses ce mois</span>
+                    <span className="text-muted-foreground">{t('admin.marketplace.smart_import.monthly_spend')}</span>
                     <span className={budgetPercent >= 100 ? 'text-red-400' : budgetPercent >= 80 ? 'text-amber-400' : ''}>
                       ${budget.monthly_cost_usd.toFixed(2)} / ${budget.monthly_budget_usd.toFixed(2)}
                       <span className="ml-1 text-muted-foreground">({budgetPercent}%)</span>
@@ -249,12 +250,12 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
                   <Progress value={Math.min(budgetPercent, 100)} className="h-1.5" />
                   {budgetPercent >= 100 && (
                     <div className="flex items-center gap-1.5 text-xs text-red-400">
-                      <AlertTriangle className="h-3 w-3" /> Budget épuisé — les imports LLM sont bloqués.
+                      <AlertTriangle className="h-3 w-3" /> {t('admin.marketplace.smart_import.budget_exhausted')}
                     </div>
                   )}
                   {budgetPercent >= 80 && budgetPercent < 100 && (
                     <div className="flex items-center gap-1.5 text-xs text-amber-400">
-                      <AlertTriangle className="h-3 w-3" /> {budgetPercent}% du budget utilisé.
+                      <AlertTriangle className="h-3 w-3" /> {t('admin.marketplace.smart_import.budget_used', { percent: String(budgetPercent) })}
                     </div>
                   )}
                 </div>
@@ -262,8 +263,10 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
 
               {budget && (
                 <p className="text-xs text-muted-foreground">
-                  {budget.monthly_llm_calls} appel(s) LLM ce mois ·{' '}
-                  ${budget.monthly_cost_usd.toFixed(4)} dépensé
+                  {t('admin.marketplace.smart_import.llm_calls', {
+                    count: String(budget.monthly_llm_calls),
+                    cost:  budget.monthly_cost_usd.toFixed(4),
+                  })}
                 </p>
               )}
             </div>
@@ -274,10 +277,10 @@ export function SmartImportSection({ initialConfig, profiles }: SmartImportSecti
         <div className="flex justify-end border-t border-border/30 pt-4">
           <Button size="sm" onClick={handleSave} disabled={saving || !dirty} className="gap-2">
             {saving
-              ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sauvegarde…</>
+              ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('admin.marketplace.smart_import.saving')}</>
               : dirty
-              ? 'Sauvegarder'
-              : <><CheckCircle2 className="h-3.5 w-3.5 text-green-400" /> Sauvegardé</>
+              ? t('admin.marketplace.smart_import.save')
+              : <><CheckCircle2 className="h-3.5 w-3.5 text-green-400" /> {t('admin.marketplace.smart_import.saved_state')}</>
             }
           </Button>
         </div>

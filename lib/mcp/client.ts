@@ -40,7 +40,7 @@ export class SkillNotApprovedError extends Error {
 
 // ─── Command allowlist (CVE-HARM-005 defense-in-depth) ───────────────────────
 // Imported from the shared allowlist — single source of truth.
-// Also enforced at install time in app/api/admin/skills/route.ts.
+// Also enforced at install time in app/api/admin/integrations/route.ts.
 import { ALLOWED_MCP_COMMANDS } from '@/lib/mcp/validate-config'
 
 // ─── Connection cache ─────────────────────────────────────────────────────────

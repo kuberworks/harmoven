@@ -1,5 +1,5 @@
-// app/api/admin/skills/from-url/approve/route.ts
-// POST /api/admin/skills/from-url/approve
+// app/api/admin/integrations/from-url/approve/route.ts
+// POST /api/admin/integrations/from-url/approve
 //
 // Approves a previewed GitHub import and creates a McpSkill row.
 //
@@ -27,13 +27,16 @@ const ApproveBody = z.object({
   confirmed: z.object({
     pack_id:        z.string().regex(/^[a-z0-9_]{1,64}$/),
     name:           z.string().min(1).max(256),
-    version:        z.string().regex(/^\d{1,4}\.\d{1,4}\.\d{1,4}$/),
+    version:        z.string().min(1).max(128),
+    commit_sha:     z.string().max(40).optional(),
     author:         z.string().max(256),
     description:    z.string().max(4096),
     system_prompt:  z.string().max(1_000_000),
     tags:           z.array(z.string().max(64)).max(32),
     capability_type: z.enum(['domain_pack', 'mcp_skill', 'prompt_only']),
     mcp_command:    z.string().optional(),
+    /** Must be true when the preview contains scan_warnings (external URL refs). */
+    scan_warnings_confirmed: z.boolean().optional(),
   }).strict(),
 }).strict()
 
@@ -141,6 +144,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // If the preview contains external URL warnings, admin must explicitly confirm them
+  const scaffold = previewRow.scaffold as { scan_warnings?: unknown[] } | null
+  const hasScanWarnings = Array.isArray(scaffold?.scan_warnings) && scaffold.scan_warnings.length > 0
+  if (hasScanWarnings && !confirmed.scan_warnings_confirmed) {
+    return NextResponse.json(
+      { error: 'This pack references external URLs. Set scan_warnings_confirmed: true to approve.', code: 'SCAN_WARNINGS_UNCONFIRMED' },
+      { status: 422 },
+    )
+  }
+
   // Create the McpSkill row with confirmed values (SEC-08: enabled:false)
   const skill = await db.mcpSkill.create({
     data: {
@@ -149,6 +162,9 @@ export async function POST(req: NextRequest) {
       source_url:  previewRow.source_url,
       source_type: 'git',
       version:     confirmed.version,
+      source_ref:  confirmed.commit_sha
+        ? `${confirmed.version}+${confirmed.commit_sha}`
+        : confirmed.version,
       approved_by: caller.userId,
       approved_at: new Date(),
       scan_status: 'passed',

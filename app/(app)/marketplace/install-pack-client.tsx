@@ -1,7 +1,7 @@
 'use client'
 
 // Install a pack from the official registry or a Git/local source.
-// POST /api/admin/skills  { name, source_url, source_type, version?, content? }
+// POST /api/admin/integrations  { name, source_url, source_type, version?, content? }
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -46,7 +46,7 @@ export function InstallPackClient() {
       if (sourceUrl.trim()) body.source_url = sourceUrl.trim()
       if (version.trim())   body.version    = version.trim()
 
-      const res = await fetch('/api/admin/skills', {
+      const res = await fetch('/api/admin/integrations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

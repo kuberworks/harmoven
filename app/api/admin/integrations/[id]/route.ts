@@ -1,10 +1,10 @@
-// app/api/admin/skills/[id]/route.ts
-// Admin MCP Skill management — enable/disable + delete
+// app/api/admin/integrations/[id]/route.ts
+// Admin Integration management — enable/disable + delete
 //
-// PATCH  /api/admin/skills/:id   — update enabled state and/or config
-// DELETE /api/admin/skills/:id   — permanently delete a skill registration
+// PATCH  /api/admin/integrations/:id   — update enabled state and/or config
+// DELETE /api/admin/integrations/:id   — permanently delete an integration
 //
-// Required permission: admin:skills (instance_admin only — instance-level resource)
+// Required permission: admin:integrations (instance_admin only — instance-level resource)
 //
 // Security: skill ID validated as UUID to prevent DB path-traversal curiosities.
 
@@ -42,9 +42,10 @@ async function assertAdminSkills(req: NextRequest): Promise<AdminGuardResult> {
   }
 }
 
-// ─── PATCH /api/admin/skills/:id ─────────────────────────────────────────────
+// ─── PATCH /api/admin/integrations/:id ──────────────────────────────────────
 
 const PatchSkillBody = z.object({
+  name:    z.string().min(1).max(128).optional(),
   enabled: z.boolean().optional(),
   config:  z.record(z.unknown()).optional(),
   /** If provided, the content will be re-scanned before enabling. */
@@ -82,7 +83,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { enabled, config, content } = parsed.data
+  const { name, enabled, config, content } = parsed.data
 
   // Validate MCP config command allowlist (CVE-HARM-005)
   if (config) {
@@ -130,6 +131,7 @@ export async function PATCH(
   const updated = await db.mcpSkill.update({
     where: { id },
     data: {
+      ...(name    !== undefined ? { name }                              : {}),
       ...(enabled  !== undefined ? { enabled }                          : {}),
       ...(config   !== undefined ? { config: config as object }        : {}),
       ...(content  !== undefined ? {
@@ -156,7 +158,7 @@ export async function PATCH(
   return NextResponse.json({ skill: updated })
 }
 
-// ─── DELETE /api/admin/skills/:id ────────────────────────────────────────────
+// ─── DELETE /api/admin/integrations/:id ─────────────────────────────────────
 
 export async function DELETE(
   req: NextRequest,

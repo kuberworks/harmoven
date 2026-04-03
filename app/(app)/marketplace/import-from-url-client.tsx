@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader2, AlertTriangle, CheckCircle2, Info, Sparkles, X } from 'lucide-react'
 import type { GitHubImportPreview } from '@/lib/marketplace/from-github-url'
+import { useT } from '@/lib/i18n/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,12 +23,15 @@ interface PreviewResponse {
   preview_id: string
   preview:    GitHubImportPreview
   expires_at: string
+  code?:      string
+  error?:     string
 }
 
 interface ConfirmedFields {
   pack_id:        string
   name:           string
   version:        string
+  commit_sha?:    string
   author:         string
   description:    string
   system_prompt:  string
@@ -51,8 +55,8 @@ interface RelevanceGateResponse {
 }
 
 interface AnalyzeErrorResponse {
-  error: string
-  code:  string
+  error:   string   // opaque code, e.g. PREVIEW_NOT_OWNED
+  message: string   // human-readable detail
   budget?: {
     monthly_cost_usd:    number
     monthly_budget_usd:  number | null
@@ -64,13 +68,50 @@ interface ImportFromUrlClientProps {
   smartImportEnabled: boolean
 }
 
+// ─── URL normalizer ───────────────────────────────────────────────────────────
+// Client-side hint only — actual normalisation (incl. directory scan) is done server-side.
+// We only pre-convert /blob/ paths here since those are deterministic and need no API call.
+//   github.com/{owner}/{repo}/blob/{branch}/{path}  → raw.githubusercontent.com (single file)
+//   github.com/{owner}/{repo}/tree/{branch}/{path}  → passed through; server picks best pack file
+// Returns null if no client-side conversion is needed.
+
+type UrlHint =
+  | { kind: 'single_file'; normalized: string; hint: string }
+  | { kind: 'directory';   url: string }
+
+function detectGitHubUrl(input: string): UrlHint | null {
+  let parsed: URL
+  try { parsed = new URL(input) } catch { return null }
+
+  if (parsed.hostname !== 'github.com') return null
+
+  const parts = parsed.pathname.replace(/^\//, '').split('/')
+  if (parts.length < 2) return null
+
+  const [owner, repo, type, branch, ...rest] = parts
+
+  // github.com/{owner}/{repo}/blob/{branch}/{...path} → deterministic raw URL
+  if (type === 'blob' && branch && rest.length > 0) {
+    const normalized = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${rest.join('/')}`
+    return { kind: 'single_file', normalized, hint: rest.join('/') }
+  }
+
+  // github.com/{owner}/{repo}/tree/… → server will scan directory for best pack file
+  if (type === 'tree' && branch) {
+    return { kind: 'directory', url: input }
+  }
+
+  return null
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function InferredBadge() {
+  const t = useT()
   return (
     <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400 font-mono">
       <AlertTriangle className="h-2.5 w-2.5" />
-      Inféré
+      {t('marketplace.add_from_git.inferred')}
     </span>
   )
 }
@@ -99,11 +140,13 @@ function FieldRow({
 
 export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientProps) {
   const router = useRouter()
+  const t = useT()
 
   // Step 1 state
   const [url,      setUrl]      = useState('')
   const [fetching, setFetching] = useState(false)
   const [fetchErr, setFetchErr] = useState<string | null>(null)
+  const [urlHint,  setUrlHint]  = useState<UrlHint | null>(null)
 
   // Step 2 state
   const [previewId,  setPreviewId]  = useState<string | null>(null)
@@ -131,9 +174,10 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
   }
 
   // Step 3 state
-  const [approving,  setApproving]  = useState(false)
-  const [approveErr, setApproveErr] = useState<string | null>(null)
-  const [success,    setSuccess]    = useState<string | null>(null)
+  const [approving,               setApproving]               = useState(false)
+  const [approveErr,              setApproveErr]              = useState<string | null>(null)
+  const [success,                 setSuccess]                 = useState<string | null>(null)
+  const [scanWarningsConfirmed,   setScanWarningsConfirmed]   = useState(false)
 
   // ── Step 1: fetch preview ─────────────────────────────────────────────────
 
@@ -150,19 +194,30 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
     setBudgetSoftAlert(false)
     setGateConfirmed(false)
     setSkipSmartImport(false)
+    setUrlHint(null)
 
-    if (!url.trim()) { setFetchErr('URL requise.'); return }
+    const raw = url.trim()
+    if (!raw) { setFetchErr(t('marketplace.add_from_git.url_required')); return }
+
+    // Auto-normalize blob URLs client-side; directory (tree) URLs are resolved server-side
+    const detected = detectGitHubUrl(raw)
+    const resolvedUrl = (detected?.kind === 'single_file') ? detected.normalized : raw
+    if (detected?.kind === 'single_file') setUrl(detected.normalized)
 
     setFetching(true)
     try {
       const res = await fetch('/api/admin/integrations/from-url', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ url: url.trim() }),
+        body:    JSON.stringify({ url: resolvedUrl }),
       })
-      const data = await res.json() as PreviewResponse & { error?: string }
+      const data = await res.json() as PreviewResponse & { error?: string; code?: string }
       if (!res.ok) {
-        setFetchErr((data as { error?: string }).error ?? `Erreur HTTP ${res.status}`)
+        const code = (data as { code?: string }).code
+        const codeKey = code ? `marketplace.add_from_git.err_${code.toLowerCase()}` : null
+        const translated = codeKey ? t(codeKey) : null
+        // Use translated key if it resolved (not equal to the key itself), else fall back to server message
+        setFetchErr((translated && translated !== codeKey ? translated : null) ?? (data as { error?: string }).error ?? t('marketplace.add_from_git.http_error', { status: String(res.status) }))
         return
       }
       setPreviewId(data.preview_id)
@@ -172,6 +227,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
         pack_id:        data.preview.pack_id.value,
         name:           data.preview.name.value,
         version:        data.preview.version.value,
+        commit_sha:     data.preview.commit_sha,
         author:         data.preview.author.value,
         description:    data.preview.description.value,
         system_prompt:  data.preview.system_prompt.value,
@@ -192,10 +248,10 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
           const gateData = await gateRes.json() as RelevanceGateResponse | AnalyzeErrorResponse
           if (!gateRes.ok) {
             const err = gateData as AnalyzeErrorResponse
-            if (err.code === 'BUDGET_EXCEEDED') {
+            if (err.error === 'BUDGET_EXCEEDED') {
               setBudgetHardBlock(true)
             } else {
-              setGateError({ message: err.error, code: err.code })
+              setGateError({ code: err.error, message: err.message })
             }
             const b = err.budget
             if (b?.budget_percent_used !== null && (b?.budget_percent_used ?? 0) >= 80) {
@@ -228,7 +284,13 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
       const res = await fetch('/api/admin/integrations/from-url/approve', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ preview_id: previewId, confirmed }),
+        body:    JSON.stringify({
+          preview_id: previewId,
+          confirmed: {
+            ...confirmed,
+            scan_warnings_confirmed: scanWarningsConfirmed || undefined,
+          },
+        }),
       })
       const data = await res.json() as { message?: string; error?: string; code?: string }
       if (!res.ok) {
@@ -238,7 +300,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
           setPreviewId(null)
           setConfirmed(null)
         }
-        setApproveErr(data.error ?? `Erreur HTTP ${res.status}`)
+        setApproveErr(data.error ?? t('marketplace.add_from_git.http_error', { status: String(res.status) }))
         return
       }
       setSuccess(data.message ?? 'Pack enregistré.')
@@ -271,16 +333,15 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
         <div className="flex items-start gap-2.5 rounded-md bg-blue-500/8 border border-blue-500/20 px-3 py-2.5 text-xs text-blue-300">
           <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-400" />
           <div className="flex-1 space-y-0.5">
-            <p className="font-medium text-blue-200">Smart Import disponible mais désactivé</p>
+            <p className="font-medium text-blue-200">{t('marketplace.add_from_git.smart_import_disabled_title')}</p>
             <p className="text-blue-300/70">
-              Activez Smart Import dans Admin → Marketplace → Smart Import pour bénéficier de
-              l&apos;analyse de pertinence et de la génération automatique de manifeste.
+              {t('marketplace.add_from_git.smart_import_disabled_body')}
             </p>
           </div>
           <button
             type="button"
             className="text-blue-300/50 hover:text-blue-300 transition-colors mt-0.5"
-            aria-label="Fermer"
+            aria-label={t('marketplace.add_from_git.close')}
             onClick={dismissU12}
           >
             <X className="h-3.5 w-3.5" />
@@ -294,13 +355,17 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
           id="github-url"
           type="url"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://raw.githubusercontent.com/owner/repo/main/pack.toml"
+          onChange={(e) => {
+            setUrl(e.target.value)
+            const n = detectGitHubUrl(e.target.value.trim())
+            setUrlHint(n)
+          }}
+          placeholder="https://github.com/owner/repo/tree/main/skills/my-skill"
           className="flex-1 font-mono text-xs"
           disabled={fetching || !!preview}
         />
         <Button type="submit" disabled={fetching || !!preview} size="sm" variant="outline">
-          {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Analyser'}
+          {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('marketplace.add_from_git.analyse')}
         </Button>
         {preview && (
           <Button
@@ -314,10 +379,24 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
               setGateConfirmed(false); setSkipSmartImport(false)
             }}
           >
-            Réinitialiser
+            {t('marketplace.add_from_git.reset')}
           </Button>
         )}
       </form>
+
+      {/* URL auto-conversion hint */}
+      {urlHint && !preview && (
+        <div className="flex items-center gap-2 text-xs text-blue-400">
+          <Info className="h-3 w-3 shrink-0" />
+          {urlHint.kind === 'single_file' ? (
+            <>{t('marketplace.add_from_git.url_hint')}{' '}
+              <code className="font-mono text-[10px] text-blue-300 break-all">{urlHint.normalized}</code>
+            </>
+          ) : (
+            t('marketplace.add_from_git.url_hint_directory')
+          )}
+        </div>
+      )}
 
       {fetchErr && (
         <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
@@ -335,7 +414,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />
               <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-              Analyse de pertinence en cours…
+              {t('marketplace.add_from_git.analysing_gate')}
             </div>
           )}
 
@@ -343,7 +422,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
           {budgetSoftAlert && !budgetHardBlock && (
             <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/25 px-3 py-2 text-xs text-amber-300">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              Budget LLM mensuel utilisé à plus de 80 %. Envisagez d&apos;augmenter le budget dans Admin → Marketplace → Smart Import.
+              {t('marketplace.add_from_git.budget_soft_alert')}
             </div>
           )}
 
@@ -352,7 +431,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
             <div className="space-y-2">
               <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/25 px-3 py-2 text-xs text-destructive">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                Budget LLM épuisé pour ce mois. L&apos;analyse Smart Import est suspendue.
+                {t('marketplace.add_from_git.budget_hard_block')}
               </div>
               <Button
                 type="button"
@@ -361,7 +440,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
                 className="text-xs"
                 onClick={() => { setBudgetHardBlock(false); setSkipSmartImport(true) }}
               >
-                Importer sans analyse LLM
+                {t('marketplace.add_from_git.budget_bypass')}
               </Button>
             </div>
           )}
@@ -371,7 +450,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
             <div className="space-y-2">
               <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/25 px-3 py-2 text-xs text-amber-300">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                Analyse Smart Import indisponible ({gateError.code}) : {gateError.message}
+                {t('marketplace.add_from_git.gate_unavailable', { code: gateError.code, message: gateError.message })}
               </div>
               <Button
                 type="button"
@@ -380,7 +459,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
                 className="text-xs"
                 onClick={() => setSkipSmartImport(true)}
               >
-                Importer sans analyse LLM
+                {t('marketplace.add_from_git.gate_skip')}
               </Button>
             </div>
           )}
@@ -390,7 +469,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
             <div className="flex items-start gap-2 rounded-md bg-green-500/10 border border-green-500/20 px-3 py-2 text-xs text-green-400">
               <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">Pack pertinent</p>
+                <p className="font-medium">{t('marketplace.add_from_git.gate_relevant_title')}</p>
                 <p className="text-green-400/70 mt-0.5">{gateResult.capability_summary}</p>
               </div>
             </div>
@@ -402,7 +481,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
               <div className="flex items-start gap-2 text-amber-300">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-medium">Pertinence incertaine</p>
+                  <p className="font-medium">{t('marketplace.add_from_git.gate_uncertain_title')}</p>
                   <p className="text-amber-300/70 mt-0.5">{gateResult.reasoning}</p>
                   {gateResult.risks.length > 0 && (
                     <ul className="mt-1 list-disc list-inside text-amber-300/60 space-y-0.5">
@@ -418,7 +497,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
                   onChange={(e) => setGateConfirmed(e.target.checked)}
                   className="rounded border-amber-500/50"
                 />
-                Je confirme vouloir importer malgré l&apos;incertitude
+                {t('marketplace.add_from_git.gate_confirm_uncertain')}
               </label>
             </div>
           )}
@@ -429,7 +508,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
               <div className="flex items-start gap-2 text-destructive">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-medium">Pack non pertinent selon l&apos;analyse LLM</p>
+                  <p className="font-medium">{t('marketplace.add_from_git.gate_not_relevant_title')}</p>
                   <p className="text-destructive/70 mt-0.5">{gateResult.reasoning}</p>
                   {gateResult.risks.length > 0 && (
                     <ul className="mt-1 list-disc list-inside text-destructive/60 space-y-0.5">
@@ -445,7 +524,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
                   onChange={(e) => setGateConfirmed(e.target.checked)}
                   className="rounded border-destructive/50"
                 />
-                Je comprends et veux importer quand même
+                {t('marketplace.add_from_git.gate_confirm_not_relevant')}
               </label>
             </div>
           )}
@@ -469,10 +548,10 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
           <div className="flex items-start gap-2 rounded-md bg-amber-500/8 border border-amber-500/20 px-3 py-2.5 text-xs text-amber-200">
             <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-400" />
             <div className="space-y-0.5">
-              <p className="font-medium">Validation humaine obligatoire</p>
+              <p className="font-medium">{t('marketplace.add_from_git.review_warning_title')}</p>
               <p className="text-amber-300/80">
-                Ce pack provient d&apos;une source non officielle. Aucune signature GPG — aucune garantie d&apos;intégrité cryptographique.
-                {preview.has_inferred_fields && ' Les champs marqués ⚠ Inféré ont été déduits automatiquement — vérifiez-les.'}
+                {t('marketplace.add_from_git.review_warning_body')}
+                {preview.has_inferred_fields && t('marketplace.add_from_git.review_warning_inferred')}
               </p>
             </div>
           </div>
@@ -497,14 +576,24 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
               />
             </FieldRow>
 
-            <FieldRow label="Version" inferred={preview.version.inferred}>
-              <Input
-                value={confirmed.version}
-                onChange={(e) => setConfirmed({ ...confirmed, version: e.target.value })}
-                className="font-mono text-xs"
-                pattern="^\d{1,4}\.\d{1,4}\.\d{1,4}$"
-                required
-              />
+            <FieldRow label={t('marketplace.add_from_git.field_version')} inferred={preview.version.inferred}>
+              <div className="flex gap-2">
+                <Input
+                  value={confirmed.version}
+                  onChange={(e) => setConfirmed({ ...confirmed, version: e.target.value })}
+                  className="font-mono text-xs flex-1"
+                  placeholder="main, v1.2.3, ..."
+                  required
+                />
+                {confirmed.commit_sha && (
+                  <Input
+                    value={confirmed.commit_sha}
+                    readOnly
+                    className="font-mono text-xs w-28 text-muted-foreground"
+                    title="Commit SHA"
+                  />
+                )}
+              </div>
             </FieldRow>
 
             <FieldRow label="Auteur" inferred={preview.author.inferred}>
@@ -545,13 +634,40 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
             </FieldRow>
           )}
 
+          {/* External URL scan warnings — must be confirmed before approve */}
+          {preview.scan_warnings.length > 0 && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-400" />
+                <p className="text-xs text-amber-300 font-medium">{t('marketplace.add_from_git.scan_warnings_title')}</p>
+              </div>
+              <ul className="space-y-1">
+                {preview.scan_warnings.map((w) => (
+                  <li key={w.url} className="text-[10px] font-mono text-amber-200/80 break-all">
+                    {w.url}
+                    <span className="ml-2 text-amber-400/60">sha256:{w.sha256.slice(0, 12)}… ({w.size} B)</span>
+                  </li>
+                ))}
+              </ul>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={scanWarningsConfirmed}
+                  onChange={(e) => setScanWarningsConfirmed(e.target.checked)}
+                  className="accent-amber-400"
+                />
+                <span className="text-xs text-amber-300">{t('marketplace.add_from_git.scan_warnings_confirm')}</span>
+              </label>
+            </div>
+          )}
+
           {/* SHA-256 traceability — read-only, with disclaimer (SEC-03) */}
           <div className="rounded-md bg-surface-overlay border border-surface-border px-3 py-2 text-[10px] space-y-0.5">
             <p className="font-mono text-muted-foreground break-all">
               SHA-256 : {preview.content_sha256}
             </p>
             <p className="text-muted-foreground/60">
-              Ce hash est calculé localement. Sans signature GPG, il ne garantit pas l&apos;intégrité du contenu en transit.
+              {t('marketplace.add_from_git.sha_disclaimer')}
             </p>
           </div>
 
@@ -564,12 +680,16 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
 
           <div className="flex items-center justify-end gap-3 pt-1">
             <p className="text-[10px] text-muted-foreground flex-1">
-              Le pack sera créé <strong>désactivé</strong>. Activez-le manuellement dans Admin → Integrations.
+              {t('marketplace.add_from_git.approved_disabled')}
             </p>
-            <Button type="submit" disabled={approving} size="sm">
+            <Button
+              type="submit"
+              disabled={approving || (preview.scan_warnings.length > 0 && !scanWarningsConfirmed)}
+              size="sm"
+            >
               {approving
-                ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Approbation…</>
-                : 'Approuver le pack'}
+                ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> {t('marketplace.add_from_git.approving')}</>
+                : t('marketplace.add_from_git.approve')}
             </Button>
           </div>
         </form>

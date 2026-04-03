@@ -18,6 +18,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react'
+import { useT } from '@/lib/i18n/client'
 
 interface ManifestPreview {
   pack_id:         string
@@ -31,6 +32,7 @@ interface ManifestPreview {
 
 export function UploadTab() {
   const router = useRouter()
+  const t = useT()
 
   const [file,         setFile]         = useState<File | null>(null)
   const [dragging,     setDragging]     = useState(false)
@@ -57,7 +59,7 @@ export function UploadTab() {
     const dropped = e.dataTransfer.files[0]
     if (dropped) {
       if (!dropped.name.endsWith('.hpkg')) {
-        setError("Seuls les fichiers .hpkg sont acceptés.")
+        setError(t('marketplace.upload.only_hpkg'))
         return
       }
       setFile(dropped)
@@ -69,7 +71,7 @@ export function UploadTab() {
     const selected = e.target.files?.[0]
     if (selected) {
       if (!selected.name.endsWith('.hpkg')) {
-        setError("Seuls les fichiers .hpkg sont acceptés.")
+        setError(t('marketplace.upload.only_hpkg'))
         return
       }
       setFile(selected)
@@ -102,11 +104,11 @@ export function UploadTab() {
       }
 
       if (!res.ok) {
-        setError(data.error ?? `Erreur HTTP ${res.status}`)
+        setError(data.error ?? t('marketplace.upload.http_error', { status: String(res.status) }))
         return
       }
 
-      setSuccess(`"${data.name ?? file.name}" installé avec succès (désactivé, en attente de révision).`)
+      setSuccess(t('marketplace.upload.success_body', { name: data.name ?? file.name }))
       if (data.manifest) setPreview(data.manifest)
       else if (data.pack_id) {
         setPreview({
@@ -130,14 +132,14 @@ export function UploadTab() {
           <div className="space-y-1">
             <p className="text-sm font-medium text-green-400">{success}</p>
             <p className="text-xs text-muted-foreground">
-              Le package est désactivé. Un administrateur doit l&apos;activer dans Admin → MCP Skills.
+              {t('marketplace.upload.disabled_hint')}
             </p>
           </div>
         </div>
         {preview && (
           <Card className="rounded-xl border-border/50 bg-card/50">
             <CardContent className="pt-4 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Manifeste</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('marketplace.upload.manifest')}</p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div><span className="text-muted-foreground">Pack ID :</span> <span className="font-mono">{preview.pack_id}</span></div>
                 <div><span className="text-muted-foreground">Version :</span> <span>{preview.version}</span></div>
@@ -147,7 +149,7 @@ export function UploadTab() {
             </CardContent>
           </Card>
         )}
-        <Button variant="outline" size="sm" onClick={reset}>Importer un autre paquet</Button>
+        <Button variant="outline" size="sm" onClick={reset}>{t('marketplace.upload.import_another')}</Button>
       </div>
     )
   }
@@ -164,7 +166,7 @@ export function UploadTab() {
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && !file && inputRef.current?.click()}
-        aria-label="Zone de dépôt de fichier .hpkg"
+        aria-label={t('marketplace.upload.drop_zone_label')}
         className={`
           relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 px-6 text-center transition-colors cursor-pointer
           ${dragging ? 'border-amber-500/70 bg-amber-500/5' : 'border-border/50 hover:border-border hover:bg-muted/30'}
@@ -177,20 +179,20 @@ export function UploadTab() {
           accept=".hpkg"
           className="hidden"
           onChange={handleFileChange}
-          aria-label="Sélectionner un fichier .hpkg"
+          aria-label={t('marketplace.upload.file_select_label')}
         />
 
         {file ? (
           <div className="flex items-center gap-2">
             <FileArchive className="h-5 w-5 text-amber-400" />
             <span className="text-sm font-medium">{file.name}</span>
-            <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(0)} Ko)</span>
+            <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(0)} KB)</span>
             <Button
               size="icon"
               variant="ghost"
               className="h-6 w-6 ml-1 text-muted-foreground hover:text-red-400"
               onClick={(e) => { e.stopPropagation(); reset() }}
-              aria-label="Retirer le fichier"
+              aria-label={t('marketplace.upload.remove_file')}
             >
               <X className="h-3.5 w-3.5" />
             </Button>
@@ -199,10 +201,8 @@ export function UploadTab() {
           <>
             <Upload className="h-8 w-8 text-muted-foreground/50" />
             <div>
-              <p className="text-sm font-medium text-foreground">
-                Glissez-déposez un fichier <span className="font-mono">.hpkg</span> ici
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">ou cliquez pour sélectionner (max 10 Mo)</p>
+              <p className="text-sm font-medium text-foreground">{t('marketplace.upload.drag_hint')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('marketplace.upload.click_hint')}</p>
             </div>
           </>
         )}
@@ -210,11 +210,11 @@ export function UploadTab() {
 
       {/* Import reason */}
       <div className="space-y-1.5">
-        <Label className="text-xs">Raison d&apos;import (optionnel)</Label>
+        <Label className="text-xs">{t('marketplace.upload.import_reason_label')}</Label>
         <Input
           value={importReason}
           onChange={(e) => setImportReason(e.target.value)}
-          placeholder="Ex: Package interne validé par l'équipe sécurité le …"
+          placeholder={t('marketplace.upload.import_reason_placeholder')}
           className="h-9"
         />
       </div>
@@ -234,7 +234,7 @@ export function UploadTab() {
         className="gap-2"
       >
         {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-        {uploading ? 'Upload en cours…' : 'Importer le package'}
+        {uploading ? t('marketplace.upload.uploading') : t('marketplace.upload.import_button')}
       </Button>
     </div>
   )
