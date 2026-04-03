@@ -88,6 +88,7 @@ export default async function AdminSkillsPage() {
                   enabled={skill.enabled}
                   scanStatus={skill.scan_status}
                   approvedBy={skill.approved_by}
+                  capabilityType={skill.capability_type ?? null}
                 />
               </div>
             ))}

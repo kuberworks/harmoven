@@ -18,15 +18,25 @@ import {
 } from '@/components/ui/dialog'
 
 interface Props {
-  skillId:       string
-  name:          string
-  config:        Record<string, unknown>
-  enabled:       boolean
-  scanStatus:    string
-  approvedBy:    string | null
+  skillId:        string
+  name:           string
+  config:         Record<string, unknown>
+  enabled:        boolean
+  scanStatus:     string
+  approvedBy:     string | null
+  capabilityType: string | null
 }
 
-export function SkillActionsClient({ skillId, name, config, enabled, scanStatus, approvedBy }: Props) {
+const TYPE_LABEL: Record<string, string> = {
+  domain_pack:    'Domain Pack',
+  mcp_skill:      'MCP Skill',
+  prompt_only:    'Prompt',
+  harmoven_agent: 'Agent',
+  js_ts_plugin:   'JS/TS Plugin',
+  slash_command:  'Slash Command',
+}
+
+export function SkillActionsClient({ skillId, name, config, enabled, scanStatus, approvedBy, capabilityType }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState<string | null>(null)
 
@@ -152,7 +162,9 @@ export function SkillActionsClient({ skillId, name, config, enabled, scanStatus,
       <Dialog open={editOpen} onOpenChange={(v) => { if (!v) setEditError(null); setEditOpen(v) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit integration</DialogTitle>
+            <DialogTitle>
+              Edit {capabilityType ? (TYPE_LABEL[capabilityType] ?? capabilityType) : 'pack'}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEditSubmit} className="space-y-4 pt-2">
             <div className="space-y-1.5">

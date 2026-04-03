@@ -312,6 +312,7 @@ export function InstalledPacksTab({ skills, isAdmin, locale }: Props) {
                         enabled={skill.enabled}
                         scanStatus={skill.scan_status}
                         approvedBy={skill.approved_by}
+                        capabilityType={skill.capability_type ?? null}
                       />
                     </div>
                   )}
