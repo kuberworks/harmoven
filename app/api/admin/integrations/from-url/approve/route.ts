@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json(
       {
-        error: 'Le contenu du fichier a changé depuis la prévisualisation. Veuillez réimporter l\'URL pour revalider.',
+        error: 'File content changed since preview. Re-import the URL to re-validate.',
         code:  'CONTENT_CHANGED',
       },
       { status: 409 },
@@ -158,16 +158,20 @@ export async function POST(req: NextRequest) {
   const skill = await db.mcpSkill.create({
     data: {
       id:          uuidv7(),
-      name:        confirmed.name,
-      source_url:  previewRow.source_url,
-      source_type: 'git',
-      version:     confirmed.version,
-      source_ref:  confirmed.commit_sha
+      name:            confirmed.name,
+      source_url:      previewRow.source_url,
+      source_type:     'git',
+      version:         confirmed.version,
+      source_ref:      confirmed.commit_sha
         ? `${confirmed.version}+${confirmed.commit_sha}`
         : confirmed.version,
-      approved_by: caller.userId,
-      approved_at: new Date(),
-      scan_status: 'passed',
+      pack_id:         confirmed.pack_id         || undefined,
+      author:          confirmed.author          || undefined,
+      tags:            confirmed.tags            ?? [],
+      capability_type: confirmed.capability_type,
+      approved_by:     caller.userId,
+      approved_at:     new Date(),
+      scan_status:     'passed',
       scan_report: {
         scanned_at:     new Date().toISOString(),
         source:         'github_import',
