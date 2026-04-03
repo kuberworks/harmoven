@@ -77,7 +77,7 @@ export interface GitHubImportPreview {
   system_prompt:  ScaffoldedField
   tags:           ScaffoldedField<string[]>
   /** Detected capability type. */
-  capability_type: ScaffoldedField<'domain_pack' | 'mcp_skill' | 'prompt_only'>
+  capability_type: ScaffoldedField<'domain_pack' | 'mcp_skill' | 'prompt_only' | 'harmoven_agent' | 'js_ts_plugin' | 'slash_command'>
   /** MCP command if capability_type = mcp_skill. */
   mcp_command:    ScaffoldedField | null
 
