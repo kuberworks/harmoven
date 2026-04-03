@@ -1211,26 +1211,57 @@ components:
         name:
           type: string
           description: "Human-readable name of this MCP skill pack, displayed in the skill marketplace and admin panel. Must be unique within the instance."
+        pack_id:
+          type: [string, 'null']
+          description: "Stable machine identifier for the pack, e.g. `ui_ux_pro_max`. Lowercase alphanumeric + underscores, 1–64 chars. Used as a key for update checks."
+          example: "ui_ux_pro_max"
+        capability_type:
+          type: [string, 'null']
+          description: "Category of the pack that determines how it is loaded and invoked."
+          enum: [domain_pack, mcp_skill, prompt_only, harmoven_agent, js_ts_plugin, slash_command, null]
         source_url:
           type: [string, 'null']
           format: uri
-          description: "URL of the skill's source repository or marketplace entry. Used to fetch updates and verify the supply chain."
+          description: "Resolved raw content URL (e.g. `raw.githubusercontent.com`). Updated when `source_ref` is changed after installation."
         source_type:
-          description: "Origin of the skill pack. `official` = published by Harmoven in the official Marketplace. `git` = installed from a third-party Git repository. `local` = uploaded directly as a TOML/ZIP file by an admin. Affects trust tier and update policy defaults."
+          description: "Origin of the skill pack. `official` = published by Harmoven. `git` = from a Git repository. `local` = uploaded directly by an admin."
           type: string
           enum: [official, git, local]
+        source_ref:
+          type: [string, 'null']
+          description: "Git ref (branch name, tag, or full 40-char commit SHA) pinned at installation or last update. Changing this triggers a re-fetch and re-scan."
+          example: "main"
         version:
           type: [string, 'null']
-          description: "Semantic version string of the target software release, e.g. `1.2.3`."
+          description: "Semantic version string declared in the pack manifest, e.g. `1.2.3`."
+        author:
+          type: [string, 'null']
+          description: "Author name or organisation as declared in the pack manifest."
+        tags:
+          type: array
+          items:
+            type: string
+          description: "Comma-separated keyword tags for filtering in the marketplace UI."
         enabled:
           type: boolean
           description: "Whether this resource is currently active. Disabled resources are excluded from execution and scheduling."
         scan_status:
-          description: "Result of the automated Gate 1 security scan. `pending` = scan not yet complete; skill cannot be activated. `clean` = scan passed; eligible for Gate 2 admin approval. `failed` = policy violation detected; skill is blocked from activation."
+          description: "Result of the automated security scan. `passed` = scan OK, eligible for activation. `pending` = not yet scanned. `failed` = policy violation; cannot be activated."
           type: string
-          enum: [clean, pending, failed]
+          enum: [passed, pending, failed]
+        scan_report:
+          type: [object, 'null']
+          additionalProperties: true
+          description: "JSON object containing the scan details: `scanned_at`, `content_sha256`, `source`, and any violation summaries. Never contains raw pack content."
+        approved_by:
+          type: [string, 'null']
+          description: "User ID of the instance admin who approved this pack. Null until explicitly approved."
+        approved_at:
+          type: [string, 'null']
+          format: date-time
+          description: "ISO 8601 timestamp when the pack was approved by an admin."
         update_policy:
-          description: "Controls how version updates are applied. `auto` = installed automatically when available. `notify` = admin is alerted but update requires manual confirmation. `manual` = updates are never auto-applied; admin must trigger explicitly."
+          description: "Controls how version updates are applied. `auto` = installed automatically. `notify` = admin alerted. `manual` = never auto-applied."
           type: string
           enum: [auto, notify, manual]
         installed_at:
@@ -1238,7 +1269,7 @@ components:
           format: date-time
           description: "ISO 8601 timestamp when this skill pack was installed on the instance."
         config:
-          description: "Skill-level configuration set by the admin at installation time. Schema is skill-specific. Merged with node-level `config` at agent invocation, with node-level values taking precedence."
+          description: "Pack-level configuration set by the admin. Schema is pack-specific. For `mcp_skill`, must include a `command` field."
           type: object
           additionalProperties: true
 
@@ -4571,14 +4602,282 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimit'
+  /admin/integrations/from-url:
+    post:
+      operationId: previewIntegrationFromUrl
+      x-required-permissions: [admin:integrations]
+      summary: Preview a pack from a GitHub URL (step 1 of 2)
+      description: |
+        > **Required permission:** `admin:integrations` — minimum role: `admin`
+
+        Fetches and parses a pack file from a GitHub URL, runs a security scan,
+        and returns a structured preview for admin review. Does **not** install the pack.
+
+        Accepted URL formats:
+        - `https://github.com/{owner}/{repo}/blob/{ref}/{file}` — specific file
+        - `https://github.com/{owner}/{repo}/tree/{ref}/{dir}` — directory scan
+        - `https://github.com/{owner}/{repo}` — bare repo (scans root for pack file)
+        - `https://github.com/{owner}/{repo}/commit/{sha}` — specific commit (scans root)
+        - `https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{file}` — direct raw URL
+
+        The response includes a `preview_id` (TTL: 10 minutes) that must be passed to
+        `POST /admin/integrations/from-url/approve` to complete the installation.
+
+        **Rate limit:** 10 preview requests per minute per IP.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              additionalProperties: false
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: "GitHub URL to preview. See supported formats in the description."
+      responses:
+        '200':
+          description: "Pack fetched and parsed. Returns structured preview fields for admin review and a `preview_id` to use in the approve step."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [preview_id, preview]
+                properties:
+                  preview_id:
+                    type: string
+                    format: uuid
+                    description: "Opaque token referencing the stored preview. Expires after 10 minutes."
+                  expires_at:
+                    type: string
+                    format: date-time
+                  preview:
+                    type: object
+                    description: "Parsed fields extracted from the pack manifest."
+                    properties:
+                      pack_id:
+                        type: object
+                        properties:
+                          value: { type: string }
+                          inferred: { type: boolean }
+                      name:
+                        type: object
+                        properties:
+                          value: { type: string }
+                          inferred: { type: boolean }
+                      version:
+                        type: object
+                        properties:
+                          value: { type: string }
+                          inferred: { type: boolean }
+                      author:
+                        type: object
+                        properties:
+                          value: { type: string }
+                          inferred: { type: boolean }
+                      description:
+                        type: object
+                        properties:
+                          value: { type: string }
+                          inferred: { type: boolean }
+                      system_prompt:
+                        type: object
+                        properties:
+                          value: { type: string }
+                          inferred: { type: boolean }
+                      capability_type:
+                        type: object
+                        properties:
+                          value:
+                            type: string
+                            enum: [domain_pack, mcp_skill, prompt_only, harmoven_agent, js_ts_plugin, slash_command]
+                          inferred: { type: boolean }
+                      mcp_command:
+                        type: object
+                        nullable: true
+                        properties:
+                          value: { type: string }
+                          inferred: { type: boolean }
+                      tags:
+                        type: array
+                        items: { type: string }
+                      has_inferred_fields:
+                        type: boolean
+                        description: "True if any field was inferred rather than declared in the manifest."
+                      content_sha256:
+                        type: string
+                        description: "SHA-256 of the raw file content. Stored and re-verified at approval time to detect content changes."
+                      scan_warnings:
+                        type: array
+                        description: "External URLs referenced by the pack. Must be confirmed at approval time."
+                        items:
+                          type: object
+                          properties:
+                            url: { type: string, format: uri }
+                            sha256: { type: string }
+                            size: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: |
+            The URL could not be fetched or the content failed the security scan.
+            `code` values:
+            - `FORBIDDEN_HOST`: URL hostname not allowed (must be github.com or raw.githubusercontent.com)
+            - `FETCH_FAILED`: GitHub returned an error (ref not found, repo private, etc.)
+            - `PARSE_FAILED`: No recognisable pack file found
+            - `SCAN_FAILED`: Content failed the injection/security scan (hard block)
+            - `CONTENT_TOO_LARGE`: File exceeds 1 MB limit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code:
+                    type: string
+                    enum: [FORBIDDEN_HOST, FETCH_FAILED, PARSE_FAILED, SCAN_FAILED, CONTENT_TOO_LARGE]
+        '429':
+          $ref: '#/components/responses/RateLimit'
+
+  /admin/integrations/from-url/approve:
+    post:
+      operationId: approveIntegrationFromUrl
+      x-required-permissions: [admin:integrations]
+      summary: Approve and install a previewed pack (step 2 of 2)
+      description: |
+        > **Required permission:** `admin:integrations` — minimum role: `admin`
+
+        Finalises the import started by `POST /admin/integrations/from-url`.
+        Re-fetches the pack file at the same URL to verify the content has not changed
+        since the preview (hash-locked, SEC-10), then creates the `McpSkill` row.
+
+        The pack is created **disabled** by default. An admin must explicitly enable it
+        in `PATCH /admin/integrations/{id}`.
+
+        If `scan_warnings` were present in the preview, `scan_warnings_confirmed: true`
+        must be included in the request.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [preview_id, confirmed]
+              additionalProperties: false
+              properties:
+                preview_id:
+                  type: string
+                  format: uuid
+                  description: "Token returned by the preview step. Expires after 10 minutes."
+                confirmed:
+                  type: object
+                  required: [pack_id, name, version, capability_type]
+                  description: "Admin-reviewed and optionally edited fields from the preview."
+                  properties:
+                    pack_id:
+                      type: string
+                      pattern: '^[a-z0-9_]{1,64}$'
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 128
+                    version:
+                      type: string
+                      maxLength: 128
+                    author:
+                      type: string
+                      maxLength: 256
+                    tags:
+                      type: array
+                      items: { type: string, maxLength: 64 }
+                    capability_type:
+                      type: string
+                      enum: [domain_pack, mcp_skill, prompt_only, harmoven_agent, js_ts_plugin, slash_command]
+                    commit_sha:
+                      type: string
+                      description: "Short or full commit SHA returned by the preview. Appended to `source_ref` for traceability."
+                    mcp_command:
+                      type: string
+                      maxLength: 512
+                      description: "MCP executable command. Required for `mcp_skill` packs."
+                    description:
+                      type: string
+                    system_prompt:
+                      type: string
+                    scan_warnings_confirmed:
+                      type: boolean
+                      description: "Must be `true` when `scan_warnings` were present in the preview."
+      responses:
+        '201':
+          description: "Pack installed (disabled). Activate it via `PATCH /admin/integrations/{id}` with `enabled: true`."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill_id:
+                    type: string
+                    format: uuid
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: "Preview not found or expired (TTL: 10 minutes)."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code:
+                    type: string
+                    enum: [PREVIEW_NOT_FOUND, PREVIEW_EXPIRED]
+        '409':
+          description: "Content changed between preview and approval (hash mismatch). Re-import the URL."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code:
+                    type: string
+                    enum: [CONTENT_CHANGED]
+        '422':
+          description: |
+            Validation error or unconfirmed scan warnings.
+            - `SCAN_WARNINGS_UNCONFIRMED`: pack references external URLs; re-submit with `scan_warnings_confirmed: true`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code:
+                    type: string
+                    enum: [SCAN_WARNINGS_UNCONFIRMED]
+        '429':
+          $ref: '#/components/responses/RateLimit'
+
   /admin/integrations/{id}:
     patch:
       operationId: updateIntegration
       x-required-permissions: [admin:integrations]
-      summary: Approve, disable, or update an integration
+      summary: Update an integration (metadata, ref, config, enable/disable)
       description: |
         > **Required permission:** `admin:integrations` — minimum role: `admin`
 
+        Updates one or more fields of an installed pack. When `source_ref` changes,
+        the pack file is re-fetched at the new ref and re-scanned before saving.
+        If the new content references external URLs, a `422 SCAN_WARNINGS_UNCONFIRMED`
+        is returned; re-submit with `scan_warnings_confirmed: true` to proceed.
       tags: [admin]
       parameters:
         - $ref: '#/components/parameters/SkillId'
@@ -4588,20 +4887,55 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  description: "Display name of the pack."
                 enabled:
                   type: boolean
-                update_policy:
+                  description: "Activate or deactivate the pack. Cannot be set to `true` if `scan_status` is `pending`."
+                author:
                   type: string
-                  enum: [auto, notify, manual]
+                  maxLength: 256
+                  description: "Author name or organisation."
+                source_ref:
+                  type: string
+                  maxLength: 256
+                  description: |
+                    Git ref to pin: branch name (`main`), tag (`v1.2.3`), or full 40-char commit SHA.
+                    Triggers a re-fetch and re-scan. Short SHAs (7–39 hex chars) are resolved to full
+                    SHAs via the GitHub API. If the content references external URLs, a
+                    `SCAN_WARNINGS_UNCONFIRMED` error is returned until `scan_warnings_confirmed: true`
+                    is included in the request.
+                  example: "main"
+                tags:
+                  type: array
+                  maxItems: 32
+                  items:
+                    type: string
+                    maxLength: 64
+                  description: "Keyword tags for marketplace filtering."
                 config:
                   type: object
                   additionalProperties: true
+                  description: "Full replacement config object. For `mcp_skill`, must include `command`. Takes precedence over `mcp_command`."
+                mcp_command:
+                  type: string
+                  maxLength: 512
+                  description: "Shortcut to set `config.command` without replacing the entire config object. Ignored if `config` is also provided. Only meaningful for `mcp_skill` packs."
                 content:
                   type: string
+                  maxLength: 1000000
+                  description: "Full pack content to re-scan (e.g. after a manual edit). Triggers a security scan before saving."
+                scan_warnings_confirmed:
+                  type: boolean
+                  description: "Must be `true` when the re-fetched or updated content contains external URLs and you accept the risk. Without this flag, the update is rejected with `SCAN_WARNINGS_UNCONFIRMED`."
       responses:
         '200':
-          description: "Integration configuration updated. If `enabled` changed to `true` and `scan_status` is `clean` with Gate-2 admin approval, the integration is immediately available to agent nodes that declare it in `tools_allowed`. Disabling takes effect for all new tool calls."
+          description: "Pack updated. The full updated Skill object is returned."
           content:
             application/json:
               schema:
@@ -4609,15 +4943,46 @@ paths:
                 properties:
                   skill:
                     $ref: '#/components/schemas/Skill'
-                    description: "The full Skill object for the installed or retrieved skill pack."
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            Conflict. Returned when attempting to enable a pack whose `scan_status` is still `pending`.
+            Provide `content` in the request to trigger a scan first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Cannot enable a skill with pending scan status — provide content to scan it first"
         '422':
-          $ref: '#/components/responses/ValidationError'
+          description: |
+            Validation error or security scan failure. The `code` field distinguishes the reason:
+            - *(no code)*: Zod validation error or MCP command not allowed.
+            - `SCAN_WARNINGS_UNCONFIRMED`: The pack content references external URLs. Re-submit with
+              `scan_warnings_confirmed: true`. The `external_urls` array lists all detected URLs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    enum: [SCAN_WARNINGS_UNCONFIRMED]
+                  external_urls:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+                    description: "External URLs found in the pack content. Only present when `code` is `SCAN_WARNINGS_UNCONFIRMED`."
         '429':
           $ref: '#/components/responses/RateLimit'
     delete:

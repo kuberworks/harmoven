@@ -16,6 +16,7 @@ import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller } from '@/lib/auth/rbac'
 import { scanPackContent } from '@/lib/marketplace/scan'
+import { refetchAtRef, GitHubImportError } from '@/lib/marketplace/from-github-url'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 
 // ─── UUID validation ──────────────────────────────────────────────────────────
@@ -61,6 +62,8 @@ const PatchSkillBody = z.object({
    * If provided alongside config, config takes precedence for the full object.
    */
   mcp_command: z.string().max(512).optional(),
+  /** Must be set to true when the re-fetched content contains external URLs. */
+  scan_warnings_confirmed: z.boolean().optional(),
 }).strict()
 
 import { validateMcpConfig } from '@/lib/mcp/validate-config'
@@ -94,7 +97,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { name, enabled, config, content, author, version, source_ref, tags, mcp_command } = parsed.data
+  const { name, enabled, config, content, author, version, source_ref, tags, mcp_command, scan_warnings_confirmed } = parsed.data
 
   // Build the resolved config: explicit config wins; mcp_command updates config.command
   let resolvedConfig: Record<string, unknown> | undefined = config
@@ -117,6 +120,47 @@ export async function PATCH(
   let scanReport: Prisma.InputJsonValue | typeof Prisma.DbNull = existing.scan_report
     ? (existing.scan_report as Prisma.InputJsonValue)
     : Prisma.DbNull
+  // When source_ref changes, re-fetch the pack file at the new ref and re-scan it
+  let newSourceUrl: string | undefined
+
+  if (source_ref !== undefined && source_ref !== existing.source_ref) {
+    let fetched: { rawUrl: string; content: string; sha256: string }
+    try {
+      fetched = await refetchAtRef(existing.source_url ?? '', source_ref)
+    } catch (e) {
+      const msg = e instanceof GitHubImportError
+        ? (e.code === 'FETCH_FAILED' ? `Ref "${source_ref}" not found or inaccessible` : e.detail.slice(0, 200))
+        : 'Failed to fetch content at new ref'
+      return NextResponse.json({ error: msg }, { status: 422 })
+    }
+    const scan = scanPackContent(fetched.content)
+    // Prompt injection = hard block regardless of confirmation
+    if (scan.hasInjection) {
+      await db.auditLog.create({
+        data: {
+          id:          uuidv7(),
+          actor:       caller.userId,
+          action_type: 'skill_scan_failed',
+          payload: { skill_id: id, name: existing.name, reason: scan.reason },
+        },
+      }).catch(() => { /* non-fatal */ })
+      return NextResponse.json({ error: `Security scan failed: ${scan.violations.find(v => v.type === 'injection')?.reason ?? scan.reason}` }, { status: 422 })
+    }
+    // External URL = warning, requires explicit confirmation (same as import flow)
+    if (scan.hasExternalUrl && !scan_warnings_confirmed) {
+      return NextResponse.json(
+        {
+          error:        'This pack references external URLs. Set scan_warnings_confirmed: true to save.',
+          code:         'SCAN_WARNINGS_UNCONFIRMED',
+          external_urls: fetched.externalUrls,
+        },
+        { status: 422 },
+      )
+    }
+    newSourceUrl = fetched.rawUrl
+    scanStatus   = 'passed'
+    scanReport   = { scanned_at: new Date().toISOString(), source: 'ref_update', content_sha256: fetched.sha256 } as object
+  }
 
   if (content) {
     const scan = scanPackContent(content)
@@ -155,8 +199,9 @@ export async function PATCH(
       ...(author         !== undefined ? { author }                              : {}),
       ...(version        !== undefined ? { version }                             : {}),
       ...(source_ref     !== undefined ? { source_ref }                          : {}),
+      ...(newSourceUrl   !== undefined ? { source_url: newSourceUrl }            : {}),
       ...(tags           !== undefined ? { tags }                                : {}),
-      ...(content        !== undefined ? {
+      ...(content !== undefined || newSourceUrl !== undefined ? {
         scan_status: scanStatus,
         scan_report: scanReport,
       } : {}),

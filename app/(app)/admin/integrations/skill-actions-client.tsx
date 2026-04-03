@@ -67,6 +67,8 @@ export function SkillActionsClient({
     Object.keys(config).length ? JSON.stringify(config, null, 2) : '',
   )
   const [editError, setEditError] = useState<string | null>(null)
+  const [scanWarningsConfirmed, setScanWarningsConfirmed] = useState(false)
+  const [scanExternalUrls, setScanExternalUrls] = useState<string[]>([])
 
   // ── Delete confirm ─────────────────────────────────────────────────────────
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -85,6 +87,8 @@ export function SkillActionsClient({
     setEditMcpCmd(typeof config.command === 'string' ? config.command : '')
     setEditConfig(Object.keys(config).length ? JSON.stringify(config, null, 2) : '')
     setEditError(null)
+    setScanWarningsConfirmed(false)
+    setScanExternalUrls([])
   }
 
   async function patch(body: Record<string, unknown>, action: string) {
@@ -108,11 +112,12 @@ export function SkillActionsClient({
 
     const body: Record<string, unknown> = { name: editName.trim() }
 
+    if (scanWarningsConfirmed) body.scan_warnings_confirmed = true
+
     const parsedTags = editTags.split(',').map((t) => t.trim()).filter(Boolean)
     body.tags = parsedTags
 
     if (editAuthor.trim()) body.author = editAuthor.trim()
-    if (editVersion.trim()) body.version = editVersion.trim()
 
     if (ct === 'mcp_skill') {
       if (editConfig.trim()) {
@@ -137,8 +142,14 @@ export function SkillActionsClient({
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(body),
       })
-      const data = await res.json() as { error?: unknown }
+      const data = await res.json() as { error?: unknown; code?: string; external_urls?: string[] }
       if (!res.ok) {
+        if (data.code === 'SCAN_WARNINGS_UNCONFIRMED') {
+          setEditError('This pack references external URLs. Check the box below to confirm and save anyway.')
+          setScanExternalUrls(data.external_urls ?? [])
+          setScanWarningsConfirmed(false)
+          return
+        }
         setEditError(typeof data.error === 'string' ? data.error : 'Save failed')
         return
       }
@@ -262,8 +273,8 @@ export function SkillActionsClient({
               </div>
             )}
 
-            {/* Branch / tag / commit ref — domain_pack, harmoven_agent, prompt_only */}
-            {(ct === 'domain_pack' || ct === 'harmoven_agent' || ct === 'prompt_only') && (
+            {/* Branch / tag / commit ref — all git-backed types (not MCP, not JS plugin) */}
+            {ct !== 'mcp_skill' && ct !== 'js_ts_plugin' && (
               <div className="space-y-1.5">
                 <Label htmlFor="edit-source-ref" className="flex items-center gap-1.5">
                   <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
@@ -277,16 +288,6 @@ export function SkillActionsClient({
                     {sourceUrl}
                   </p>
                 )}
-              </div>
-            )}
-
-            {/* Version — all except MCP */}
-            {ct !== 'mcp_skill' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-version">Version</Label>
-                <Input id="edit-version" className="font-mono text-xs"
-                  placeholder="1.0.0, main, …"
-                  value={editVersion} onChange={(e) => setEditVersion(e.target.value)} />
               </div>
             )}
 
@@ -311,6 +312,27 @@ export function SkillActionsClient({
             </div>
 
             {editError && <p className="text-sm text-destructive">{editError}</p>}
+
+            {editError?.includes('external URLs') && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
+                {scanExternalUrls.length > 0 && (
+                  <ul className="space-y-1">
+                    {scanExternalUrls.map((u) => (
+                      <li key={u} className="text-[10px] font-mono text-amber-200/80 break-all">{u}</li>
+                    ))}
+                  </ul>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-amber-300">
+                  <input
+                    type="checkbox"
+                    checked={scanWarningsConfirmed}
+                    onChange={(e) => setScanWarningsConfirmed(e.target.checked)}
+                    className="accent-amber-400"
+                  />
+                  I acknowledge this pack references external URLs
+                </label>
+              </div>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="ghost"

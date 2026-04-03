@@ -666,6 +666,7 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
                   />
                 )}
               </div>
+              <p className="text-[10px] text-muted-foreground mt-1">{t('marketplace.add_from_git.field_version_hint')}</p>
             </FieldRow>
 
             <FieldRow label="Auteur" inferred={preview.author.inferred}>
@@ -674,6 +675,21 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
                 onChange={(e) => setConfirmed({ ...confirmed, author: e.target.value })}
                 className="text-xs"
               />
+            </FieldRow>
+
+            <FieldRow label={t('marketplace.add_from_git.field_tags')} inferred={false}>
+              <Input
+                value={(confirmed.tags ?? []).join(', ')}
+                onChange={(e) =>
+                  setConfirmed({
+                    ...confirmed,
+                    tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                  })
+                }
+                className="text-xs"
+                placeholder="tool, rag, coding, ..."
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">{t('marketplace.add_from_git.field_tags_hint')}</p>
             </FieldRow>
           </div>
 

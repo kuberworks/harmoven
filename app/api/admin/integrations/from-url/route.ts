@@ -32,7 +32,7 @@ const PREVIEW_TTL_MS  = 24 * 60 * 60 * 1000 // 24 hours
 // ─── Client-safe error messages (SEC-06) ─────────────────────────────────────
 
 const CLIENT_MESSAGES: Record<string, string> = {
-  FORBIDDEN_HOST:    'URL not allowed. Only raw.githubusercontent.com and api.github.com are accepted.',
+  FORBIDDEN_HOST:    'URL not allowed. Accepted formats: github.com/{owner}/{repo}/blob/…, github.com/{owner}/{repo}/tree/…, github.com/{owner}/{repo}/commit/…, github.com/{owner}/{repo}, or raw.githubusercontent.com/…',
   CONTENT_TOO_LARGE: 'Content too large (max 1 MB).',
   FETCH_FAILED:      'Unable to fetch the file. Check the URL and try again.',
   PARSE_FAILED:      'Unrecognised file format (TOML, YAML, JSON or Markdown expected).',

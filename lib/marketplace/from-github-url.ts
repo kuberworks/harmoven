@@ -413,7 +413,7 @@ const HTTPS_URL_RE = /https?:\/\/[^\s"'`)\]>]+/gi
  * Extract all https URLs from raw pack content.
  * Capped at MAX_EXTERNAL_URL_REFS to avoid runaway fetching.
  */
-function extractHttpsUrls(content: string): string[] {
+export function extractHttpsUrls(content: string): string[] {
   const matches = [...content.matchAll(HTTPS_URL_RE)]
     .map((m) => m[0].replace(/[.,;:!?]+$/, '')) // strip trailing punctuation
   return [...new Set(matches)].slice(0, MAX_EXTERNAL_URL_REFS)
@@ -646,10 +646,82 @@ export async function normalizeGitHubUrl(rawUrl: string): Promise<string> {
     )
   }
 
+  // github.com/{owner}/{repo}/commit/{sha}  (specific commit page — scan root at that SHA)
+  const commitMatch = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/commit\/([0-9a-f]{7,40})$/i)
+  if (commitMatch) {
+    const [, owner, repo, sha] = commitMatch as [string, string, string, string]
+    const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents?ref=${encodeURIComponent(sha)}`
+    return resolveContentsApiUrl(apiUrl, owner, repo)
+  }
+
+  // github.com/{owner}/{repo}  (bare repo — no blob/tree/file path)
+  const repoOnly = parsed.pathname.match(/^\/([^/]+)\/([^/]+?)\/?$/)
+  if (repoOnly) {
+    const [, owner, repo] = repoOnly
+    return resolveRepoBestFile(owner, repo)
+  }
+
   throw new GitHubImportError(
     'FORBIDDEN_HOST',
     `Unrecognised github.com URL pattern: ${parsed.pathname.slice(0, 200)}`,
   )
+}
+
+/**
+ * Shared helper: given a pre-built GitHub Contents API URL (with any ?ref= already appended),
+ * fetch the directory listing and return the raw download URL of the best pack file.
+ * Used by the /tree/, /commit/, and bare-repo normalisation paths.
+ */
+async function resolveContentsApiUrl(apiUrl: string, owner: string, repo: string): Promise<string> {
+  let res: Response
+  try {
+    res = await fetch(apiUrl, {
+      redirect: 'error',
+      signal:   AbortSignal.timeout(8_000),
+      headers:  {
+        'User-Agent': 'Harmoven/1.0 (+https://harmoven.com)',
+        'Accept':     'application/vnd.github.v3+json',
+      },
+    })
+  } catch (e) {
+    throw new GitHubImportError('FETCH_FAILED', `GitHub API fetch error: ${String(e).slice(0, 200)}`)
+  }
+  if (!res.ok) {
+    throw new GitHubImportError('FETCH_FAILED', `GitHub API HTTP ${res.status} for ${owner}/${repo}`)
+  }
+
+  const entries = await res.json() as Array<Record<string, unknown>>
+  if (!Array.isArray(entries)) {
+    throw new GitHubImportError('PARSE_FAILED', 'Expected array from GitHub API listing')
+  }
+
+  for (const ext of PACK_EXTENSIONS) {
+    const entry = entries.find(
+      (e) => e.type === 'file' && typeof e.name === 'string' && e.name.endsWith(ext) && typeof e.download_url === 'string',
+    )
+    if (entry) {
+      const dlUrl = entry.download_url as string
+      if (!dlUrl.startsWith('https://raw.githubusercontent.com/')) {
+        throw new GitHubImportError('FORBIDDEN_HOST', `Unexpected download_url host: ${dlUrl.slice(0, 100)}`)
+      }
+      return dlUrl
+    }
+  }
+
+  throw new GitHubImportError(
+    'PARSE_FAILED',
+    `No recognisable pack file found (looked for: ${PACK_EXTENSIONS.join(', ')})`,
+  )
+}
+
+/**
+ * Try to resolve a bare github.com/{owner}/{repo} URL by scanning the repo root
+ * for a recognised pack file via the GitHub Contents API (default branch).
+ * Used internally by normalizeGitHubUrl.
+ */
+async function resolveRepoBestFile(owner: string, repo: string): Promise<string> {
+  const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents`
+  return resolveContentsApiUrl(apiUrl, owner, repo)
 }
 
 // ─── GitHub repo metadata (owner, version) ───────────────────────────────────
@@ -750,6 +822,143 @@ async function resolveGitHubMeta(parsedUrl: URL): Promise<GitHubMeta> {
 /**
  * Fetch a GitHub raw file URL and scaffold a Harmoven pack preview.
  *
+/**
+ * Verify that a git ref (branch name, tag, or commit SHA) exists on a GitHub repo.
+ *
+ * @param rawSourceUrl - The raw.githubusercontent.com URL stored in source_url,
+ *                       used to extract owner + repo.  If the URL is not a recognised
+ *                       raw.githubusercontent.com URL, resolves silently (non-fatal).
+ * @param ref          - The ref to verify.
+ * @returns `{ valid: true }` if the ref exists, `{ valid: false, reason }` otherwise.
+ *
+ * Never throws — all errors are returned as `{ valid: false }` so the API caller
+ * can decide whether to reject or warn.
+ */
+/**
+ * Re-fetch a pack file at a different git ref.
+ *
+ * Reconstructs the raw.githubusercontent.com URL by replacing the ref segment
+ * in `rawSourceUrl`, fetches the content, computes SHA-256, and returns both.
+ *
+ * Throws GitHubImportError on any failure (invalid URL, 404, too large, etc.)
+ * so the caller can return a structured error to the client.
+ *
+ * @param rawSourceUrl - The raw.githubusercontent.com URL stored in `source_url`.
+ * @param newRef       - The new branch name, tag, or full commit SHA.
+ */
+export async function refetchAtRef(
+  rawSourceUrl: string,
+  newRef:        string,
+): Promise<{ rawUrl: string; content: string; sha256: string; externalUrls: string[] }> {
+  let original: URL
+  try { original = new URL(rawSourceUrl) }
+  catch { throw new GitHubImportError('FORBIDDEN_HOST', `Invalid source_url: ${rawSourceUrl.slice(0, 200)}`) }
+
+  if (original.hostname !== 'raw.githubusercontent.com') {
+    throw new GitHubImportError('FORBIDDEN_HOST', `Expected raw.githubusercontent.com, got ${original.hostname}`)
+  }
+
+  // raw.githubusercontent.com/{owner}/{repo}/{ref}/{...filepath}
+  const parts = original.pathname.split('/').filter(Boolean)
+  if (parts.length < 4) {
+    throw new GitHubImportError('PARSE_FAILED', `Cannot extract file path from source_url: ${rawSourceUrl.slice(0, 200)}`)
+  }
+
+  const [owner, repo, , ...fileParts] = parts
+
+  // Ref resolution rules:
+  //   - Full 40-char SHA  → use directly in the raw URL (raw.githubusercontent.com accepts it natively)
+  //   - Short SHA (7–39)  → resolve to full SHA via the Commits API (raw doesn't accept short SHAs)
+  //   - Branch / tag name → use directly in the raw URL
+  let resolvedRef = newRef
+  const SHORT_SHA_RE = /^[0-9a-f]{7,39}$/i
+  if (SHORT_SHA_RE.test(newRef)) {
+    const commitApiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(newRef)}`
+    let commitRes: Response
+    try {
+      commitRes = await fetch(commitApiUrl, {
+        redirect: 'error',
+        signal:   AbortSignal.timeout(6_000),
+        headers: {
+          'User-Agent':           'Harmoven/1.0 (+https://harmoven.com)',
+          'Accept':               'application/vnd.github.v3+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      })
+    } catch (e) {
+      throw new GitHubImportError('FETCH_FAILED', `GitHub API error resolving short SHA: ${String(e).slice(0, 200)}`)
+    }
+    if (!commitRes.ok) {
+      throw new GitHubImportError('FETCH_FAILED', `Short SHA "${newRef}" not found (HTTP ${commitRes.status})`)
+    }
+    const text = await commitRes.text()
+    const shaMatch = text.match(/"sha"\s*:\s*"([0-9a-f]{40})"/)
+    if (shaMatch) resolvedRef = shaMatch[1]!
+  }
+
+  const newRawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(resolvedRef)}/${fileParts.join('/')}`
+
+  const parsedNew = assertAllowedHost(newRawUrl)
+  const content   = await fetchCapped(parsedNew)
+
+  const sha256 = createHash('sha256').update(content, 'utf8').digest('hex')
+
+  // Collect external URLs for warning display (filtered: skip harmoven.com / localhost)
+  const ALLOWED_URL_RE = /^https?:\/\/(harmoven\.com|localhost|127\.0\.0\.1)/i
+  const externalUrls = extractHttpsUrls(content).filter((u) => !ALLOWED_URL_RE.test(u))
+
+  return { rawUrl: newRawUrl, content, sha256, externalUrls }
+}
+
+export async function verifyGitHubRef(
+  rawSourceUrl: string | null,
+  ref: string,
+): Promise<{ valid: true } | { valid: false; reason: string }> {
+  if (!rawSourceUrl || !ref.trim()) return { valid: true } // nothing to check
+
+  let parsed: URL
+  try { parsed = new URL(rawSourceUrl) }
+  catch { return { valid: true } } // unparseable URL — skip silently
+
+  // Only works for raw.githubusercontent.com URLs (what we store in source_url)
+  if (parsed.hostname !== 'raw.githubusercontent.com') return { valid: true }
+
+  const segments = parsed.pathname.split('/').filter(Boolean)
+  const owner = segments[0]
+  const repo  = segments[1]
+  if (!owner || !repo) return { valid: true }
+
+  const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`
+
+  try {
+    const res = await fetch(apiUrl, {
+      method:  'GET',
+      redirect: 'error',
+      signal:  AbortSignal.timeout(6_000),
+      headers: {
+        'User-Agent': 'Harmoven/1.0 (+https://harmoven.com)',
+        'Accept':     'application/vnd.github.v3+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    })
+    if (res.ok) return { valid: true }
+    if (res.status === 404 || res.status === 422) {
+      return { valid: false, reason: `Ref "${ref}" not found on ${owner}/${repo}` }
+    }
+    if (res.status === 403 || res.status === 429) {
+      // Rate-limited — allow through rather than blocking the edit
+      return { valid: true }
+    }
+    return { valid: false, reason: `GitHub API returned HTTP ${res.status}` }
+  } catch {
+    // Network error — allow through (non-fatal)
+    return { valid: true }
+  }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
  * Throws GitHubImportError with opaque codes on all failure modes.
  * The caller is responsible for:
  *   - Rate limiting BEFORE calling this (SEC-07)
