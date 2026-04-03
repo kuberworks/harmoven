@@ -56,8 +56,8 @@ Followed by structured sections: **Research Findings**, **Acceptance Criteria**,
 
 | File | Status |
 |---|---|
-| `.specs/tasks/todo/harmoven-v1-implementation.feature.md` | todo |
 | `.specs/tasks/implemented/harmoven-v1-implementation.feature.md` | implemented |
+| `.specs/tasks/implemented/marketplace-v2.feature.md` | implemented |
 | `.specs/tasks/implemented/marketplace-v2.feature.md` | implemented |
 
 ---
