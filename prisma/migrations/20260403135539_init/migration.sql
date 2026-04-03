@@ -14,14 +14,13 @@ CREATE TYPE "NodeStatus" AS ENUM ('PENDING', 'RUNNING', 'BLOCKED', 'FAILED', 'ES
 CREATE TYPE "HumanGateStatus" AS ENUM ('OPEN', 'RESOLVED', 'TIMED_OUT');
 
 -- CreateEnum
+CREATE TYPE "WorktreeLayer" AS ENUM ('db', 'api', 'ui', 'infra', 'test');
+
+-- CreateEnum
 CREATE TYPE "TriggerType" AS ENUM ('CRON', 'FILE_WATCHER', 'WEBHOOK');
 
 -- CreateEnum
 CREATE TYPE "CredentialType" AS ENUM ('HTTP_BEARER', 'HTTP_BASIC', 'HEADER', 'QUERY_PARAM', 'OAUTH2');
-
--- CreateEnum
--- Amendment 60: layer is a typed enum, not free text, for DB-level validation.
-CREATE TYPE "WorktreeLayer" AS ENUM ('db', 'api', 'ui', 'infra', 'test');
 
 -- CreateTable
 CREATE TABLE "user" (
@@ -42,6 +41,7 @@ CREATE TABLE "user" (
     "preferences" TEXT NOT NULL DEFAULT '{}',
     "ui_locale" TEXT,
     "transparency_language" TEXT,
+    "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "user_pkey" PRIMARY KEY ("id")
 );
@@ -102,6 +102,52 @@ CREATE TABLE "twoFactor" (
 );
 
 -- CreateTable
+CREATE TABLE "passkey" (
+    "id" TEXT NOT NULL,
+    "name" TEXT,
+    "publicKey" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "credentialID" TEXT NOT NULL,
+    "counter" INTEGER NOT NULL,
+    "deviceType" TEXT NOT NULL,
+    "backedUp" BOOLEAN NOT NULL,
+    "transports" TEXT,
+    "aaguid" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "passkey_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "apikey" (
+    "id" TEXT NOT NULL,
+    "configId" TEXT NOT NULL DEFAULT 'default',
+    "name" TEXT,
+    "start" TEXT,
+    "referenceId" TEXT NOT NULL,
+    "prefix" TEXT,
+    "key" TEXT NOT NULL,
+    "refillInterval" INTEGER,
+    "refillAmount" INTEGER,
+    "lastRefillAt" TIMESTAMP(3),
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "rateLimitEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "rateLimitTimeWindow" INTEGER,
+    "rateLimitMax" INTEGER,
+    "requestCount" INTEGER NOT NULL DEFAULT 0,
+    "remaining" INTEGER,
+    "lastRequest" TIMESTAMP(3),
+    "expiresAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "permissions" TEXT,
+    "metadata" JSONB,
+    "userId" TEXT NOT NULL,
+
+    CONSTRAINT "apikey_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Project" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -115,6 +161,7 @@ CREATE TABLE "Project" (
     "updated_at" TIMESTAMP(3) NOT NULL,
     "config_git_hash" TEXT,
     "config_git_at" TIMESTAMP(3),
+    "archived_at" TIMESTAMP(3),
 
     CONSTRAINT "Project_pkey" PRIMARY KEY ("id")
 );
@@ -124,6 +171,8 @@ CREATE TABLE "Run" (
     "id" TEXT NOT NULL,
     "project_id" TEXT NOT NULL,
     "created_by" TEXT,
+    "run_type" TEXT,
+    "triggered_by" TEXT,
     "trigger_id" TEXT,
     "status" "RunStatus" NOT NULL DEFAULT 'PENDING',
     "suspended_reason" TEXT,
@@ -142,12 +191,15 @@ CREATE TABLE "Run" (
     "started_at" TIMESTAMP(3),
     "completed_at" TIMESTAMP(3),
     "paused_at" TIMESTAMP(3),
+    "last_completed_node_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "metadata" JSONB NOT NULL DEFAULT '{}',
     "estimated_hours_saved" DOUBLE PRECISION,
     "user_rating" INTEGER,
     "business_value_note" TEXT,
     "task_input_chars" INTEGER NOT NULL DEFAULT 0,
+    "data_expires_at" TIMESTAMP(3),
+    "pipeline_template_id" TEXT,
 
     CONSTRAINT "Run_pkey" PRIMARY KEY ("id")
 );
@@ -275,6 +327,16 @@ CREATE TABLE "McpSkill" (
     "enabled" BOOLEAN NOT NULL DEFAULT false,
     "config" JSONB NOT NULL DEFAULT '{}',
     "installed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "capability_type" TEXT,
+    "pack_id" TEXT,
+    "author" TEXT,
+    "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "registry_id" TEXT,
+    "upload_sha256" TEXT,
+    "source_ref" TEXT,
+    "installed_sha256" TEXT,
+    "last_update_check_at" TIMESTAMP(3),
+    "pending_update" JSONB,
 
     CONSTRAINT "McpSkill_pkey" PRIMARY KEY ("id")
 );
@@ -481,8 +543,179 @@ CREATE TABLE "EvalResult" (
     "criteria" JSONB NOT NULL,
     "feedback" TEXT,
     "computed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "model_breakdown" JSONB,
 
     CONSTRAINT "EvalResult_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PreviewPort" (
+    "id" TEXT NOT NULL,
+    "port" INTEGER NOT NULL,
+    "run_id" TEXT NOT NULL,
+    "allocated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PreviewPort_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CriticalReviewResult" (
+    "id" TEXT NOT NULL,
+    "run_id" TEXT NOT NULL,
+    "severity" INTEGER NOT NULL,
+    "verdict" TEXT NOT NULL,
+    "findings" JSONB NOT NULL,
+    "suppressed" INTEGER NOT NULL DEFAULT 0,
+    "rationale" TEXT NOT NULL,
+    "llm_used" TEXT NOT NULL,
+    "cost_usd" DECIMAL(10,4) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CriticalReviewResult_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CriticalFindingIgnore" (
+    "id" TEXT NOT NULL,
+    "result_id" TEXT NOT NULL,
+    "finding_id" TEXT NOT NULL,
+    "finding" JSONB NOT NULL,
+    "ignored_by" TEXT NOT NULL,
+    "ignored_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CriticalFindingIgnore_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CriticalFindingFix" (
+    "id" TEXT NOT NULL,
+    "result_id" TEXT NOT NULL,
+    "finding_id" TEXT NOT NULL,
+    "fix_run_id" TEXT,
+    "status" TEXT NOT NULL,
+    "cost_usd" DECIMAL(10,4) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CriticalFindingFix_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "LlmProviderKey" (
+    "id" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "label" TEXT NOT NULL,
+    "key_enc" TEXT NOT NULL,
+    "added_by" TEXT NOT NULL,
+    "added_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "last_used_at" TIMESTAMP(3),
+    "active" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "LlmProviderKey_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "SystemSetting" (
+    "key" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "updated_by" TEXT,
+
+    CONSTRAINT "SystemSetting_pkey" PRIMARY KEY ("key")
+);
+
+-- CreateTable
+CREATE TABLE "PipelineTemplate" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "project_id" TEXT,
+    "created_by" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "is_public" BOOLEAN NOT NULL DEFAULT false,
+    "use_count" INTEGER NOT NULL DEFAULT 0,
+    "dag" JSONB NOT NULL,
+    "ai_suggestion" JSONB,
+    "ai_suggested_at" TIMESTAMP(3),
+
+    CONSTRAINT "PipelineTemplate_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PipelineTemplateVersion" (
+    "id" TEXT NOT NULL,
+    "template_id" TEXT NOT NULL,
+    "version" INTEGER NOT NULL,
+    "dag" JSONB NOT NULL,
+    "change_note" TEXT,
+    "source" TEXT NOT NULL DEFAULT 'user',
+    "created_by" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PipelineTemplateVersion_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "GitHubImportPreview" (
+    "id" TEXT NOT NULL,
+    "actor" TEXT NOT NULL,
+    "source_url" TEXT NOT NULL,
+    "content_sha256" TEXT NOT NULL,
+    "scaffold" JSONB NOT NULL,
+    "created_by" TEXT,
+    "file_hashes" JSONB,
+    "context" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "GitHubImportPreview_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "GitUrlWhitelistEntry" (
+    "id" TEXT NOT NULL,
+    "label" TEXT NOT NULL,
+    "pattern" TEXT NOT NULL,
+    "description" TEXT,
+    "is_builtin" BOOLEAN NOT NULL DEFAULT false,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "created_by" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "GitUrlWhitelistEntry_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MarketplaceRegistry" (
+    "id" TEXT NOT NULL,
+    "label" TEXT NOT NULL,
+    "feed_url" TEXT NOT NULL,
+    "auth_header_enc" TEXT,
+    "is_builtin" BOOLEAN NOT NULL DEFAULT false,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "last_fetched_at" TIMESTAMP(3),
+    "last_fetch_status" TEXT,
+    "created_by" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MarketplaceRegistry_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "GitProviderToken" (
+    "id" TEXT NOT NULL,
+    "label" TEXT NOT NULL,
+    "host_pattern" TEXT NOT NULL,
+    "token_enc" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "expires_at" TIMESTAMP(3),
+    "created_by" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "GitProviderToken_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -495,6 +728,24 @@ CREATE UNIQUE INDEX "session_token_key" ON "session"("token");
 CREATE UNIQUE INDEX "twoFactor_userId_key" ON "twoFactor"("userId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "passkey_credentialID_key" ON "passkey"("credentialID");
+
+-- CreateIndex
+CREATE INDEX "passkey_userId_idx" ON "passkey"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "apikey_key_key" ON "apikey"("key");
+
+-- CreateIndex
+CREATE INDEX "apikey_userId_idx" ON "apikey"("userId");
+
+-- CreateIndex
+CREATE INDEX "apikey_configId_idx" ON "apikey"("configId");
+
+-- CreateIndex
+CREATE INDEX "apikey_referenceId_idx" ON "apikey"("referenceId");
+
+-- CreateIndex
 CREATE INDEX "Run_project_id_idx" ON "Run"("project_id");
 
 -- CreateIndex
@@ -502,6 +753,15 @@ CREATE INDEX "Run_status_idx" ON "Run"("status");
 
 -- CreateIndex
 CREATE INDEX "Run_created_by_idx" ON "Run"("created_by");
+
+-- CreateIndex
+CREATE INDEX "Run_run_type_idx" ON "Run"("run_type");
+
+-- CreateIndex
+CREATE INDEX "Run_pipeline_template_id_idx" ON "Run"("pipeline_template_id");
+
+-- CreateIndex
+CREATE INDEX "Run_data_expires_at_idx" ON "Run"("data_expires_at");
 
 -- CreateIndex
 CREATE INDEX "Node_run_id_idx" ON "Node"("run_id");
@@ -529,6 +789,15 @@ CREATE INDEX "AuditLog_actor_idx" ON "AuditLog"("actor");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_timestamp_idx" ON "AuditLog"("timestamp");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "McpSkill_pack_id_key" ON "McpSkill"("pack_id");
+
+-- CreateIndex
+CREATE INDEX "McpSkill_source_type_idx" ON "McpSkill"("source_type");
+
+-- CreateIndex
+CREATE INDEX "McpSkill_last_update_check_at_idx" ON "McpSkill"("last_update_check_at");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MemoryResource_uri_key" ON "MemoryResource"("uri");
@@ -590,6 +859,48 @@ CREATE UNIQUE INDEX "RunActorStats_run_id_key" ON "RunActorStats"("run_id");
 -- CreateIndex
 CREATE INDEX "EvalResult_run_id_idx" ON "EvalResult"("run_id");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "PreviewPort_port_key" ON "PreviewPort"("port");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PreviewPort_run_id_key" ON "PreviewPort"("run_id");
+
+-- CreateIndex
+CREATE INDEX "PreviewPort_run_id_idx" ON "PreviewPort"("run_id");
+
+-- CreateIndex
+CREATE INDEX "CriticalReviewResult_run_id_idx" ON "CriticalReviewResult"("run_id");
+
+-- CreateIndex
+CREATE INDEX "LlmProviderKey_provider_idx" ON "LlmProviderKey"("provider");
+
+-- CreateIndex
+CREATE INDEX "PipelineTemplate_created_by_idx" ON "PipelineTemplate"("created_by");
+
+-- CreateIndex
+CREATE INDEX "PipelineTemplate_project_id_idx" ON "PipelineTemplate"("project_id");
+
+-- CreateIndex
+CREATE INDEX "PipelineTemplateVersion_template_id_idx" ON "PipelineTemplateVersion"("template_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PipelineTemplateVersion_template_id_version_key" ON "PipelineTemplateVersion"("template_id", "version");
+
+-- CreateIndex
+CREATE INDEX "GitHubImportPreview_actor_idx" ON "GitHubImportPreview"("actor");
+
+-- CreateIndex
+CREATE INDEX "GitHubImportPreview_expires_at_idx" ON "GitHubImportPreview"("expires_at");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "GitUrlWhitelistEntry_pattern_key" ON "GitUrlWhitelistEntry"("pattern");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MarketplaceRegistry_feed_url_key" ON "MarketplaceRegistry"("feed_url");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "GitProviderToken_host_pattern_key" ON "GitProviderToken"("host_pattern");
+
 -- AddForeignKey
 ALTER TABLE "session" ADD CONSTRAINT "session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -600,7 +911,16 @@ ALTER TABLE "account" ADD CONSTRAINT "account_userId_fkey" FOREIGN KEY ("userId"
 ALTER TABLE "twoFactor" ADD CONSTRAINT "twoFactor_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "passkey" ADD CONSTRAINT "passkey_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "apikey" ADD CONSTRAINT "apikey_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Run" ADD CONSTRAINT "Run_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "Project"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Run" ADD CONSTRAINT "Run_pipeline_template_id_fkey" FOREIGN KEY ("pipeline_template_id") REFERENCES "PipelineTemplate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Run" ADD CONSTRAINT "Run_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -662,13 +982,20 @@ ALTER TABLE "RunActorStats" ADD CONSTRAINT "RunActorStats_run_id_fkey" FOREIGN K
 -- AddForeignKey
 ALTER TABLE "EvalResult" ADD CONSTRAINT "EvalResult_run_id_fkey" FOREIGN KEY ("run_id") REFERENCES "Run"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- AuditLog immutability (PostgreSQL rules)
--- Prevents any UPDATE or DELETE on AuditLog rows at the DB level.
--- These rules run INSTEAD OF the operation and do nothing, effectively blocking it.
+-- AddForeignKey
+ALTER TABLE "CriticalReviewResult" ADD CONSTRAINT "CriticalReviewResult_run_id_fkey" FOREIGN KEY ("run_id") REFERENCES "Run"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
-CREATE OR REPLACE RULE audit_no_update AS ON UPDATE TO "AuditLog" DO INSTEAD NOTHING;
-CREATE OR REPLACE RULE audit_no_delete AS ON DELETE TO "AuditLog" DO INSTEAD NOTHING;
+-- AddForeignKey
+ALTER TABLE "CriticalFindingIgnore" ADD CONSTRAINT "CriticalFindingIgnore_result_id_fkey" FOREIGN KEY ("result_id") REFERENCES "CriticalReviewResult"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- Note: Node.last_heartbeat uses a plain index managed by Prisma ("Node_last_heartbeat_idx").
--- A partial WHERE status='RUNNING' index can be added as a future optimization
--- once Prisma supports @@index([...], where: ...) natively (tracked Prisma issue #13978).
+-- AddForeignKey
+ALTER TABLE "CriticalFindingFix" ADD CONSTRAINT "CriticalFindingFix_result_id_fkey" FOREIGN KEY ("result_id") REFERENCES "CriticalReviewResult"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PipelineTemplate" ADD CONSTRAINT "PipelineTemplate_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PipelineTemplate" ADD CONSTRAINT "PipelineTemplate_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "Project"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PipelineTemplateVersion" ADD CONSTRAINT "PipelineTemplateVersion_template_id_fkey" FOREIGN KEY ("template_id") REFERENCES "PipelineTemplate"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
