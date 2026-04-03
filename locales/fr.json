@@ -201,7 +201,8 @@
       "developer": "Développeur",
       "admin": "Administrateur",
       "instance_admin": "Administrateur d'instance"
-    }
+    },
+    "subtitle": "Gérer qui a accès à {name} et ce que chacun peut faire."
   },
   "api_keys": {
     "title": "Clés API",
@@ -254,7 +255,15 @@
     "totp_enabled": "L'authentification à deux facteurs est activée",
     "passkey_add": "Ajouter une clé d'accès",
     "passkeys": "Clés d'accès",
-    "passkey_remove": "Supprimer"
+    "passkey_remove": "Supprimer",
+    "security_title": "Sécurité",
+    "security_subtitle": "Gérer l'authentification à deux facteurs, les clés d'accès et les sessions actives.",
+    "subtitle": "Gérer votre compte et vos préférences.",
+    "profile_subtitle": "Mettre à jour votre nom d'affichage et consulter les détails du compte.",
+    "email_readonly": "L'e-mail ne peut pas être modifié ici.",
+    "expert_mode": "Mode expert",
+    "authenticator_app": "Application d'authentification",
+    "passkey_added_on": "Ajouté le {date}"
   },
   "admin": {
     "title": "Administration",
@@ -458,7 +467,15 @@
       "slash_command": "Commande slash enregistrée dans la palette de commandes de l'agent"
     },
     "browse": {
-      "loading": "Chargement des registries…"
+      "loading": "Chargement des registries…",
+      "no_registry_title": "Aucune registry configurée",
+      "no_registry_hint": "Ajoutez une registry dans Admin → Marketplace pour parcourir les plugins disponibles.",
+      "feed_error": "Erreur lors de la récupération des feeds",
+      "no_plugins": "Aucun plugin disponible",
+      "invalid_json": "Format de réponse invalide (non-JSON)",
+      "network_error": "Erreur réseau",
+      "source_label": "Source : {registry}",
+      "unverified": "Non vérifié"
     },
     "installed_section": {
       "title": "Packs installés",
@@ -534,17 +551,6 @@
       "manifest": "Manifeste",
       "import_another": "Importer un autre paquet",
       "remove_file": "Retirer le fichier"
-    },
-    "browse": {
-      "loading": "Chargement des registries…",
-      "no_registry_title": "Aucune registry configurée",
-      "no_registry_hint": "Ajoutez une registry dans Admin → Marketplace pour parcourir les plugins disponibles.",
-      "feed_error": "Erreur lors de la récupération des feeds",
-      "no_plugins": "Aucun plugin disponible",
-      "invalid_json": "Format de réponse invalide (non-JSON)",
-      "network_error": "Erreur réseau",
-      "source_label": "Source : {registry}",
-      "unverified": "Non vérifié"
     }
   },
   "analytics": {
@@ -688,5 +694,20 @@
     "restart": "Redémarrer et mettre à jour",
     "tonight": "Ce soir",
     "skip": "Ignorer cette version"
+  },
+  "project_settings": {
+    "title": "Paramètres du projet",
+    "transparency_mode": "Mode transparence",
+    "expert_badge": "Expert"
+  },
+  "config_history": {
+    "title": "Historique de configuration",
+    "breadcrumb_settings": "Paramètres"
+  },
+  "triggers": {
+    "webhook": "Webhook",
+    "new_trigger": "Nouveau déclencheur",
+    "webhook_auth_hint_pre": "Les requêtes doivent inclure la clé API du projet dans l'en-tête",
+    "webhook_auth_hint_post": "."
   }
 }

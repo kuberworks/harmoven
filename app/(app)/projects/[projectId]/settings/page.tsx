@@ -9,6 +9,8 @@ import { notFound, redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { resolvePermissions } from '@/lib/auth/rbac'
+import { getSessionLocale } from '@/lib/auth/session-helpers'
+import { createT } from '@/lib/i18n/t'
 import { ProjectSettingsClient } from './settings-client'
 
 interface Props {
@@ -44,13 +46,15 @@ export default async function ProjectSettingsPage({ params }: Props) {
   const canEdit   = permissions.has('project:edit')
   const userMeta  = session.user as Record<string, unknown>
   const expertMode = Boolean(userMeta.expert_mode) || (userMeta.ui_level as string | undefined) === 'EXPERT'
+  const locale     = getSessionLocale(userMeta)
+  const t          = createT(locale)
 
   const config = (project.config ?? {}) as Record<string, unknown>
 
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Project settings</h1>
+        <h1 className="text-xl font-semibold text-foreground">{t('project_settings.title')}</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           Configure domain profile, confidentiality and agent behaviour overrides.
         </p>

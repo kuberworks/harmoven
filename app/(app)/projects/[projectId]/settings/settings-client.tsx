@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
+import { useT } from '@/lib/i18n/client'
 import { Loader2, Settings, Code2, ChevronDown, ChevronUp } from 'lucide-react'
 import Link from 'next/link'
 
@@ -56,6 +57,7 @@ export function ProjectSettingsClient({
   config: initialConfig, canEdit, expertMode,
 }: Props) {
   const { toast } = useToast()
+  const t = useT()
   const router = useRouter()
 
   const [name, setName]               = useState(initialName)
@@ -176,7 +178,7 @@ export function ProjectSettingsClient({
 
           <div className="flex items-center justify-between rounded-lg border border-surface-border px-3 py-2.5">
             <div>
-              <p className="text-sm font-medium text-foreground">Transparency mode</p>
+              <p className="text-sm font-medium text-foreground">{t('project_settings.transparency_mode')}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Show agents' reasoning steps and intermediate outputs to all project members.
               </p>
@@ -199,7 +201,7 @@ export function ProjectSettingsClient({
               <span className="flex items-center gap-2">
                 <Code2 className="h-4 w-4 text-muted-foreground" aria-hidden />
                 Expert overrides
-                <Badge variant="secondary" className="text-xs">Expert</Badge>
+                <Badge variant="secondary" className="text-xs">{t('project_settings.expert_badge')}</Badge>
               </span>
               <Button
                 type="button"

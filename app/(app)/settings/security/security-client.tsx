@@ -16,6 +16,7 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { Separator } from '@/components/ui/separator'
 import { authClient } from '@/lib/auth-client'
+import { useT } from '@/lib/i18n/client'
 import {
   Shield, Smartphone, Key, Globe, Loader2, Trash2, Plus, CheckCircle2,
 } from 'lucide-react'
@@ -57,6 +58,7 @@ function formatDate(iso: string): string {
 export function SecurityClient({ sessions: initialSessions, passkeys: initialPasskeys, totpEnabled }: Props) {
   const { toast } = useToast()
   const router = useRouter()
+  const t = useT()
 
   const [sessions, setSessions] = useState(initialSessions)
   const [passkeys, setPasskeys] = useState(initialPasskeys)
@@ -129,7 +131,7 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-foreground">Authenticator app</p>
+              <p className="text-sm text-foreground">{t('settings.authenticator_app')}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Use an app like 1Password, Authy or Google Authenticator.
               </p>
@@ -185,7 +187,7 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
                 <li key={pk.id} className="flex items-center justify-between py-2.5 gap-3">
                   <div>
                     <p className="text-sm font-medium text-foreground">{pk.name || 'Unnamed passkey'}</p>
-                    <p className="text-xs text-muted-foreground">Added {formatDate(pk.createdAt)}</p>
+                    <p className="text-xs text-muted-foreground">{t('settings.passkey_added_on', { date: formatDate(pk.createdAt) })}</p>
                   </div>
                   <Button
                     size="sm"

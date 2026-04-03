@@ -12,9 +12,8 @@ import { assertProjectAccess } from '@/lib/auth/ownership'
 import {
   resolvePermissions,
   invalidateProjectPermCache,
-  ForbiddenError,
-  UnauthorizedError,
 } from '@/lib/auth/rbac'
+import type { SessionCaller, Caller } from '@/lib/auth/rbac'
 import { ALL_PERMISSIONS } from '@/lib/auth/permissions'
 import type { Permission } from '@/lib/auth/permissions'
 import { uuidv7 } from '@/lib/utils/uuidv7'
@@ -26,21 +25,30 @@ const BUILTIN_ROLE_NAMES = new Set([
   'viewer', 'operator', 'user', 'user_with_costs', 'developer', 'admin', 'instance_admin',
 ])
 
-async function guardAndFetchRole(req: NextRequest, projectId: string, roleId: string) {
+type RoleRow = { id: string; project_id: string | null; is_builtin: boolean; name: string }
+type GuardRoleResult =
+  | { code: 'ok'; caller: Caller; role: RoleRow }
+  | { code: 'unauthorized' | 'forbidden' | 'builtin' }
+
+async function guardAndFetchRole(req: NextRequest, projectId: string, roleId: string): Promise<GuardRoleResult> {
   const caller = await resolveCaller(req)
-  if (!caller) throw new UnauthorizedError()
-  await assertProjectAccess(caller, projectId)
+  if (!caller) return { code: 'unauthorized' }
+  try {
+    await assertProjectAccess(caller, projectId)
+  } catch {
+    return { code: 'forbidden' }
+  }
   const perms = await resolvePermissions(caller, projectId)
-  if (!perms.has('project:members')) throw new ForbiddenError()
+  if (!perms.has('project:members')) return { code: 'forbidden' }
 
   const role = await db.projectRole.findUnique({
     where: { id: roleId },
     select: { id: true, project_id: true, is_builtin: true, name: true },
   })
-  if (!role || role.project_id !== projectId) throw new ForbiddenError()
-  if (role.is_builtin) throw Object.assign(new ForbiddenError('Built-in roles cannot be modified'), { builtIn: true })
+  if (!role || role.project_id !== projectId) return { code: 'forbidden' }
+  if (role.is_builtin) return { code: 'builtin' }
 
-  return { caller, role }
+  return { code: 'ok', caller, role }
 }
 
 interface UpdateRoleBody {
@@ -52,18 +60,13 @@ interface UpdateRoleBody {
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { id: projectId, roleId } = await params
 
-  let caller
-  let role: { id: string; name: string }
-  try {
-    const result = await guardAndFetchRole(req, projectId, roleId)
-    caller = result.caller
-    role   = result.role
-  } catch (e) {
-    if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const fe = e as { builtIn?: boolean }
-    if (fe.builtIn) return NextResponse.json({ error: 'Built-in roles cannot be modified' }, { status: 400 })
+  const guard = await guardAndFetchRole(req, projectId, roleId)
+  if (guard.code !== 'ok') {
+    if (guard.code === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (guard.code === 'builtin') return NextResponse.json({ error: 'Built-in roles cannot be modified' }, { status: 400 })
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const { caller, role } = guard
 
   let body: UpdateRoleBody
   try {
@@ -127,18 +130,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   const { id: projectId, roleId } = await params
 
-  let caller
-  let role: { id: string; name: string }
-  try {
-    const result = await guardAndFetchRole(req, projectId, roleId)
-    caller = result.caller
-    role   = result.role
-  } catch (e) {
-    if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const fe = e as { builtIn?: boolean }
-    if (fe.builtIn) return NextResponse.json({ error: 'Built-in roles cannot be deleted' }, { status: 400 })
+  const guard = await guardAndFetchRole(req, projectId, roleId)
+  if (guard.code !== 'ok') {
+    if (guard.code === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (guard.code === 'builtin') return NextResponse.json({ error: 'Built-in roles cannot be deleted' }, { status: 400 })
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const { caller, role } = guard
 
   // Reject if any member or API key still uses this role
   const memberCount  = await db.projectMember.count({ where: { role_id: roleId } })

@@ -10,6 +10,8 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { resolvePermissions } from '@/lib/auth/rbac'
+import { getSessionLocale } from '@/lib/auth/session-helpers'
+import { createT } from '@/lib/i18n/t'
 import ConfigHistory from '@/components/project/ConfigHistory'
 import { ChevronRight } from 'lucide-react'
 
@@ -41,20 +43,22 @@ export default async function ConfigHistoryPage({ params }: Props) {
   if (!permissions.has('project:read')) redirect('/projects')
 
   const canRestore = permissions.has('project:edit')
+  const locale = getSessionLocale(session.user as Record<string, unknown>)
+  const t = createT(locale)
 
   return (
     <div className="max-w-4xl">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1 text-xs text-muted-foreground mb-4">
         <Link href={`/projects/${projectId}/settings`} className="hover:text-foreground transition-colors">
-          Settings
+          {t('config_history.breadcrumb_settings')}
         </Link>
         <ChevronRight className="h-3.5 w-3.5" aria-hidden />
-        <span className="text-foreground">Config history</span>
+        <span className="text-foreground">{t('config_history.title')}</span>
       </nav>
 
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Config history</h1>
+        <h1 className="text-xl font-semibold text-foreground">{t('config_history.title')}</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           Immutable record of all configuration changes for {project.name}.
         </p>
