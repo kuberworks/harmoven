@@ -2,7 +2,7 @@
 // Server-side enforcement of marketplace.import.require_import_reason setting (L6).
 //
 // Called by:
-//   - POST /api/admin/skills/from-url/approve
+//   - POST /api/admin/integrations/from-url/approve
 //   - POST /api/admin/marketplace/upload
 //
 // Setting values:

@@ -61,7 +61,7 @@ info:
     | `admin:triggers` | `developer` | `GET/POST/PATCH /admin/triggers` |
     | `project:members` | `admin` | `GET/POST/PATCH/DELETE /projects/{id}/members`, roles, |
     | `project:credentials` | `admin` | `GET/POST/PATCH/DELETE /projects/{id}/api-keys`, credentials |
-    | `admin:skills` | `admin` | `GET/POST/PATCH/DELETE /admin/skills` |
+    | `admin:integrations` | `admin` | `GET/POST/PATCH/DELETE /admin/integrations` |
     | `admin:models` | `instance_admin` | `GET/POST/PATCH /admin/models` |
     | `admin:users` | `instance_admin` | `GET/POST /admin/users`, `PATCH/DELETE /admin/users/{id}`, ban/unban |
     | `admin:audit` | `instance_admin` | `GET /analytics` |
@@ -478,7 +478,7 @@ components:
 
         **Administration (instance_admin or delegated):**
         - `admin:models` — Manage LLM profiles. Minimum role: `instance_admin`.
-        - `admin:skills` — Install and approve MCP skill packs. Minimum role: `admin`.
+        - `admin:integrations` — Install and approve integrations. Minimum role: `admin`.
         - `admin:users` — Ban/unban users, view all user accounts. Minimum role: `instance_admin`.
         - `admin:triggers` — Create and manage CRON/FILE_WATCHER/WEBHOOK triggers. Minimum role: `developer`.
         - `admin:audit` — Access analytics and audit logs. Minimum role: `instance_admin`.
@@ -511,7 +511,7 @@ components:
         - marketplace:install
         # Admin
         - admin:models
-        - admin:skills
+        - admin:integrations
         - admin:users
         - admin:triggers
         - admin:audit
@@ -527,7 +527,7 @@ components:
 
         - `data_reporting` — Data analysis, dashboards, KPIs, CSV/Excel processing.
         - `app_scaffolding` — Full-stack application generation with layered agents and
-          git worktrees. Requires `admin:skills` to enable the UI UX Pro Max MCP skill.
+          git worktrees. Requires `admin:integrations` to enable the UI UX Pro Max MCP integration.
         - `document_drafting` — Reports, emails, presentations, business documents.
         - `research_synthesis` — Market research, competitive analysis, trend reports.
         - `marketing_content` — Social posts, SEO articles, campaign briefs, copywriting.
@@ -1199,7 +1199,7 @@ components:
           format: date-time
           description: "ISO 8601 timestamp when this API key was revoked. Non-null means the key is invalid regardless of expiry."
 
-    # ── Skills ────────────────────────────────────────────────────────────────
+    # ── Integrations ──────────────────────────────────────────────────────────
     Skill:
       type: object
       required: [id, name, enabled]
@@ -1841,7 +1841,7 @@ components:
         format: uuid
     SkillId:
       name: id
-      description: "UUID of the MCP skill pack to operate on. Returned by `GET /admin/skills`."
+      description: "UUID of the integration to operate on. Returned by `GET /admin/integrations`."
       in: path
       required: true
       schema:
@@ -4483,13 +4483,13 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimit'
-  /admin/skills:
+  /admin/integrations:
     get:
-      operationId: listSkills
-      x-required-permissions: [admin:skills]
-      summary: List installed MCP skills / packs
+      operationId: listIntegrations
+      x-required-permissions: [admin:integrations]
+      summary: List installed integrations
       description: |
-        > **Required permission:** `admin:skills` — minimum role: `admin`
+        > **Required permission:** `admin:integrations` — minimum role: `admin`
 
       tags: [admin]
       parameters:
@@ -4500,13 +4500,13 @@ paths:
             type: boolean
       responses:
         '200':
-          description: "All installed skill packs with scan status, version, update policy, and configuration. Skills with `scan_status: pending` or `failed` are listed but cannot be enabled regardless of the `enabled` flag."
+          description: "All installed integrations with scan status, version, update policy, and configuration. Integrations with `scan_status: pending` or `failed` are listed but cannot be enabled regardless of the `enabled` flag."
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  skills:
+                  integrations:
                     type: array
                     items:
                       $ref: '#/components/schemas/Skill'
@@ -4517,11 +4517,11 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimit'
     post:
-      operationId: installSkill
-      x-required-permissions: [admin:skills]
-      summary: Install a skill pack
+      operationId: installIntegration
+      x-required-permissions: [admin:integrations]
+      summary: Install an integration
       description: |
-        > **Required permission:** `admin:skills` — minimum role: `admin`
+        > **Required permission:** `admin:integrations` — minimum role: `admin`
         Triggers Gate 1 (security scan) → Gate 2 (admin approval).
         Skill is not active until approved.
       tags: [admin]
@@ -4571,13 +4571,13 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimit'
-  /admin/skills/{id}:
+  /admin/integrations/{id}:
     patch:
-      operationId: updateSkill
-      x-required-permissions: [admin:skills]
-      summary: Approve, disable, or update a skill
+      operationId: updateIntegration
+      x-required-permissions: [admin:integrations]
+      summary: Approve, disable, or update an integration
       description: |
-        > **Required permission:** `admin:skills` — minimum role: `admin`
+        > **Required permission:** `admin:integrations` — minimum role: `admin`
 
       tags: [admin]
       parameters:
@@ -4601,7 +4601,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: "Skill configuration updated. If `enabled` changed to `true` and `scan_status` is `clean` with Gate-2 admin approval, the skill is immediately available to agent nodes that declare it in `tools_allowed`. Disabling takes effect for all new tool calls."
+          description: "Integration configuration updated. If `enabled` changed to `true` and `scan_status` is `clean` with Gate-2 admin approval, the integration is immediately available to agent nodes that declare it in `tools_allowed`. Disabling takes effect for all new tool calls."
           content:
             application/json:
               schema:
@@ -4621,18 +4621,18 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimit'
     delete:
-      operationId: uninstallSkill
-      x-required-permissions: [admin:skills]
-      summary: Uninstall a skill
+      operationId: uninstallIntegration
+      x-required-permissions: [admin:integrations]
+      summary: Uninstall an integration
       description: |
-        > **Required permission:** `admin:skills` — minimum role: `admin`
+        > **Required permission:** `admin:integrations` — minimum role: `admin`
 
       tags: [admin]
       parameters:
         - $ref: '#/components/parameters/SkillId'
       responses:
         '200':
-          description: "Skill removed from the instance. DAG nodes that reference this skill's tool IDs in `tools_allowed` will fail at tool-call time. Update affected project configurations before uninstalling in production."
+          description: "Integration removed from the instance. DAG nodes that reference this integration's tool IDs in `tools_allowed` will fail at tool-call time. Update affected project configurations before uninstalling in production."
           content:
             application/json:
               schema:
@@ -6551,7 +6551,7 @@ tags:
   - name: admin
     description: |
       Instance administration. Endpoints in this group require at minimum the
-      `developer` role (for triggers) or `admin`/`instance_admin` for models, skills,
+      `developer` role (for triggers) or `admin`/`instance_admin` for models, integrations,
       users, and instance-level operations. All writes emit immutable audit log entries.
   - name: analytics
     description: |

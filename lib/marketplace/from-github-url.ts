@@ -81,10 +81,28 @@ export interface GitHubImportPreview {
   /** MCP command if capability_type = mcp_skill. */
   mcp_command:    ScaffoldedField | null
 
+  /** Short sha7 of the commit at import time — for display and source_ref storage. */
+  commit_sha?: string
+
   /** Full scan violations — always empty on success (scan passed to get here). */
   scan_violations: string[]
+  /**
+   * External URL references found in the pack that were fetched and scanned clean.
+   * Present only when the pack references allowed external URLs (e.g. a guidelines file).
+   * Admin must confirm these before approval.
+   */
+  scan_warnings: ExternalUrlWarning[]
   /** True if any field is inferred (triggers mandatory review badge in UI). */
   has_inferred_fields: boolean
+}
+
+export interface ExternalUrlWarning {
+  /** The external URL referenced by the pack. */
+  url:        string
+  /** SHA-256 of the content at that URL at import time. */
+  sha256:     string
+  /** Byte size of the fetched content. */
+  size:       number
 }
 
 // ─── SEC-01: Host validation ──────────────────────────────────────────────────
@@ -175,6 +193,75 @@ async function fetchCapped(url: URL): Promise<string> {
   return new TextDecoder('utf-8', { fatal: false }).decode(combined)
 }
 
+// ─── Markdown name/description extractor ────────────────────────────────────
+
+/**
+ * Parse a Markdown file that may start with a YAML frontmatter block (--- … ---).
+ * Extracts: display_name, description, author, version, tags from frontmatter if present.
+ * Falls back to heading extraction when no frontmatter is found.
+ * Full raw content (including frontmatter) is kept as system_prompt.
+ */
+function parseMarkdownPack(raw: string): ParsedPack {
+  // ── Frontmatter extraction ────────────────────────────────────────────────
+  const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  if (fmMatch) {
+    const fmRaw = fmMatch[1]
+    // Simple key: value parser — no full YAML, untrusted input
+    const get = (key: string): string | undefined => {
+      const m = fmRaw.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))
+      return m ? m[1].trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '') : undefined
+    }
+    const name        = get('name') ?? get('display_name')
+    const description = get('description')
+    const author      = get('author')
+    const version     = get('version')
+    const tagsRaw     = get('tags')
+    const tags        = tagsRaw
+      ? tagsRaw.replace(/[\[\]]/g, '').split(',').map((t) => t.trim()).filter(Boolean)
+      : undefined
+    // Only trust frontmatter if it provides at least a name or description
+    if (name ?? description) {
+      return { display_name: name, description, author, version, tags, system_prompt: raw }
+    }
+  }
+
+  // ── Heading + first-paragraph extraction (no usable frontmatter) ─────────
+  const lines = raw.split(/\r?\n/)
+  let name: string | undefined
+  let description: string | undefined
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^#{1,2}\s+(.+)$/)
+    if (headingMatch && !name) {
+      name = headingMatch[1]
+        .replace(/\*{1,2}|_{1,2}|`/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .trim()
+        .slice(0, 80)
+      continue
+    }
+    if (!description && name) {
+      const trimmed = line.trim()
+      if (
+        trimmed &&
+        !trimmed.startsWith('```') &&
+        !trimmed.startsWith('---') &&
+        !trimmed.startsWith('![') &&
+        !trimmed.startsWith('<') &&
+        !trimmed.startsWith('|')
+      ) {
+        description = trimmed
+          .replace(/\*{1,2}|_{1,2}|`/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .slice(0, 200)
+        break
+      }
+    }
+  }
+
+  return { display_name: name, description, system_prompt: raw }
+}
+
 // ─── SEC-05: pack_id slugification ───────────────────────────────────────────
 
 function toPackId(repoName: string): string {
@@ -254,9 +341,9 @@ function parseContent(raw: string, filename: string): ParsedPack {
     }
   }
 
-  // Markdown / plain text → treat entire content as system_prompt
+  // Markdown / plain text → extract name + description from headings, rest = system_prompt
   if (ext === 'md' || ext === 'txt' || ext === '') {
-    return { system_prompt: raw }
+    return parseMarkdownPack(raw)
   }
 
   throw new GitHubImportError('PARSE_FAILED', `Unrecognised file extension ".${ext}"`)
@@ -280,8 +367,8 @@ function detectCapability(parsed: ParsedPack): {
     return { type: 'mcp_skill', mcp_command: safeCmdBase }
   }
 
-  // Domain pack: has system_prompt + metadata
-  if (parsed.system_prompt && (parsed.id ?? parsed.display_name ?? parsed.name)) {
+  // Domain pack: has system_prompt (id may be inferred from URL — still a real pack)
+  if (parsed.system_prompt) {
     return { type: 'domain_pack', mcp_command: null }
   }
 
@@ -292,24 +379,126 @@ function detectCapability(parsed: ParsedPack): {
 // ─── Infer pack_id from URL path ──────────────────────────────────────────────
 
 function inferPackIdFromUrl(parsedUrl: URL): string {
-  // raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>
-  // api.github.com/repos/<owner>/<repo>/contents/<path>
+  // raw.githubusercontent.com/<owner>/<repo>/<ref>/<path…/file>
+  // api.github.com/repos/<owner>/<repo>/contents/<path…/file>
   const segments = parsedUrl.pathname.split('/').filter(Boolean)
-  const repoName = parsedUrl.hostname === 'api.github.com'
-    ? segments[2] ?? 'unknown'  // /repos/<owner>/<repo>/...
-    : segments[1] ?? 'unknown'  // /<owner>/<repo>/...
-  return toPackId(repoName)
+
+  let pathSegments: string[]
+  let repoName: string
+  if (parsedUrl.hostname === 'api.github.com') {
+    // /repos/<owner>/<repo>/contents/<path…>
+    repoName     = segments[2] ?? 'unknown'
+    pathSegments = segments.slice(4) // after 'contents'
+  } else {
+    // /<owner>/<repo>/<ref>/<path…>
+    repoName     = segments[1] ?? 'unknown'
+    pathSegments = segments.slice(3) // after ref
+  }
+
+  // Prefer the parent directory of the file when the file is in a subdirectory,
+  // e.g. skills/frontend-design/SKILL.md → 'frontend-design' is more specific than 'skills'
+  const parentDir = pathSegments.length >= 2
+    ? pathSegments[pathSegments.length - 2]
+    : undefined
+
+  return toPackId(parentDir ?? repoName)
 }
 
-// ─── SEC-04: Double scan ──────────────────────────────────────────────────────
+// ─── External URL reference scanner ──────────────────────────────────────────
 
-function runDoubleScan(rawContent: string, parsed: ParsedPack): string[] {
+const MAX_EXTERNAL_URL_REFS = 3    // hard cap on how many external URLs we follow per pack
+const HTTPS_URL_RE = /https?:\/\/[^\s"'`)\]>]+/gi
+
+/**
+ * Extract all https URLs from raw pack content.
+ * Capped at MAX_EXTERNAL_URL_REFS to avoid runaway fetching.
+ */
+function extractHttpsUrls(content: string): string[] {
+  const matches = [...content.matchAll(HTTPS_URL_RE)]
+    .map((m) => m[0].replace(/[.,;:!?]+$/, '')) // strip trailing punctuation
+  return [...new Set(matches)].slice(0, MAX_EXTERNAL_URL_REFS)
+}
+
+/**
+ * For each external URL in the pack content that passes the host whitelist:
+ *   1. Fetch it through our security pipeline (redirect:error, 8s, 1MB cap)
+ *   2. Scan the fetched content for injection patterns AND further external URLs
+ *   3. If the fetched content is clean → produce a warning (not an error)
+ *   4. If the fetched content has injection OR its own external URLs → hard fail
+ *
+ * Returns { warnings, hardFailReason }:
+ *   - warnings: URLs that were fetched and scanned clean (admin must confirm)
+ *   - hardFailReason: non-null string if any fetched content failed secondary scan
+ */
+async function scanExternalUrlRefs(content: string): Promise<{
+  warnings:       ExternalUrlWarning[]
+  hardFailReason: string | null
+}> {
+  const urls = extractHttpsUrls(content)
+  const warnings: ExternalUrlWarning[] = []
+
+  for (const rawUrl of urls) {
+    // Only follow URLs on allowed hosts — skip others silently
+    let parsed: URL
+    try {
+      parsed = new URL(rawUrl)
+    } catch {
+      continue
+    }
+    if (!ALLOWED_HOSTS.has(parsed.hostname)) continue
+
+    // Fetch through the same security controls as the main pack file
+    let fetched: string
+    try {
+      fetched = await fetchCapped(parsed)
+    } catch {
+      // Unreachable URL at import time → hard fail (can't guarantee safety at runtime)
+      return {
+        warnings:       [],
+        hardFailReason: `External URL referenced by pack is unreachable at import time: ${rawUrl.slice(0, 100)}`,
+      }
+    }
+
+    // Hash for traceability
+    const sha256 = createHash('sha256').update(fetched).digest('hex')
+
+    // Secondary scan: injection patterns → hard fail; external URLs → hard fail (no second level)
+    const secondaryScan = scanPackContent(fetched)
+    if (secondaryScan.hasInjection) {
+      return {
+        warnings:       [],
+        hardFailReason: `External URL content failed injection scan: ${rawUrl.slice(0, 100)}`,
+      }
+    }
+    if (secondaryScan.hasExternalUrl) {
+      return {
+        warnings:       [],
+        hardFailReason: `External URL content itself references further external URLs (max 1 level): ${rawUrl.slice(0, 100)}`,
+      }
+    }
+
+    warnings.push({ url: rawUrl, sha256, size: Buffer.byteLength(fetched) })
+  }
+
+  return { warnings, hardFailReason: null }
+}
+
+// ─── SEC-04: Double scan ───────────────────────────────────────────────────────
+
+function runDoubleScan(rawContent: string, parsed: ParsedPack, filename: string): string[] {
   const violations: string[] = []
+  const isMarkdown = /\.(md|mdx|markdown)$/i.test(filename)
 
-  // Pass 1: raw bytes before any interpretation
+  // Pass 1: raw bytes before any interpretation.
+  // For Markdown files, skip the external_url check — documentation legitimately
+  // contains external links (badges, screenshots, install links). The injection
+  // patterns still apply.
   const rawScan = scanPackContent(rawContent)
-  if (!rawScan.passed) {
-    violations.push(...rawScan.violations.map((v) => `[raw] ${v.reason}`))
+  const rawViolations = isMarkdown
+    ? rawScan.violations.filter((v) => v.type !== 'external_url')
+    : rawScan.violations
+  if (rawViolations.length > 0) {
+    violations.push(...rawViolations.map((v) => `[raw] ${v.reason}`))
   }
 
   // Pass 2: extracted system_prompt field
@@ -329,6 +518,231 @@ function runDoubleScan(rawContent: string, parsed: ParsedPack): string[] {
   }
 
   return violations
+}
+
+// ─── GitHub URL normalizer ────────────────────────────────────────────────────
+
+/** Pack file extensions in preference order when scanning a GitHub directory. */
+const PACK_EXTENSIONS = ['.toml', '.pack', '.yaml', '.yml', '.json', '.md']
+
+/**
+ * Normalise any public GitHub URL to one that `previewFromGitHubUrl` can fetch.
+ *
+ * Handled patterns:
+ *   github.com/{owner}/{repo}/blob/{ref}/{path}  → raw.githubusercontent.com URL
+ *   github.com/{owner}/{repo}/tree/{ref}/{dir}   → best pack file in that directory
+ *                                                    (resolved via GitHub Contents API)
+ *   raw.githubusercontent.com/…  }
+ *   api.github.com/…             }  → returned unchanged (validated later by assertAllowedHost)
+ *
+ * Throws GitHubImportError on any unrecognised github.com pattern or API failure.
+ */
+export async function normalizeGitHubUrl(rawUrl: string): Promise<string> {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    throw new GitHubImportError('FORBIDDEN_HOST', `Invalid URL: ${rawUrl.slice(0, 200)}`)
+  }
+
+  // Already a raw/API URL — let assertAllowedHost inside previewFromGitHubUrl validate it
+  if (parsed.hostname !== 'github.com') {
+    return rawUrl
+  }
+
+  // github.com/{owner}/{repo}/blob/{ref}/{path…}
+  const blobMatch = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/)
+  if (blobMatch) {
+    const [, owner, repo, ref, filePath] = blobMatch
+    // Encode each segment individually — filePath may contain slashes (preserved) but
+    // other special chars must be encoded to prevent URL injection.
+    const encodedPath = filePath.split('/').map(encodeURIComponent).join('/')
+    return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(ref)}/${encodedPath}`
+  }
+
+  // github.com/{owner}/{repo}/tree/{ref}/{dir…}
+  const treeMatch = parsed.pathname.match(/^\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)$/)
+  if (treeMatch) {
+    const [, owner, repo, ref, dirPath] = treeMatch
+    // Encode owner/repo individually; dirPath preserves slashes but encodes other special chars.
+    const encodedDir = dirPath.split('/').map(encodeURIComponent).join('/')
+    const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedDir}?ref=${encodeURIComponent(ref)}`
+
+    let res: Response
+    try {
+      res = await fetch(apiUrl, {
+        redirect: 'error',
+        signal:   AbortSignal.timeout(8_000),
+        headers:  {
+          'User-Agent': 'Harmoven/1.0 (+https://harmoven.com)',
+          'Accept':     'application/vnd.github.v3+json',
+        },
+      })
+    } catch (e) {
+      throw new GitHubImportError('FETCH_FAILED', `GitHub API fetch error: ${String(e).slice(0, 200)}`)
+    }
+
+    if (!res.ok) {
+      throw new GitHubImportError('FETCH_FAILED', `GitHub API HTTP ${res.status} for directory listing`)
+    }
+
+    // Cap API response at 512 KB to prevent OOM on unexpectedly large listings
+    const reader = res.body?.getReader()
+    if (!reader) throw new GitHubImportError('FETCH_FAILED', 'GitHub API response body is null')
+
+    const chunks: Uint8Array[] = []
+    let total = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        total += value.byteLength
+        if (total > 512_000) {
+          throw new GitHubImportError('CONTENT_TOO_LARGE', 'GitHub directory listing exceeds 512 KB cap')
+        }
+        chunks.push(value)
+      }
+    } finally {
+      reader.releaseLock()
+    }
+
+    const combined = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.byteLength }
+    const rawJson = new TextDecoder('utf-8', { fatal: false }).decode(combined)
+
+    let entries: unknown
+    try { entries = JSON.parse(rawJson) } catch {
+      throw new GitHubImportError('PARSE_FAILED', 'GitHub API returned non-JSON directory listing')
+    }
+
+    if (!Array.isArray(entries)) {
+      throw new GitHubImportError('PARSE_FAILED', 'Expected GitHub API to return an array for directory contents')
+    }
+
+    // Pick the best pack file by extension priority
+    for (const ext of PACK_EXTENSIONS) {
+      const entry = (entries as Array<Record<string, unknown>>).find(
+        (e) => e.type === 'file' && typeof e.name === 'string' && e.name.endsWith(ext) && typeof e.download_url === 'string',
+      )
+      if (entry) {
+        const dlUrl = entry.download_url as string
+        // Verify the download_url is a raw.githubusercontent.com URL before returning —
+        // defence-in-depth against a tampered/unexpected API response.
+        // assertAllowedHost inside previewFromGitHubUrl will do a full validation too.
+        if (!dlUrl.startsWith('https://raw.githubusercontent.com/')) {
+          throw new GitHubImportError(
+            'FORBIDDEN_HOST',
+            `Unexpected download_url host in GitHub API response: ${dlUrl.slice(0, 100)}`,
+          )
+        }
+        return dlUrl
+      }
+    }
+
+    throw new GitHubImportError(
+      'PARSE_FAILED',
+      `No recognisable pack file found in directory "${dirPath}" (looked for: ${PACK_EXTENSIONS.join(', ')})`,
+    )
+  }
+
+  throw new GitHubImportError(
+    'FORBIDDEN_HOST',
+    `Unrecognised github.com URL pattern: ${parsed.pathname.slice(0, 200)}`,
+  )
+}
+
+// ─── GitHub repo metadata (owner, version) ───────────────────────────────────
+
+interface GitHubMeta { owner: string; version: string; commit_sha: string }
+
+/**
+ * Resolve owner + a meaningful version string from a raw.githubusercontent.com URL.
+ *
+ * version  = the ref itself (branch name or tag name, e.g. "main", "v1.2.3")
+ * commit_sha = short sha7 of the commit at that ref (empty string if unresolvable)
+ *
+ * Non-fatal: on any API/network error returns owner from URL + version=ref, commit_sha=''.
+ */
+async function resolveGitHubMeta(parsedUrl: URL): Promise<GitHubMeta> {
+  // Works on raw.githubusercontent.com/<owner>/<repo>/<ref>/...
+  const segments = parsedUrl.pathname.split('/').filter(Boolean)
+  const owner = segments[0] ?? ''
+  const repo  = segments[1] ?? ''
+  const ref   = segments[2] ?? ''   // branch name OR commit SHA OR tag name
+
+  if (!owner || !repo) return { owner, version: ref || '', commit_sha: '' }
+
+  const defaultMeta: GitHubMeta = { owner, version: ref || '', commit_sha: '' }
+
+  try {
+    // 1. Try latest tag
+    const tagsRes = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tags?per_page=10`,
+      {
+        redirect: 'error',
+        signal:   AbortSignal.timeout(5_000),
+        headers:  {
+          'User-Agent': 'Harmoven/1.0 (+https://harmoven.com)',
+          'Accept':     'application/vnd.github.v3+json',
+        },
+      },
+    )
+    if (tagsRes.ok) {
+      const tags = await tagsRes.json() as Array<{ name: string }>
+      // Pick first semver-ish tag — use it as-is as the version string
+      const semverTag = tags.find((t) => /^v?\d+\.\d+/.test(t.name))
+      if (semverTag) {
+        // Still resolve commit sha for traceability
+        return { owner, version: semverTag.name, commit_sha: '' }
+      }
+    }
+
+    // 2. If ref looks like a branch (not a 40-char hex SHA), resolve to commit SHA
+    const isSha = /^[0-9a-f]{40}$/i.test(ref)
+    if (!isSha && ref) {
+      const commitRes = await fetch(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
+        {
+          redirect: 'error',
+          signal:   AbortSignal.timeout(5_000),
+          headers:  {
+            'User-Agent': 'Harmoven/1.0 (+https://harmoven.com)',
+            'Accept':     'application/vnd.github.v3+json',
+          },
+        },
+      )
+      if (commitRes.ok) {
+        // Size-cap the commit response — it can include patch diffs (potentially large).
+        const MAX_COMMIT_BYTES = 64_000
+        const commitReader = commitRes.body?.getReader()
+        if (commitReader) {
+          const commitChunks: Uint8Array[] = []
+          let commitTotal = 0
+          try {
+            while (true) {
+              const { done, value } = await commitReader.read()
+              if (done) break
+              commitTotal += value.byteLength
+              if (commitTotal > MAX_COMMIT_BYTES) break // truncate — we only need the sha
+              commitChunks.push(value)
+            }
+          } finally { commitReader.releaseLock() }
+          const commitCombined = new Uint8Array(commitTotal > MAX_COMMIT_BYTES ? MAX_COMMIT_BYTES : commitTotal)
+          let off = 0
+          for (const c of commitChunks) { commitCombined.set(c.slice(0, MAX_COMMIT_BYTES - off), off); off += c.byteLength; if (off >= MAX_COMMIT_BYTES) break }
+          const commitText = new TextDecoder('utf-8', { fatal: false }).decode(commitCombined)
+          // Best-effort JSON parse of truncated buffer — we only care about .sha at the top level
+          const shaMatch = commitText.match(/"sha"\s*:\s*"([0-9a-f]{40})"/)
+          if (shaMatch) return { owner, version: ref, commit_sha: shaMatch[1].slice(0, 7) }
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — fall through
+  }
+
+  return defaultMeta
 }
 
 // ─── Main export ─────────────────────────────────────────────────────────────
@@ -357,17 +771,41 @@ export async function previewFromGitHubUrl(rawUrl: string): Promise<GitHubImport
   const parsed   = parseContent(rawContent, filename)
 
   // SEC-04: Double scan — raw + extracted fields
-  const scanViolations = runDoubleScan(rawContent, parsed)
-  if (scanViolations.length > 0) {
+  const scanViolations = runDoubleScan(rawContent, parsed, filename)
+
+  // Split hard violations (injection) from soft ones (external URLs).
+  // External URLs get a secondary fetch+scan instead of an immediate hard fail.
+  const hardViolations = scanViolations.filter((v) => v.type === 'injection')
+  const urlViolations  = scanViolations.filter((v) => v.type === 'external_url')
+
+  if (hardViolations.length > 0) {
     throw new GitHubImportError(
       'SCAN_FAILED',
-      `Security scan found ${scanViolations.length} violation(s): ${scanViolations.join('; ')}`,
+      `Security scan found ${hardViolations.length} injection violation(s): ${hardViolations.map((v) => v.reason).join('; ')}`,
     )
   }
 
+  // For external URL references: fetch and scan each one (single level)
+  let scanWarnings: ExternalUrlWarning[] = []
+  if (urlViolations.length > 0) {
+    const { warnings, hardFailReason } = await scanExternalUrlRefs(rawContent)
+    if (hardFailReason) {
+      throw new GitHubImportError('SCAN_FAILED', hardFailReason)
+    }
+    scanWarnings = warnings
+  }
+
   // Infer pack_id (SEC-05)
+  // For Markdown packs: parsed.display_name comes from the first # heading in parseMarkdownPack.
+  // Fall back to URL-based inference (parent directory name).
   const rawPackId = (parsed.id ?? parsed.display_name ?? parsed.name ?? inferPackIdFromUrl(parsedUrl))
   const pack_id   = toPackId(rawPackId)
+
+  // Resolve GitHub owner + version (non-fatal, async)
+  // Only works for raw.githubusercontent.com URLs (api.github.com paths have a different structure)
+  const ghMeta = parsedUrl.hostname === 'raw.githubusercontent.com'
+    ? await resolveGitHubMeta(parsedUrl)
+    : { owner: '', version: '', commit_sha: '' }
 
   // Detect capability
   const { type: capabilityType, mcp_command } = detectCapability(parsed)
@@ -380,15 +818,20 @@ export async function previewFromGitHubUrl(rawUrl: string): Promise<GitHubImport
   const hasPrompt      = !!parsed.system_prompt
   const hasTags        = Array.isArray(parsed.tags) && parsed.tags.length > 0
 
+  // Author: explicit field in pack > repo owner from URL > empty
+  const inferredAuthor  = !hasAuthor && !!ghMeta.owner
+  // Version: explicit field in pack > resolved from GitHub tags/commit > default
+  const inferredVersion = !hasVersion
+
   const fields: Omit<GitHubImportPreview, 'source_url' | 'content_sha256' | 'content_size' | 'scan_violations' | 'has_inferred_fields'> = {
-    pack_id:        { value: pack_id,                                    inferred: !hasId },
-    name:           { value: parsed.display_name ?? parsed.name ?? pack_id, inferred: !hasId },
-    version:        { value: parsed.version ?? '0.1.0',                  inferred: !hasVersion },
-    author:         { value: parsed.author ?? '',                         inferred: !hasAuthor },
-    description:    { value: parsed.description ?? '',                    inferred: !hasDescription },
-    system_prompt:  { value: parsed.system_prompt ?? '',                  inferred: !hasPrompt },
-    tags:           { value: hasTags ? (parsed.tags as string[]) : [],   inferred: !hasTags },
-    capability_type: { value: capabilityType,                             inferred: capabilityType === 'prompt_only' },
+    pack_id:        { value: pack_id,                                              inferred: !hasId },
+    name:           { value: parsed.display_name ?? parsed.name ?? pack_id,        inferred: !hasId },
+    version:        { value: parsed.version ?? ghMeta.version,                     inferred: inferredVersion },
+    author:         { value: parsed.author  ?? ghMeta.owner,                       inferred: inferredAuthor },
+    description:    { value: parsed.description ?? '',                             inferred: !hasDescription },
+    system_prompt:  { value: parsed.system_prompt ?? '',                           inferred: !hasPrompt },
+    tags:           { value: hasTags ? (parsed.tags as string[]) : [],             inferred: !hasTags },
+    capability_type: { value: capabilityType,                                      inferred: capabilityType === 'prompt_only' },
     mcp_command:    mcp_command ? { value: mcp_command, inferred: false } : null,
   }
 
@@ -400,8 +843,10 @@ export async function previewFromGitHubUrl(rawUrl: string): Promise<GitHubImport
     source_url:     rawUrl,
     content_sha256,
     content_size:   Buffer.byteLength(rawContent),
+    commit_sha:     ghMeta.commit_sha || undefined,
     ...fields,
     scan_violations: [],
+    scan_warnings:   scanWarnings,
     has_inferred_fields,
   }
 }

@@ -31,7 +31,7 @@ export type Permission =
   | 'marketplace:install'
   // Admin
   | 'admin:models'
-  | 'admin:skills'
+  | 'admin:integrations'
   | 'admin:users'
   | 'admin:triggers'
   | 'admin:audit'
@@ -44,6 +44,6 @@ export const ALL_PERMISSIONS: readonly Permission[] = [
   'project:read', 'project:edit', 'project:members', 'project:credentials',
   'stream:state', 'stream:gates', 'stream:costs', 'stream:project',
   'marketplace:install',
-  'admin:models', 'admin:skills', 'admin:users', 'admin:triggers',
+  'admin:models', 'admin:integrations', 'admin:users', 'admin:triggers',
   'admin:audit', 'admin:instance',
 ] as const

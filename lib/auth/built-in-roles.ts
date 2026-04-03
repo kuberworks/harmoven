@@ -126,7 +126,7 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleName, readonly Permission[]> = {
     // additions over developer:
     'project:members',
     'project:credentials',
-    'admin:skills',
+    'admin:integrations',
   ],
 
   instance_admin: [
@@ -152,7 +152,7 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleName, readonly Permission[]> = {
     'admin:triggers',
     'project:members',
     'project:credentials',
-    'admin:skills',
+    'admin:integrations',
     // additions over admin:
     'admin:models',
     'admin:users',

@@ -12,7 +12,7 @@ import { db } from '@/lib/db/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Users, Cpu, Package, Activity, Settings, ChevronRight } from 'lucide-react'
+import { Users, Cpu, Package, Activity, Settings, ChevronRight, Store } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Admin' }
 
@@ -40,11 +40,12 @@ export default async function AdminPage() {
   })
 
   const adminLinks = [
-    { href: '/admin/users',   icon: Users,    label: 'Users',          desc: 'Manage accounts, roles, bans' },
-    { href: '/admin/models',  icon: Cpu,      label: 'LLM Models',     desc: 'Providers and profiles' },
-    { href: '/admin/skills',  icon: Package,  label: 'MCP Skills',     desc: 'Install, approve, revoke' },
-    { href: '/analytics',     icon: Activity, label: 'Analytics',      desc: 'Usage KPIs and ROI' },
-    { href: '/admin/instance',icon: Settings, label: 'Instance config', desc: 'orchestrator.yaml settings' },
+    { href: '/admin/users',        icon: Users,    label: 'Users',          desc: 'Manage accounts, roles, bans' },
+    { href: '/admin/models',       icon: Cpu,      label: 'LLM Models',     desc: 'Providers and profiles' },
+    { href: '/admin/integrations', icon: Package,  label: 'Integrations',   desc: 'Install, approve, revoke' },
+    { href: '/admin/marketplace',  icon: Store,    label: 'Marketplace',    desc: 'Git whitelist, registries, Smart Import' },
+    { href: '/analytics',          icon: Activity, label: 'Analytics',      desc: 'Usage KPIs and ROI' },
+    { href: '/admin/instance',     icon: Settings, label: 'Instance config', desc: 'orchestrator.yaml settings' },
   ]
 
   return (

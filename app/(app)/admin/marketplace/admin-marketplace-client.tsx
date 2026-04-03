@@ -50,6 +50,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 import { SmartImportSection } from './smart-import-section'
+import { useT } from '@/lib/i18n/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +127,7 @@ interface AdminMarketplaceClientProps {
 
 function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
   const { toast } = useToast()
+  const t = useT()
   const [entries, setEntries] = useState(initial)
   const [showAdd, setShowAdd] = useState(false)
   const [label, setLabel] = useState('')
@@ -153,10 +155,10 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
       })
       if (!res.ok) {
         const err = await res.json() as { error: string }
-        toast({ title: 'Erreur', description: err.error, variant: 'destructive' })
+        toast({ title: t('admin.marketplace.whitelist.error'), description: err.error, variant: 'destructive' })
         return
       }
-      toast({ title: 'Entrée ajoutée', description: `${pattern} ajouté à la whitelist.` })
+      toast({ title: t('admin.marketplace.whitelist.entry_added'), description: t('admin.marketplace.whitelist.entry_added_desc', { pattern }) })
       setLabel(''); setPattern(''); setDescription(''); setShowAdd(false)
       await reload()
     } finally {
@@ -178,11 +180,11 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
   const handleDelete = async (entry: WhitelistEntry) => {
     const res = await fetch(`/api/admin/marketplace/git-whitelist/${entry.id}`, { method: 'DELETE' })
     if (res.ok) {
-      toast({ title: 'Entrée supprimée' })
+      toast({ title: t('admin.marketplace.whitelist.entry_deleted') })
       setEntries((prev) => prev.filter((e) => e.id !== entry.id))
     } else {
       const err = await res.json() as { error: string }
-      toast({ title: 'Erreur', description: err.error, variant: 'destructive' })
+      toast({ title: t('admin.marketplace.whitelist.error'), description: err.error, variant: 'destructive' })
     }
     setDeleteTarget(null)
   }
@@ -197,11 +199,11 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
               Git URL Whitelist
             </CardTitle>
             <CardDescription className="text-xs mt-1">
-              Patterns d&apos;hôtes autorisés pour les imports Git. Supports hostname et glob (*.example.com).
+              {t('admin.marketplace.whitelist.description')}
             </CardDescription>
           </div>
           <Button size="sm" variant="outline" onClick={() => setShowAdd(true)} className="h-8 gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> Ajouter
+            <Plus className="h-3.5 w-3.5" /> {t('admin.marketplace.whitelist.add')}
           </Button>
         </div>
       </CardHeader>
@@ -211,7 +213,7 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
             <TableRow className="border-border/50">
               <TableHead className="text-xs py-2">Label</TableHead>
               <TableHead className="text-xs py-2">Pattern</TableHead>
-              <TableHead className="text-xs py-2 w-20">Activé</TableHead>
+              <TableHead className="text-xs py-2 w-20">{t('admin.marketplace.whitelist.enabled_col')}</TableHead>
               <TableHead className="text-xs py-2 w-16" />
             </TableRow>
           </TableHeader>
@@ -254,7 +256,7 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Ajouter un pattern Git</DialogTitle>
+            <DialogTitle>{t('admin.marketplace.whitelist.add_dialog_title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
@@ -262,19 +264,19 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
               <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="GitHub Public" className="h-9" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Pattern (hostname ou glob)</Label>
+              <Label className="text-xs">{t('admin.marketplace.whitelist.pattern_label')}</Label>
               <Input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="github.com ou *.internal.corp" className="h-9 font-mono text-sm" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Description (optionnel)</Label>
+              <Label className="text-xs">{t('admin.marketplace.whitelist.description_label')}</Label>
               <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description..." className="h-9" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>Annuler</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>{t('admin.marketplace.whitelist.cancel')}</Button>
             <Button size="sm" onClick={handleAdd} disabled={saving || !label || !pattern}>
               {saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Ajouter
+              {t('admin.marketplace.whitelist.add')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -284,15 +286,14 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
       <Dialog open={deleteTarget !== null} onOpenChange={(open: boolean) => !open && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Supprimer ce pattern ?</DialogTitle>
+            <DialogTitle>{t('admin.marketplace.whitelist.delete_title')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            <span className="font-mono">{deleteTarget?.pattern}</span> sera supprimé de la whitelist.
-            Les imports depuis cet hôte seront bloqués.
+            {t('admin.marketplace.whitelist.delete_body', { pattern: deleteTarget?.pattern ?? '' })}
           </p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>Annuler</Button>
-            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => deleteTarget && handleDelete(deleteTarget)}>Supprimer</Button>
+            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>{t('admin.marketplace.whitelist.cancel')}</Button>
+            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => deleteTarget && handleDelete(deleteTarget)}>{t('admin.marketplace.whitelist.delete_btn')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -304,6 +305,7 @@ function WhitelistSection({ initial }: { initial: WhitelistEntry[] }) {
 
 function RegistriesSection({ initial }: { initial: Registry[] }) {
   const { toast } = useToast()
+  const t = useT()
   const [registries, setRegistries] = useState(initial)
   const [showAdd, setShowAdd] = useState(false)
   const [label, setLabel] = useState('')
@@ -334,10 +336,10 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
       })
       if (!res.ok) {
         const err = await res.json() as { error: string }
-        toast({ title: 'Erreur', description: err.error, variant: 'destructive' })
+        toast({ title: t('admin.marketplace.registries.error'), description: err.error, variant: 'destructive' })
         return
       }
-      toast({ title: 'Registry ajoutée' })
+      toast({ title: t('admin.marketplace.registries.registry_added') })
       setLabel(''); setFeedUrl(''); setAuthHeader(''); setShowAdd(false)
       await reload()
     } finally {
@@ -360,9 +362,9 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
       const res = await fetch(`/api/admin/marketplace/registries/${reg.id}/test`, { method: 'POST' })
       const data = await res.json() as { plugin_count?: number; error?: string; message?: string }
       if (res.ok) {
-        toast({ title: 'Test réussi', description: `${data.plugin_count} plugin(s) trouvé(s).` })
+        toast({ title: t('admin.marketplace.registries.test_success'), description: t('admin.marketplace.registries.test_success_desc', { count: String(data.plugin_count) }) })
       } else {
-        toast({ title: 'Test échoué', description: data.message ?? data.error, variant: 'destructive' })
+        toast({ title: t('admin.marketplace.registries.test_failed'), description: data.message ?? data.error, variant: 'destructive' })
       }
       await reload()
     } finally {
@@ -373,11 +375,11 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
   const handleDelete = async (reg: Registry) => {
     const res = await fetch(`/api/admin/marketplace/registries/${reg.id}`, { method: 'DELETE' })
     if (res.ok) {
-      toast({ title: 'Registry supprimée' })
+      toast({ title: t('admin.marketplace.registries.registry_deleted') })
       setRegistries((prev) => prev.filter((r) => r.id !== reg.id))
     } else {
       const err = await res.json() as { error: string }
-      toast({ title: 'Erreur', description: err.error, variant: 'destructive' })
+      toast({ title: t('admin.marketplace.registries.error'), description: err.error, variant: 'destructive' })
     }
     setDeleteTarget(null)
   }
@@ -392,11 +394,11 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
               Registry Feeds
             </CardTitle>
             <CardDescription className="text-xs mt-1">
-              Sources distantes de plugins (JSON/YAML). Utilisées par l&apos;onglet Browse du marketplace.
+              {t('admin.marketplace.registries.description')}
             </CardDescription>
           </div>
           <Button size="sm" variant="outline" onClick={() => setShowAdd(true)} className="h-8 gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> Ajouter
+            <Plus className="h-3.5 w-3.5" /> {t('admin.marketplace.registries.add')}
           </Button>
         </div>
       </CardHeader>
@@ -406,8 +408,8 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
             <TableRow className="border-border/50">
               <TableHead className="text-xs py-2">Label</TableHead>
               <TableHead className="text-xs py-2">URL</TableHead>
-              <TableHead className="text-xs py-2 w-24">Statut</TableHead>
-              <TableHead className="text-xs py-2 w-20">Activé</TableHead>
+              <TableHead className="text-xs py-2 w-24">{t('admin.marketplace.registries.status_col')}</TableHead>
+              <TableHead className="text-xs py-2 w-20">{t('admin.marketplace.registries.enabled_col')}</TableHead>
               <TableHead className="text-xs py-2 w-24" />
             </TableRow>
           </TableHeader>
@@ -424,7 +426,7 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
                   {reg.last_fetch_status === 'ok'
                     ? <Badge variant="outline" className="text-green-400 border-green-800 text-xs py-0">ok</Badge>
                     : reg.last_fetch_status
-                    ? <Badge variant="destructive" className="text-xs py-0">erreur</Badge>
+                    ? <Badge variant="destructive" className="text-xs py-0">{t('admin.marketplace.registries.fetch_error')}</Badge>
                     : <span className="text-xs text-muted-foreground">—</span>}
                 </TableCell>
                 <TableCell className="py-2">
@@ -469,7 +471,7 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Ajouter une registry</DialogTitle>
+            <DialogTitle>{t('admin.marketplace.registries.add_dialog_title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
@@ -477,20 +479,20 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
               <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My Registry" className="h-9" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Feed URL (HTTPS)</Label>
+              <Label className="text-xs">{t('admin.marketplace.registries.feed_url_label')}</Label>
               <Input value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} placeholder="https://example.com/index.json" className="h-9 font-mono text-sm" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Auth header (optionnel)</Label>
+              <Label className="text-xs">{t('admin.marketplace.registries.auth_header_label')}</Label>
               <Input value={authHeader} onChange={(e) => setAuthHeader(e.target.value)} placeholder="Bearer ..." type="password" className="h-9 font-mono text-sm" />
-              <p className="text-xs text-muted-foreground">Stocké chiffré (AES-256-GCM).</p>
+              <p className="text-xs text-muted-foreground">{t('admin.marketplace.registries.auth_stored')}</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>Annuler</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>{t('admin.marketplace.registries.cancel')}</Button>
             <Button size="sm" onClick={handleAdd} disabled={saving || !label || !feedUrl}>
               {saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Ajouter
+              {t('admin.marketplace.registries.add')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -499,12 +501,12 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
       <Dialog open={deleteTarget !== null} onOpenChange={(open: boolean) => !open && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Supprimer cette registry ?</DialogTitle>
+            <DialogTitle>{t('admin.marketplace.registries.delete_title')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{deleteTarget?.label} — {deleteTarget?.feed_url}</p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>Annuler</Button>
-            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => deleteTarget && handleDelete(deleteTarget)}>Supprimer</Button>
+            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>{t('admin.marketplace.registries.cancel')}</Button>
+            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => deleteTarget && handleDelete(deleteTarget)}>{t('admin.marketplace.registries.delete_btn')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -516,6 +518,7 @@ function RegistriesSection({ initial }: { initial: Registry[] }) {
 
 function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
   const { toast } = useToast()
+  const t = useT()
   const [tokens, setTokens] = useState(initial)
   const [showAdd, setShowAdd] = useState(false)
   const [label, setLabel] = useState('')
@@ -547,10 +550,10 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
       })
       if (!res.ok) {
         const err = await res.json() as { error: string }
-        toast({ title: 'Erreur', description: err.error, variant: 'destructive' })
+        toast({ title: t('admin.marketplace.tokens.error'), description: err.error, variant: 'destructive' })
         return
       }
-      toast({ title: 'Token ajouté' })
+      toast({ title: t('admin.marketplace.tokens.token_added') })
       setLabel(''); setHostPattern(''); setTokenValue(''); setExpiresAt(''); setShowAdd(false)
       await reload()
     } finally {
@@ -564,9 +567,9 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
       const res = await fetch(`/api/admin/marketplace/git-provider-tokens/${tok.id}/test`, { method: 'POST' })
       const data = await res.json() as { http_status?: number; error?: string; message?: string }
       if (res.ok && data.http_status === 200) {
-        toast({ title: 'Token valide', description: `HTTP ${data.http_status}` })
+        toast({ title: t('admin.marketplace.tokens.token_valid'), description: `HTTP ${data.http_status}` })
       } else {
-        toast({ title: 'Test échoué', description: data.message ?? `HTTP ${data.http_status ?? 'error'}`, variant: 'destructive' })
+        toast({ title: t('admin.marketplace.tokens.test_failed'), description: data.message ?? `HTTP ${data.http_status ?? 'error'}`, variant: 'destructive' })
       }
     } finally {
       setTesting(null)
@@ -576,7 +579,7 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
   const handleDelete = async (tok: GitProviderToken) => {
     const res = await fetch(`/api/admin/marketplace/git-provider-tokens/${tok.id}`, { method: 'DELETE' })
     if (res.ok) {
-      toast({ title: 'Token supprimé' })
+      toast({ title: t('admin.marketplace.tokens.token_deleted') })
       setTokens((prev) => prev.filter((t) => t.id !== tok.id))
     }
     setDeleteTarget(null)
@@ -584,8 +587,8 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
 
   const expiryBadge = (tok: GitProviderToken) => {
     if (!tok.expires_at) return null
-    if (tok.expiry_status === 'expired') return <Badge variant="destructive" className="text-xs py-0 ml-1">expiré</Badge>
-    if (tok.expiry_status === 'expiring_soon') return <Badge className="text-xs py-0 ml-1 bg-amber-500/20 text-amber-400 border-amber-700">expire bientôt</Badge>
+    if (tok.expiry_status === 'expired') return <Badge variant="destructive" className="text-xs py-0 ml-1">{t('admin.marketplace.tokens.expired')}</Badge>
+    if (tok.expiry_status === 'expiring_soon') return <Badge className="text-xs py-0 ml-1 bg-amber-500/20 text-amber-400 border-amber-700">{t('admin.marketplace.tokens.expiring_soon')}</Badge>
     return null
   }
 
@@ -599,11 +602,11 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
               Tokens Git Provider
             </CardTitle>
             <CardDescription className="text-xs mt-1">
-              Tokens d&apos;accès pour les dépôts Git privés. Stockés chiffrés, jamais renvoyés via l&apos;API.
+              {t('admin.marketplace.tokens.description')}
             </CardDescription>
           </div>
           <Button size="sm" variant="outline" onClick={() => setShowAdd(true)} className="h-8 gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> Ajouter
+            <Plus className="h-3.5 w-3.5" /> {t('admin.marketplace.tokens.add')}
           </Button>
         </div>
       </CardHeader>
@@ -612,8 +615,8 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
           <TableHeader>
             <TableRow className="border-border/50">
               <TableHead className="text-xs py-2">Label</TableHead>
-              <TableHead className="text-xs py-2">Host pattern</TableHead>
-              <TableHead className="text-xs py-2 w-24">Expiration</TableHead>
+              <TableHead className="text-xs py-2">{t('admin.marketplace.tokens.host_pattern_col')}</TableHead>
+              <TableHead className="text-xs py-2 w-24">{t('admin.marketplace.tokens.expiry_col')}</TableHead>
               <TableHead className="text-xs py-2 w-24" />
             </TableRow>
           </TableHeader>
@@ -626,7 +629,7 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
                 </TableCell>
                 <TableCell className="py-2 font-mono text-xs text-muted-foreground">{tok.host_pattern}</TableCell>
                 <TableCell className="py-2 text-xs text-muted-foreground">
-                  {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString('fr-FR') : '—'}
+                  {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString() : '—'}
                 </TableCell>
                 <TableCell className="py-2">
                   <div className="flex items-center justify-end gap-1">
@@ -656,7 +659,7 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
             {tokens.length === 0 && (
               <TableRow>
                 <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
-                  Aucun token configuré. Les dépôts publics sont accessibles sans authentification.
+                  {t('admin.marketplace.tokens.empty')}
                 </TableCell>
               </TableRow>
             )}
@@ -667,7 +670,7 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Ajouter un token Git</DialogTitle>
+            <DialogTitle>{t('admin.marketplace.tokens.add_dialog_title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
@@ -679,19 +682,19 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
               <Input value={hostPattern} onChange={(e) => setHostPattern(e.target.value)} placeholder="github.com" className="h-9 font-mono text-sm" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Token (Bearer ou user:password)</Label>
+              <Label className="text-xs">{t('admin.marketplace.tokens.token_label')}</Label>
               <Input value={tokenValue} onChange={(e) => setTokenValue(e.target.value)} type="password" placeholder="ghp_..." className="h-9 font-mono text-sm" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Date d&apos;expiration (optionnel)</Label>
+              <Label className="text-xs">{t('admin.marketplace.tokens.expiry_label')}</Label>
               <Input value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} type="date" className="h-9" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>Annuler</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>{t('admin.marketplace.tokens.cancel')}</Button>
             <Button size="sm" onClick={handleAdd} disabled={saving || !label || !hostPattern || !tokenValue}>
               {saving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Ajouter
+              {t('admin.marketplace.tokens.add')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -700,12 +703,12 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
       <Dialog open={deleteTarget !== null} onOpenChange={(open: boolean) => !open && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Supprimer ce token ?</DialogTitle>
+            <DialogTitle>{t('admin.marketplace.tokens.delete_title')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{deleteTarget?.label} — {deleteTarget?.host_pattern}</p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>Annuler</Button>
-            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => deleteTarget && handleDelete(deleteTarget)}>Supprimer</Button>
+            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>{t('admin.marketplace.tokens.cancel')}</Button>
+            <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => deleteTarget && handleDelete(deleteTarget)}>{t('admin.marketplace.tokens.delete_btn')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -717,6 +720,7 @@ function GitTokensSection({ initial }: { initial: GitProviderToken[] }) {
 
 function CronStatusSection({ initial }: { initial: CronHealth }) {
   const { toast } = useToast()
+  const t = useT()
   const [health, setHealth] = useState(initial)
   const [running, setRunning] = useState(false)
 
@@ -732,11 +736,11 @@ function CronStatusSection({ initial }: { initial: CronHealth }) {
       const data = await res.json() as { checked?: number; updated?: number; error?: string }
       if (res.ok) {
         toast({
-          title: 'Vérification terminée',
-          description: `${data.checked} skills vérifiés, ${data.updated} mises à jour détectées.`,
+          title: t('admin.marketplace.cron.run_success'),
+          description: t('admin.marketplace.cron.run_success_desc', { checked: String(data.checked), updated: String(data.updated) }),
         })
       } else {
-        toast({ title: 'Échec du déclenchement', description: data.error, variant: 'destructive' })
+        toast({ title: t('admin.marketplace.cron.run_failed'), description: data.error, variant: 'destructive' })
       }
       await reload()
     } finally {
@@ -759,11 +763,11 @@ function CronStatusSection({ initial }: { initial: CronHealth }) {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold">
             <Activity className="h-4 w-4 text-amber-500" />
-            Cron — Vérification automatique des mises à jour
+            {t('admin.marketplace.cron.title')}
           </CardTitle>
           <Button size="sm" variant="outline" onClick={handleLaunchNow} disabled={running} className="h-8 gap-1.5">
             {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Lancer maintenant
+            {t('admin.marketplace.cron.run_now')}
           </Button>
         </div>
       </CardHeader>
@@ -772,23 +776,23 @@ function CronStatusSection({ initial }: { initial: CronHealth }) {
           <span className={`text-sm font-medium ${healthColor}`}>{health.health}</span>
           {health.pending_updates_count > 0 && (
             <Badge className="bg-amber-500/20 text-amber-400 border-amber-700 text-xs">
-              {health.pending_updates_count} mise(s) à jour en attente
+              {t('admin.marketplace.cron.pending_updates', { count: String(health.pending_updates_count) })}
             </Badge>
           )}
         </div>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div>
-            <span className="text-muted-foreground">Dernier run :</span>{' '}
-            <span>{health.last_run_at ? new Date(health.last_run_at).toLocaleString('fr-FR') : '—'}</span>
+            <span className="text-muted-foreground">{t('admin.marketplace.cron.last_run')}</span>{' '}
+            <span>{health.last_run_at ? new Date(health.last_run_at).toLocaleString() : '—'}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">Dernier run planifié :</span>{' '}
-            <span>{health.last_scheduled_run_at ? new Date(health.last_scheduled_run_at).toLocaleString('fr-FR') : '—'}</span>
+            <span className="text-muted-foreground">{t('admin.marketplace.cron.last_scheduled')}</span>{' '}
+            <span>{health.last_scheduled_run_at ? new Date(health.last_scheduled_run_at).toLocaleString() : '—'}</span>
           </div>
           {health.last_run_summary && (
             <div className="col-span-2">
-              <span className="text-muted-foreground">Résumé :</span>{' '}
-              <span>{health.last_run_summary.checked} vérifiés · {health.last_run_summary.updated} changements · {health.last_run_summary.errors} erreurs</span>
+              <span className="text-muted-foreground">{t('admin.marketplace.cron.summary')}</span>{' '}
+              <span>{t('admin.marketplace.cron.summary_detail', { checked: String(health.last_run_summary.checked), updated: String(health.last_run_summary.updated), errors: String(health.last_run_summary.errors) })}</span>
             </div>
           )}
         </div>

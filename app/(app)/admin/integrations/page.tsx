@@ -1,7 +1,7 @@
-// app/(app)/admin/skills/page.tsx
-// Admin — MCP Skills list with approve / enable / disable actions.
+// app/(app)/admin/integrations/page.tsx
+// Admin — Integrations list with approve / enable / disable actions.
 // Server Component + client actions. instance_admin only.
-// UX spec §3.8 — Admin / MCP Skills.
+// UX spec §3.8 — Admin / Integrations.
 
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
@@ -12,8 +12,9 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Package } from 'lucide-react'
 import { SkillActionsClient } from './skill-actions-client'
+import { AddIntegrationClient } from './add-integration-client'
 
-export const metadata: Metadata = { title: 'MCP Skills — Admin' }
+export const metadata: Metadata = { title: 'Integrations — Admin' }
 
 const SCAN_VARIANT: Record<string, 'running' | 'completed' | 'failed' | 'pending'> = {
   passed:  'completed',
@@ -31,18 +32,21 @@ export default async function AdminSkillsPage() {
 
   return (
     <div className="space-y-6 animate-stagger">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">MCP Skills</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {skills.filter((s) => s.enabled).length} enabled / {skills.length} installed
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Integrations</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {skills.filter((s) => s.enabled).length} enabled / {skills.length} installed
+          </p>
+        </div>
+        <AddIntegrationClient />
       </div>
 
       {skills.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Package className="h-8 w-8 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">No MCP skills installed yet.</p>
+            <p className="text-sm text-muted-foreground">No integrations installed yet.</p>
           </CardContent>
         </Card>
       ) : (
@@ -79,6 +83,8 @@ export default async function AdminSkillsPage() {
                 </div>
                 <SkillActionsClient
                   skillId={skill.id}
+                  name={skill.name}
+                  config={(skill.config ?? {}) as Record<string, unknown>}
                   enabled={skill.enabled}
                   scanStatus={skill.scan_status}
                   approvedBy={skill.approved_by}

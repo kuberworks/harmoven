@@ -45,8 +45,8 @@ export async function GET(req: NextRequest) {
     }
     try {
       const perms = await resolvePermissions(caller, query.project_id)
-      // admin:skills is the distinguishing permission of the project-level admin role
-      if (!perms.has('admin:skills')) {
+      // admin:integrations is the distinguishing permission of the project-level admin role
+      if (!perms.has('admin:integrations')) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
     } catch (e) {

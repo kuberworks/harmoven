@@ -225,7 +225,7 @@ describe('resolvePermissions — session caller', () => {
     mockDb.projectMember.findUnique.mockResolvedValueOnce({
       role: {
         extends:     'developer',
-        permissions: ['project:members', 'project:credentials', 'admin:skills'],
+        permissions: ['project:members', 'project:credentials', 'admin:integrations'],
       },
     })
 

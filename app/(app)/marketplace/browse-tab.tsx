@@ -8,6 +8,8 @@ import { assertNotPrivateHost } from '@/lib/security/ssrf-protection'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Package, AlertTriangle, Store } from 'lucide-react'
+import { createT } from '@/lib/i18n/t'
+import type { SupportedLocale } from '@/lib/i18n/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,19 +69,20 @@ async function fetchRegistryFeed(
     try {
       parsed = JSON.parse(text) as RegistryFeed
     } catch {
-      return { error: 'Format de réponse invalide (non-JSON)' }
+      return { error: 'Invalid response format (non-JSON)' }
     }
 
     const plugins: RegistryPlugin[] = parsed.plugins ?? parsed.packs ?? parsed.skills ?? []
     return { plugins }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Erreur réseau' }
+    return { error: err instanceof Error ? err.message : 'Network error' }
   }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export async function BrowseTab() {
+export async function BrowseTab({ locale }: { locale?: SupportedLocale | string }) {
+  const t = createT(locale ?? 'en')
   const registries = await db.marketplaceRegistry.findMany({
     where: { enabled: true },
     orderBy: { created_at: 'asc' },
@@ -90,9 +93,9 @@ export async function BrowseTab() {
       <Card>
         <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
           <Store className="h-8 w-8 text-muted-foreground/50" />
-          <p className="text-sm font-medium text-foreground">Aucune registry configurée</p>
+          <p className="text-sm font-medium text-foreground">{t('marketplace.browse.no_registry_title')}</p>
           <p className="text-xs text-muted-foreground max-w-xs">
-            Ajoutez une registry dans Admin → Marketplace pour parcourir les plugins disponibles.
+            {t('marketplace.browse.no_registry_hint')}
           </p>
         </CardContent>
       </Card>
@@ -119,7 +122,7 @@ export async function BrowseTab() {
         <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
           <Package className="h-8 w-8 text-muted-foreground/50" />
           <p className="text-sm font-medium text-foreground">
-            {hasErrors ? 'Erreur lors de la récupération des feeds' : "Aucun plugin disponible"}
+            {hasErrors ? t('marketplace.browse.feed_error') : t('marketplace.browse.no_plugins')}
           </p>
           {results.filter((r) => r.error).map((r) => (
             <p key={r.id} className="text-xs text-destructive">
@@ -171,10 +174,10 @@ export async function BrowseTab() {
                       <Badge
                         variant="outline"
                         className="text-xs py-0 text-amber-400 border-amber-700 bg-amber-500/10"
-                        title="Ce plugin n'a pas de hash de contenu vérifié"
-                      >
-                        <AlertTriangle className="h-2.5 w-2.5 mr-1" />
-                        Non vérifié
+                      title={t('marketplace.browse.unverified')}
+                    >
+                      <AlertTriangle className="h-2.5 w-2.5 mr-1" />
+                      {t('marketplace.browse.unverified')}
                       </Badge>
                     )}
                   </div>
@@ -196,7 +199,7 @@ export async function BrowseTab() {
                 </div>
 
                 <div className="pt-1">
-                  <p className="text-[10px] text-muted-foreground">Source : {(plugin as { _registry: string })._registry}</p>
+                  <p className="text-[10px] text-muted-foreground">{t('marketplace.browse.source_label', { registry: (plugin as { _registry: string })._registry })}</p>
                 </div>
               </CardContent>
             </Card>
