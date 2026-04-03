@@ -19,8 +19,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "demo:rbac": "tsx scripts/rbac-demo.ts",
-    "verify:migrations": "node scripts/verify-migration-baseline.js"
+    "demo:rbac": "tsx scripts/rbac-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
