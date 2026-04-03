@@ -426,7 +426,7 @@
       "research": "Research"
     },
     "tab": {
-      "installed": "Agent Skills",
+      "installed": "Packs",
       "browse": "Browse",
       "git": "Add from Git",
       "upload": "Upload Package"
@@ -448,6 +448,14 @@
       "harmoven_agent": "Agent",
       "js_ts_plugin": "JS/TS Plugin",
       "slash_command": "Slash Command"
+    },
+    "capability_type_desc": {
+      "domain_pack": "System prompt that shapes agent behaviour for a specific domain (SKILL.md, pack.toml, README…)",
+      "mcp_skill": "Model Context Protocol server exposing tools the agent can call at runtime",
+      "prompt_only": "Standalone prompt template — no agent-level behaviour, no runtime execution",
+      "harmoven_agent": "Full Harmoven agent definition with its own pipeline DAG",
+      "js_ts_plugin": "JavaScript or TypeScript plugin executed in a sandboxed runtime",
+      "slash_command": "Slash command registered in the agent command palette"
     },
     "browse": {
       "loading": "Loading registries…"
@@ -482,6 +490,7 @@
       "err_invalid_pack_id": "Invalid pack name — only [a-z0-9_] are allowed.",
       "err_rate_limited": "Too many attempts. Maximum 10 imports per hour.",
       "inferred": "Inferred",
+      "component_type_label": "Component type",
       "close": "Close",
       "review_warning_title": "Human review required",
       "review_warning_body": "This pack comes from an unofficial source. No GPG signature — no cryptographic integrity guarantee.",

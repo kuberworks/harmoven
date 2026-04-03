@@ -33,7 +33,7 @@ const ApproveBody = z.object({
     description:    z.string().max(4096),
     system_prompt:  z.string().max(1_000_000),
     tags:           z.array(z.string().max(64)).max(32),
-    capability_type: z.enum(['domain_pack', 'mcp_skill', 'prompt_only']),
+    capability_type: z.enum(['domain_pack', 'mcp_skill', 'prompt_only', 'harmoven_agent', 'js_ts_plugin', 'slash_command']),
     mcp_command:    z.string().optional(),
     /** Must be true when the preview contains scan_warnings (external URL refs). */
     scan_warnings_confirmed: z.boolean().optional(),

@@ -426,7 +426,7 @@
       "research": "Recherche"
     },
     "tab": {
-      "installed": "Agent Skills",
+      "installed": "Packs",
       "browse": "Explorer",
       "git": "Ajouter depuis Git",
       "upload": "Importer un package"
@@ -448,6 +448,14 @@
       "harmoven_agent": "Agent",
       "js_ts_plugin": "Plugin JS/TS",
       "slash_command": "Slash Command"
+    },
+    "capability_type_desc": {
+      "domain_pack": "Prompt système qui oriente le comportement de l'agent sur un domaine métier (SKILL.md, pack.toml, README…)",
+      "mcp_skill": "Serveur Model Context Protocol exposant des outils que l'agent peut appeler à l'exécution",
+      "prompt_only": "Template de prompt autonome — pas de comportement agent, pas d'exécution",
+      "harmoven_agent": "Définition complète d'un agent Harmoven avec son propre DAG pipeline",
+      "js_ts_plugin": "Plugin JavaScript ou TypeScript exécuté dans un runtime sandboxisé",
+      "slash_command": "Commande slash enregistrée dans la palette de commandes de l'agent"
     },
     "browse": {
       "loading": "Chargement des registries…"
@@ -482,6 +490,7 @@
       "err_invalid_pack_id": "Nom de pack invalide — seuls [a-z0-9_] sont autorisés.",
       "err_rate_limited": "Trop de tentatives. Maximum 10 imports par heure.",
       "inferred": "Inféré",
+      "component_type_label": "Type de composant",
       "close": "Fermer",
       "review_warning_title": "Validation humaine obligatoire",
       "review_warning_body": "Ce pack provient d'une source non officielle. Aucune signature GPG — aucune garantie d'intégrité cryptographique.",

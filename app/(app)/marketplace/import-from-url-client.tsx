@@ -13,6 +13,13 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Loader2, AlertTriangle, CheckCircle2, Info, Sparkles, X } from 'lucide-react'
 import type { GitHubImportPreview } from '@/lib/marketplace/from-github-url'
 import { useT } from '@/lib/i18n/client'
@@ -36,9 +43,20 @@ interface ConfirmedFields {
   description:    string
   system_prompt:  string
   tags:           string[]
-  capability_type: 'domain_pack' | 'mcp_skill' | 'prompt_only'
+  capability_type: 'domain_pack' | 'mcp_skill' | 'prompt_only' | 'harmoven_agent' | 'js_ts_plugin' | 'slash_command'
   mcp_command?:   string
 }
+
+type CapabilityType = ConfirmedFields['capability_type']
+
+const CAPABILITY_TYPES: CapabilityType[] = [
+  'domain_pack',
+  'mcp_skill',
+  'prompt_only',
+  'harmoven_agent',
+  'js_ts_plugin',
+  'slash_command',
+]
 
 // Relevance gate API response
 interface RelevanceGateResponse {
@@ -543,6 +561,39 @@ export function ImportFromUrlClient({ smartImportEnabled }: ImportFromUrlClientP
           }}
           className="space-y-4"
         >
+
+          {/* ── Component type selector — MOST IMPORTANT, always first ─────── */}
+          <div className="rounded-md border-2 border-primary/30 bg-primary/5 px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-foreground">
+                {t('marketplace.add_from_git.component_type_label')}
+              </span>
+              {preview.capability_type.inferred && (
+                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400 font-mono">
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  {t('marketplace.add_from_git.inferred')}
+                </span>
+              )}
+            </div>
+            <Select
+              value={confirmed.capability_type}
+              onValueChange={(v) => setConfirmed({ ...confirmed, capability_type: v as CapabilityType })}
+            >
+              <SelectTrigger className="h-9 text-sm font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CAPABILITY_TYPES.map((ct) => (
+                  <SelectItem key={ct} value={ct}>
+                    <div className="flex flex-col gap-0.5 py-0.5">
+                      <span className="font-medium">{t(`marketplace.capability_type.${ct}`)}</span>
+                      <span className="text-xs text-muted-foreground">{t(`marketplace.capability_type_desc.${ct}`)}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Warning banner — always visible */}
           <div className="flex items-start gap-2 rounded-md bg-amber-500/8 border border-amber-500/20 px-3 py-2.5 text-xs text-amber-200">
