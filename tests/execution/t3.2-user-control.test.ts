@@ -341,7 +341,7 @@ describe('resolveInterruptGate()', () => {
     const executor = new CustomExecutor(store, happyRunner, 4, undefined)
 
     await expect(executor.resolveInterruptGate(runId, 'n1', 'user-1', { decision: 'accept_partial' }))
-      .rejects.toThrow('not INTERRUPTED')
+      .rejects.toThrow('must be INTERRUPTED')
   })
 
   test('throws if run is not SUSPENDED', async () => {
@@ -355,7 +355,7 @@ describe('resolveInterruptGate()', () => {
     const executor = new CustomExecutor(store, happyRunner, 4, undefined)
 
     await expect(executor.resolveInterruptGate(runId, 'n1', 'user-1', { decision: 'accept_partial' }))
-      .rejects.toThrow('not SUSPENDED')
+      .rejects.toThrow('must be SUSPENDED')
   })
 })
 

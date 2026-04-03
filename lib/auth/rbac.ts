@@ -19,10 +19,35 @@ import { ALL_PERMISSIONS } from './permissions'
 // the same request (or across calls in the same 60-second window) skip the DB.
 // instance_admin is never cached — it returns early before this cache is checked.
 // TTL = 60 s (DoD §T2B.1) — balances DB load with revocation promptness.
+//
+// Cache bounds (P0-B):
+//   MAX_CACHE_ENTRIES limits memory growth on long-lived instances. When the cap
+//   is reached, the oldest entry (by insertion order — Map preserves it) is evicted
+//   before inserting the new one. This is O(1) thanks to Map's iterator.
+//
+// Multi-replica note: this cache is in-process. Invalidations (invalidatePermCache /
+// invalidateProjectPermCache) are LOCAL only. In a multi-replica deployment, a role
+// change on replica A does not purge the cache on replica B — the stale entry will
+// expire naturally within PERM_CACHE_TTL_MS (60 s). Operators running >1 replica
+// should set REDIS_URL so rate-limiting uses the same Redis; for permission
+// revocation latency beyond 60 s they should use a Redis pub/sub invalidation layer
+// (planned for a future release). The TTL is the authoritative upper bound.
 
 interface PermCacheEntry { perms: Set<Permission>; expiresAt: number }
 const _permCache = new Map<string, PermCacheEntry>()
 const PERM_CACHE_TTL_MS = 60_000
+/** Hard cap on cache entries to prevent unbounded memory growth on long-lived instances. */
+const PERM_CACHE_MAX_ENTRIES = 10_000
+
+/** Periodic GC: purge expired entries every 5 minutes. */
+const _permCacheGcInterval = setInterval(() => {
+  const now = Date.now()
+  for (const [key, entry] of _permCache.entries()) {
+    if (now > entry.expiresAt) _permCache.delete(key)
+  }
+}, 5 * 60 * 1000)
+// Allow the process to exit even if this interval is still registered.
+if (_permCacheGcInterval.unref) _permCacheGcInterval.unref()
 
 function cacheKey(caller: Caller, projectId: string): string {
   return caller.type === 'session'
@@ -40,6 +65,11 @@ function getCached(caller: Caller, projectId: string): Set<Permission> | null {
 }
 
 function setCached(caller: Caller, projectId: string, perms: Set<Permission>): void {
+  // Evict oldest entry when the cap is reached (Map preserves insertion order).
+  if (_permCache.size >= PERM_CACHE_MAX_ENTRIES) {
+    const oldestKey = _permCache.keys().next().value
+    if (oldestKey !== undefined) _permCache.delete(oldestKey)
+  }
   _permCache.set(cacheKey(caller, projectId), { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS })
 }
 

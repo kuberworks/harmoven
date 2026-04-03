@@ -222,8 +222,10 @@ describe('buildUserDataExport()', () => {
     expect(mockProjectMemberFindMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { user_id: 'user-42' } }),
     )
+    // EXCLUDE_PHANTOM_RUNS spreads a NOT clause into the where object;
+    // use nested objectContaining so the assertion stays resilient to future filter additions.
     expect(mockRunFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { created_by: 'user-42' } }),
+      expect.objectContaining({ where: expect.objectContaining({ created_by: 'user-42' }) }),
     )
     expect(mockAuditLogFindMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { actor: 'user-42' } }),

@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "test": "node_modules/.bin/jest",
     "test:unit": "HARMOVEN_LLM_TIER=mock jest --testPathIgnorePatterns='\\.integration\\.'",
     "test:integration": "HARMOVEN_LLM_TIER=haiku jest --testPathPattern=tests/integration",
     "test:e2e": "playwright test",

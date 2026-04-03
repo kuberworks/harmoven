@@ -5870,6 +5870,609 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
 
+  # ── Admin: Marketplace ─────────────────────────────────────────────────────
+
+  /admin/marketplace/upload:
+    post:
+      operationId: adminMarketplaceUpload
+      x-required-permissions: [admin:marketplace]
+      summary: Upload a skill pack (.hpkg / .harmoven.zip)
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Accepts a multipart/form-data request with a `.hpkg` or `.harmoven.zip` file (max 10 MB).
+        The pack is validated, its SHA-256 checked for duplicates, and stored with `enabled: false`.
+        Rate-limited to 5 uploads per user per hour.
+      tags: [Admin — Marketplace]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: ".hpkg or .harmoven.zip archive (max 10 MB)"
+                import_reason:
+                  type: string
+                  description: "Required when instance policy `marketplace.import_reason_required` is enabled."
+      responses:
+        '201':
+          description: Pack installed (enabled=false — activate separately).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill_id:  { type: string }
+                  message:   { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Validation error (INVALID_EXTENSION, FILE_TOO_LARGE, IMPORT_REASON_REQUIRED, or pack validation failure).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:   { type: string }
+                  message: { type: string }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/marketplace/import-history:
+    get:
+      operationId: adminMarketplaceImportHistory
+      x-required-permissions: [admin:marketplace]
+      summary: List marketplace import and upload audit events
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Returns paginated audit log entries for marketplace imports (git, upload) and
+        Smart Import LLM cost tracking. Monthly LLM cost is derived from phantom runs
+        (`run_type = 'marketplace_import'`).
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Paginated import history.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/marketplace/analyze-command:
+    post:
+      operationId: adminMarketplaceAnalyzeCommand
+      x-required-permissions: [admin:marketplace]
+      summary: Run Smart Import LLM analysis on a previewed pack
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Runs the Smart Import pipeline (relevance gate or adapter) for a given `preview_id`.
+        The caller must own the preview (`preview.created_by === caller.userId`).
+        Requires Smart Import to be enabled (`marketplace.smart_import.enabled = true`).
+      tags: [Admin — Marketplace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [preview_id, step]
+              properties:
+                preview_id:      { type: string, format: uuid }
+                step:            { type: string, enum: [relevance_gate, adapter] }
+                budget_override: { type: boolean }
+      responses:
+        '200':
+          description: Analysis result (outcome, confidence, risks, capability_summary, budget).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '402':
+          description: Monthly LLM budget exceeded (BUDGET_EXCEEDED).
+        '410':
+          description: Preview expired (PREVIEW_EXPIRED).
+        '422':
+          description: Smart Import disabled or invalid step.
+
+  /admin/marketplace/check-pack-id:
+    get:
+      operationId: adminMarketplaceCheckPackId
+      x-required-permissions: [admin:marketplace]
+      summary: Check pack_id uniqueness (debounced UI helper)
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Returns whether a pack_id slug is already taken. Validates format (`/^[a-z0-9_]{1,64}$/`).
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: "{ available: boolean }"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/marketplace/cron-health:
+    get:
+      operationId: adminMarketplaceCronHealth
+      x-required-permissions: [admin:marketplace]
+      summary: Get marketplace update-check cron health status
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Returns cron health state (`OK | UPDATES_AVAILABLE | STALE | NEVER_RAN`),
+        last run timestamp, last run summary, and count of skills with pending updates.
+      tags: [Admin — Marketplace]
+      responses:
+        '200':
+          description: Cron health snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:            { type: string, enum: [OK, UPDATES_AVAILABLE, STALE, NEVER_RAN] }
+                  last_run_at:      { type: string, format: date-time, nullable: true }
+                  last_run_status:  { type: string, nullable: true }
+                  pending_updates:  { type: integer }
+                  cron_configured:  { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/marketplace/smart-import-settings:
+    get:
+      operationId: adminMarketplaceGetSmartImportSettings
+      x-required-permissions: [admin:marketplace]
+      summary: Read Smart Import settings and monthly budget snapshot
+      tags: [Admin — Marketplace]
+      responses:
+        '200':
+          description: Smart Import settings + current and prior month LLM cost.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      operationId: adminMarketplacePatchSmartImportSettings
+      x-required-permissions: [admin:marketplace]
+      summary: Update Smart Import settings
+      tags: [Admin — Marketplace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:              { type: boolean }
+                monthly_budget_usd:   { type: number, minimum: 0 }
+                import_reason_required: { type: boolean }
+      responses:
+        '200':
+          description: Updated settings.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/marketplace/git-whitelist:
+    get:
+      operationId: adminMarketplaceListGitWhitelist
+      x-required-permissions: [admin:marketplace]
+      summary: List allowed Git URL patterns for marketplace imports
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Paginated whitelist entries.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminMarketplaceCreateGitWhitelistEntry
+      x-required-permissions: [admin:marketplace]
+      summary: Add a Git URL pattern to the whitelist
+      tags: [Admin — Marketplace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pattern]
+              properties:
+                pattern:   { type: string, description: "Glob pattern, e.g. github.com/myorg/**" }
+                note:      { type: string }
+      responses:
+        '201':
+          description: Entry created.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/marketplace/git-whitelist/{id}:
+    delete:
+      operationId: adminMarketplaceDeleteGitWhitelistEntry
+      x-required-permissions: [admin:marketplace]
+      summary: Remove a Git URL whitelist entry
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Entry removed.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/marketplace/registries:
+    get:
+      operationId: adminMarketplaceListRegistries
+      x-required-permissions: [admin:marketplace]
+      summary: List marketplace registries
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Paginated registry list.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminMarketplaceCreateRegistry
+      x-required-permissions: [admin:marketplace]
+      summary: Add a marketplace registry
+      tags: [Admin — Marketplace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:  { type: string, format: uri }
+                name: { type: string }
+      responses:
+        '201':
+          description: Registry created.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/marketplace/registries/{id}:
+    get:
+      operationId: adminMarketplaceGetRegistry
+      x-required-permissions: [admin:marketplace]
+      summary: Get a marketplace registry
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Registry object.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: adminMarketplacePatchRegistry
+      x-required-permissions: [admin:marketplace]
+      summary: Update a marketplace registry
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:     { type: string, format: uri }
+                name:    { type: string }
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: Updated registry.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: adminMarketplaceDeleteRegistry
+      x-required-permissions: [admin:marketplace]
+      summary: Remove a marketplace registry
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Registry removed.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/marketplace/registries/{id}/test:
+    post:
+      operationId: adminMarketplaceTestRegistry
+      x-required-permissions: [admin:marketplace]
+      summary: Test connectivity to a marketplace registry URL
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Connectivity result (reachable, latency_ms, pack_count).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/marketplace/git-provider-tokens:
+    get:
+      operationId: adminMarketplaceListGitProviderTokens
+      x-required-permissions: [admin:marketplace]
+      summary: List Git provider authentication tokens (metadata only, no secrets)
+      tags: [Admin — Marketplace]
+      responses:
+        '200':
+          description: List of token metadata records.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: adminMarketplaceCreateGitProviderToken
+      x-required-permissions: [admin:marketplace]
+      summary: Store a new Git provider token (encrypted at rest)
+      tags: [Admin — Marketplace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, token]
+              properties:
+                provider: { type: string, enum: [github, gitlab, gitea] }
+                label:    { type: string }
+                token:    { type: string, description: "PAT or OAuth token — encrypted before storage" }
+      responses:
+        '201':
+          description: Token stored (token value not returned).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/marketplace/git-provider-tokens/{id}:
+    delete:
+      operationId: adminMarketplaceDeleteGitProviderToken
+      x-required-permissions: [admin:marketplace]
+      summary: Remove a Git provider token
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Token removed.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/marketplace/git-provider-tokens/{id}/test:
+    post:
+      operationId: adminMarketplaceTestGitProviderToken
+      x-required-permissions: [admin:marketplace]
+      summary: Test a stored Git provider token (authenticated API call)
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Test result (success, rate_limit_remaining).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/marketplace/skills/{id}/check-update:
+    post:
+      operationId: adminMarketplaceCheckSkillUpdate
+      x-required-permissions: [admin:marketplace]
+      summary: Trigger an on-demand update check for an installed skill
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Re-fetches the source, computes a SHA-256 diff, and returns a `preview_id`
+        if a newer version is available. Rate-limited to 20 checks per user per hour.
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Installed skill `pack_id` (e.g. `myorg.myskill`)
+      responses:
+        '200':
+          description: Update check result (preview_id if update available, or no_update).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/marketplace/skills/{id}/preview-diff:
+    get:
+      operationId: adminMarketplaceSkillPreviewDiff
+      x-required-permissions: [admin:marketplace]
+      summary: Get the diff between installed and incoming skill versions
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: preview_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: "Diff payload ({ files_changed, diff_text, added_lines, removed_lines })."
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Preview expired.
+
+  /admin/marketplace/skills/{id}/apply-update:
+    post:
+      operationId: adminMarketplaceApplySkillUpdate
+      x-required-permissions: [admin:marketplace]
+      summary: Apply a previewed skill update
+      tags: [Admin — Marketplace]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [preview_id]
+              properties:
+                preview_id:    { type: string, format: uuid }
+                import_reason: { type: string }
+      responses:
+        '200':
+          description: Skill updated.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Preview expired.
+
+  # ── Admin: Members ─────────────────────────────────────────────────────────
+
+  /admin/members/search:
+    get:
+      operationId: adminMembersSearch
+      x-required-permissions: [admin:users]
+      summary: Search members by name or email (min 3 chars, enumeration-resistant)
+      description: |
+        > **Required permission:** `admin:instance` or `admin` role
+
+        Returns users whose name or email contains the query string.
+        Minimum query length is 3 characters (server-enforced) to prevent bulk enumeration.
+      tags: [Admin — Members]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 3 }
+      responses:
+        '200':
+          description: Matching users (id, name, email, role).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:    { type: string }
+                        name:  { type: string }
+                        email: { type: string }
+                        role:  { type: string }
+        '400':
+          description: Query too short (< 3 characters).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ── Internal ───────────────────────────────────────────────────────────────
+
+  /internal/run-update-checks:
+    post:
+      operationId: internalRunUpdateChecks
+      summary: Trigger marketplace update checks (cron or manual admin)
+      description: |
+        > **Auth:** `X-Cron-Secret` header (cron container) **OR** authenticated `instance_admin` session.
+
+        Runs the marketplace update checker for up to `max_per_run` skills.
+        Called by the cron container on schedule or manually from the Admin UI
+        ("Run now" button). Constant-time comparison for the cron secret prevents
+        timing attacks (SEC-48). Returns HTTP 503 when `INTERNAL_CRON_SECRET` is unset.
+      tags: [Internal]
+      security:
+        - CronSecret: []
+        - SessionCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                max_per_run: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Update check summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checked: { type: integer }
+                  updated: { type: integer }
+                  errors:  { type: integer }
+        '401': { description: "Missing or invalid cron secret / session." }
+        '503': { description: "INTERNAL_CRON_SECRET not configured." }
+
   # ── Analytics (internal) ───────────────────────────────────────────────────
   /analytics:
     get:
@@ -6958,6 +7561,20 @@ x-tagGroups:
       Endpoints restricted to `admin` and `instance_admin` roles.
       All writes emit immutable audit log entries.
     tags: [admin]
+  - name: Admin — Marketplace
+    description: |
+      Skill pack lifecycle: upload, git import, registry management, update checks,
+      Smart Import LLM analysis. All endpoints require `instance_admin`.
+    tags: [admin, marketplace]
+  - name: Admin — Members
+    description: |
+      Member search and enumeration-resistant user lookup. Requires `instance_admin` or `admin`.
+    tags: [admin, members]
+  - name: Internal
+    description: |
+      Machine-to-machine endpoints not intended for end-users or SDK consumers.
+      Authenticated via `X-Cron-Secret` header or admin session.
+    tags: [internal]
   - name: Public API v1
     description: |
       Stable, bearer-key-authenticated API for external integrators.
