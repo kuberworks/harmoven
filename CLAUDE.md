@@ -116,14 +116,18 @@ PAUSED  → RUNNING (gate approved) | FAILED (gate rejected)
 
 ## Git workflow
 
+**NEVER commit directly to `develop` or `main`.** Every change goes through a branch:
+
 ```bash
-git checkout -b feat/<name>      # or fix/<name>
-git commit -m "feat(scope): ..."
+git checkout -b feat/<name>   # or fix/<name> / chore/<name> / docs/<name>
+# make changes + commits on the branch
 git checkout develop
-git merge --no-ff feat/<name> -m "chore(merge): ..."
+git merge --no-ff feat/<name> -m "chore(merge): feat/<name> into develop"
 ```
 
-Never push to `main` directly. All merges target `develop`.
+- `develop` is the integration branch — only receives merges, never direct commits
+- `main` is the release branch — only receives merges from `develop`, never direct commits
+- Branch naming: `feat/`, `fix/`, `chore/`, `docs/`
 
 ### Commit message format
 
