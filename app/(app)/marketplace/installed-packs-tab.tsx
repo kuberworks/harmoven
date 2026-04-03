@@ -308,6 +308,11 @@ export function InstalledPacksTab({ skills, isAdmin, locale }: Props) {
                       <SkillActionsClient
                         skillId={skill.id}
                         name={skill.name}
+                        author={skill.author ?? null}
+                        version={skill.version ?? null}
+                        sourceRef={skill.source_ref ?? null}
+                        sourceUrl={skill.source_url ?? null}
+                        tags={skill.tags}
                         config={skill.config}
                         enabled={skill.enabled}
                         scanStatus={skill.scan_status}

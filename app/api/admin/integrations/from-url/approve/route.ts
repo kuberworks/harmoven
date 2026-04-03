@@ -201,10 +201,7 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json(
-    {
-      skill_id: skill.id,
-      message:  'Pack enregistré avec succès. Il est désactivé par défaut — activez-le dans Admin → Skills.',
-    },
+    { skill_id: skill.id },
     { status: 201 },
   )
 }

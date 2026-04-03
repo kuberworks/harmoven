@@ -84,6 +84,11 @@ export default async function AdminSkillsPage() {
                 <SkillActionsClient
                   skillId={skill.id}
                   name={skill.name}
+                  author={skill.author ?? null}
+                  version={skill.version ?? null}
+                  sourceRef={skill.source_ref ?? null}
+                  sourceUrl={skill.source_url ?? null}
+                  tags={skill.tags}
                   config={(skill.config ?? {}) as Record<string, unknown>}
                   enabled={skill.enabled}
                   scanStatus={skill.scan_status}
