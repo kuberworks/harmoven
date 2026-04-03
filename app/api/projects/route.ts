@@ -4,6 +4,7 @@
 // Spec: openapi/v1.yaml /projects, TECHNICAL.md §16.
 
 import { NextRequest, NextResponse } from 'next/server'
+import type { Prisma }               from '@prisma/client'
 import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import {
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
         }
       } catch (e) {
         if (e instanceof ForbiddenError) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        throw e
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
       }
     }
   }
@@ -137,16 +138,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Create project + first member in a transaction.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const project = await db.$transaction(async (tx: any) => {
+  const project = await db.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.project.create({
       data: {
         name,
         description,
         domain_profile,
         confidentiality,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        config: config as any,
+        config: config as Prisma.InputJsonValue,
         regulatory_ctx,
         created_by: caller.userId,
       },

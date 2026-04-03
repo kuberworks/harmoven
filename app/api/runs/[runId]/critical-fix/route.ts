@@ -77,7 +77,7 @@ export async function POST(
   const { finding_id, finding, result_id } = parsed.data
 
   // ─── Validate that result_id belongs to this run ───────────────────────────
-  const reviewResult = await (db as any).criticalReviewResult.findUnique({
+  const reviewResult = await db.criticalReviewResult.findUnique({
     where: { id: result_id },
     select: { run_id: true },
   })
@@ -87,7 +87,7 @@ export async function POST(
 
   // ─── Create / update fix record ────────────────────────────────────────────
   // Idempotent: reuse existing record if one exists for this finding_id on this result
-  const existingFix = await (db as any).criticalFindingFix.findFirst({
+  const existingFix = await db.criticalFindingFix.findFirst({
     where: { result_id, finding_id },
     select: { id: true, status: true },
   })
@@ -96,7 +96,7 @@ export async function POST(
   if (existingFix) {
     // Reset to pending if it previously failed
     if (existingFix.status === 'failed') {
-      fixRecord = await (db as any).criticalFindingFix.update({
+      fixRecord = await db.criticalFindingFix.update({
         where: { id: existingFix.id },
         data: { status: 'pending', fix_run_id: null },
         select: { id: true },
@@ -106,7 +106,7 @@ export async function POST(
       return NextResponse.json({ fix_id: existingFix.id, status: existingFix.status })
     }
   } else {
-    fixRecord = await (db as any).criticalFindingFix.create({
+    fixRecord = await db.criticalFindingFix.create({
       data: {
         result_id,
         finding_id,

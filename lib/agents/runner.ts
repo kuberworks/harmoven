@@ -66,20 +66,33 @@ function asProfileId(v: unknown): ProfileId {
  *      "ignore previous X" in a completely innocuous business context. We strip only
  *      the injection token itself, preserving the rest.
  *   4. Hard cap: 10 000 characters (prompt flooding defence).
+ *   5. JSON / array task_input: serialized to string before scanning so injection
+ *      patterns embedded in object values are also caught.
  *
  * Note: full jailbreak prevention at the prompt level is an arms race; the primary
  * structural defence is the downstream DAG validation in Planner.validateDag()
  * (agent whitelist, cycle detection, depth limit) which rejects structurally invalid
  * plans regardless of what the LLM produces.
  */
+// Primary role-override / context-reset patterns.
 const TASK_INJECTION_RE = /\b(ignore|forget|disregard|override|cancel)\s+(previous|prior|above|all)\s+(instructions?|rules?|context|prompt)/gi
+// Extended patterns: role-hijacking openers, instruction replacement, and LLM special tokens.
+const TASK_ROLE_INJECTION_RE = /\b(act\s+as|you\s+are\s+now|pretend\s+(?:to\s+be|you\s+are)|from\s+now\s+on\s+you|(?:new|updated)\s+instructions?\s*:)\b|<\/?(?:system|human|assistant)>/gi
 const MAX_TASK_INPUT_CHARS = 10_000
 
-function sanitizeTaskInput(raw: string): string {
-  return raw
+// Accepts any input type — JSON objects and arrays are serialised so injection
+// patterns embedded in nested string values are caught before the LLM sees them.
+function sanitizeTaskInput(raw: unknown): string {
+  const str = typeof raw === 'string'
+    ? raw
+    : raw !== null && raw !== undefined
+      ? JSON.stringify(raw)
+      : ''
+  return str
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '')
     .normalize('NFC')
     .replace(TASK_INJECTION_RE, '[REDACTED]')
+    .replace(TASK_ROLE_INJECTION_RE, '[REDACTED]')
     .slice(0, MAX_TASK_INPUT_CHARS)
 }
 
@@ -172,14 +185,18 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
       // ── CLASSIFIER ──────────────────────────────────────────────────────────
       case 'CLASSIFIER': {
-        const raw = typeof handoffIn === 'string'
+        // Extract the task string: prefer the object's `.input` field for object inputs,
+        // otherwise pass the raw value (string, array, or object) directly to
+        // sanitizeTaskInput which serialises non-strings before scanning.
+        const rawInput: unknown = typeof handoffIn === 'string'
           ? handoffIn
-          : ((handoffIn as Record<string, unknown> | null)?.['input'] as string | undefined)
-            ?? (meta['task_input'] as string | undefined)
-            ?? ''
+          : typeof handoffIn === 'object' && handoffIn !== null && !Array.isArray(handoffIn) &&
+              typeof (handoffIn as Record<string, unknown>)['input'] === 'string'
+            ? (handoffIn as Record<string, unknown>)['input']
+            : (handoffIn !== null && handoffIn !== undefined ? handoffIn : (meta['task_input'] ?? ''))
         // Sanitize before classification: strips control chars, NFC-normalises,
         // and neutralises role-override openers. See sanitizeTaskInput() above.
-        const input = sanitizeTaskInput(raw)
+        const input = sanitizeTaskInput(rawInput)
 
         const result = await new IntentClassifier(contextualLlm).classify(input, signal)
         return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
@@ -189,10 +206,12 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
       case 'PLANNER': {
         const classifierResult = handoffIn as ClassifierResult
         // task_input may be stashed in metadata (e.g. when the run was created directly
-        // without a CLASSIFIER node). Fall back to the classifier's input_summary.
-        const rawTaskInput = (meta['task_input'] as string | undefined)
-          ?? classifierResult?.input_summary
-          ?? ''
+        // without a CLASSIFIER node). Supports string, JSON object, and array values —
+        // non-strings are serialised by sanitizeTaskInput. Fall back to the classifier's
+        // input_summary when no metadata task_input is present.
+        const rawTaskInput: unknown = meta['task_input'] !== null && meta['task_input'] !== undefined
+          ? meta['task_input']
+          : (classifierResult?.input_summary ?? '')
         // Sanitize before feeding to the Planner's LLM call. The Planner's structural
         // DAG validation (validateDag) is the primary defence; sanitisation here is
         // defence-in-depth against jailbreak via prompt flooding or role-override.

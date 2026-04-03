@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
 import { db }                        from '@/lib/db/client'
+import { RunStatus }                 from '@prisma/client'
 import type { Prisma }               from '@prisma/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertProjectAccess }       from '@/lib/auth/ownership'
@@ -105,9 +106,10 @@ export async function GET(req: NextRequest) {
   // Build filter — SEC-21: exclude phantom runs (marketplace_import) from all user-facing lists
   const where: Prisma.RunWhereInput = { ...EXCLUDE_PHANTOM_RUNS }
   if (projectId) where.project_id = projectId
-  // Cast statusFilter: spec values match RunStatus enum; invalid values yield empty result
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (statusFilter) where.status = statusFilter as any
+  // Validate statusFilter against the RunStatus enum; invalid values yield empty result
+  if (statusFilter && (Object.values(RunStatus) as string[]).includes(statusFilter)) {
+    where.status = statusFilter as RunStatus
+  }
 
   const [runs, total] = await Promise.all([
     db.run.findMany({
@@ -224,8 +226,7 @@ export async function POST(req: NextRequest) {
       created_by:       createdBy,
       status:           'PENDING',
       domain_profile:   body.domain_profile,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      task_input:       body.task_input as any,
+      task_input:       body.task_input as Prisma.InputJsonValue,
       dag:              initialDag,
       run_config:       { providers: [] },
       transparency_mode: body.transparency_mode ?? false,

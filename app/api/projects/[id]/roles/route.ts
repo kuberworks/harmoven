@@ -160,7 +160,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (e?.code === 'P2002') {
       return NextResponse.json({ error: 'A role with that name already exists in this project' }, { status: 409 })
     }
-    throw err
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   await db.auditLog.create({

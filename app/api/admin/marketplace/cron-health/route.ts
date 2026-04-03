@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     if (err instanceof ForbiddenError || err instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
-    throw err
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   const [
