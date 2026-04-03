@@ -45,11 +45,22 @@ async function assertAdminSkills(req: NextRequest): Promise<AdminGuardResult> {
 // ─── PATCH /api/admin/integrations/:id ──────────────────────────────────────
 
 const PatchSkillBody = z.object({
-  name:    z.string().min(1).max(128).optional(),
-  enabled: z.boolean().optional(),
-  config:  z.record(z.unknown()).optional(),
+  name:        z.string().min(1).max(128).optional(),
+  enabled:     z.boolean().optional(),
+  config:      z.record(z.unknown()).optional(),
   /** If provided, the content will be re-scanned before enabling. */
-  content: z.string().max(1_000_000).optional(),
+  content:     z.string().max(1_000_000).optional(),
+  // Additional editable metadata fields (vary by capability_type)
+  author:      z.string().max(256).optional(),
+  version:     z.string().max(128).optional(),
+  source_ref:  z.string().max(256).optional(),
+  tags:        z.array(z.string().max(64)).max(32).optional(),
+  /**
+   * MCP command shortcut — stored as config.command.
+   * Accepted only when capability_type = mcp_skill.
+   * If provided alongside config, config takes precedence for the full object.
+   */
+  mcp_command: z.string().max(512).optional(),
 }).strict()
 
 import { validateMcpConfig } from '@/lib/mcp/validate-config'
@@ -83,11 +94,18 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { name, enabled, config, content } = parsed.data
+  const { name, enabled, config, content, author, version, source_ref, tags, mcp_command } = parsed.data
+
+  // Build the resolved config: explicit config wins; mcp_command updates config.command
+  let resolvedConfig: Record<string, unknown> | undefined = config
+  if (mcp_command !== undefined && config === undefined) {
+    const existingConfig = (existing.config ?? {}) as Record<string, unknown>
+    resolvedConfig = { ...existingConfig, command: mcp_command }
+  }
 
   // Validate MCP config command allowlist (CVE-HARM-005)
-  if (config) {
-    const configErr = validateMcpConfig(config)
+  if (resolvedConfig) {
+    const configErr = validateMcpConfig(resolvedConfig)
     if (configErr) {
       return NextResponse.json({ error: configErr }, { status: 422 })
     }
@@ -131,10 +149,14 @@ export async function PATCH(
   const updated = await db.mcpSkill.update({
     where: { id },
     data: {
-      ...(name    !== undefined ? { name }                              : {}),
-      ...(enabled  !== undefined ? { enabled }                          : {}),
-      ...(config   !== undefined ? { config: config as object }        : {}),
-      ...(content  !== undefined ? {
+      ...(name           !== undefined ? { name }                                : {}),
+      ...(enabled        !== undefined ? { enabled }                             : {}),
+      ...(resolvedConfig !== undefined ? { config: resolvedConfig as object }    : {}),
+      ...(author         !== undefined ? { author }                              : {}),
+      ...(version        !== undefined ? { version }                             : {}),
+      ...(source_ref     !== undefined ? { source_ref }                          : {}),
+      ...(tags           !== undefined ? { tags }                                : {}),
+      ...(content        !== undefined ? {
         scan_status: scanStatus,
         scan_report: scanReport,
       } : {}),
