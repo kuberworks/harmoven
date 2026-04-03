@@ -57,7 +57,23 @@ Deploy in minutes on Docker Compose. Built for teams that need data sovereignty 
 
 ## Quick start (Docker Compose)
 
-### 1. Clone and configure
+### One-command setup (recommended)
+
+```bash
+git clone https://github.com/your-org/harmoven.git
+cd harmoven
+bash quickstart.sh
+```
+
+`quickstart.sh` handles everything: generates `.env` with random secrets, prompts for an LLM API key, builds and starts the containers, waits for the health check, and prints the setup URL.
+
+---
+
+### Manual setup
+
+If you prefer to configure things yourself:
+
+#### 1. Configure
 
 ```bash
 git clone https://github.com/your-org/harmoven.git
@@ -65,43 +81,47 @@ cd harmoven
 cp .env.example .env
 ```
 
-Edit `.env` — fill in the three mandatory secrets:
+Edit `.env` — fill in the mandatory secrets:
 
 ```bash
-DATABASE_URL=postgresql://harmoven:CHANGE_ME@db:5432/harmoven
+DATABASE_URL=postgresql://harmoven:CHANGE_ME@db:5432/harmoven   # use 'db', not 'localhost'
+POSTGRES_PASSWORD=CHANGE_ME          # must match the password in DATABASE_URL
 AUTH_SECRET=$(openssl rand -base64 32)
-ANTHROPIC_API_KEY=sk-ant-...
-POSTGRES_PASSWORD=CHANGE_ME   # must match the password in DATABASE_URL
-```
-
-Optional second provider:
-
-```bash
-# OPENAI_API_KEY=sk-...
-# GOOGLE_AI_API_KEY=...
+ENCRYPTION_KEY=$(openssl rand -base64 32)
+ANTHROPIC_API_KEY=sk-ant-...         # or OPENAI_API_KEY / GOOGLE_AI_API_KEY
 ```
 
 > All variables are documented inline in `.env.example`. Never commit `.env`.
 
-### 2. Start
+#### 2. Start
 
 ```bash
 docker compose up -d
 ```
 
-The app starts at **http://localhost:3000**.
+The app builds the image, starts PostgreSQL, and runs `prisma migrate deploy` automatically before serving traffic. The app starts at **http://localhost:3000**.
 
 On first boot a **setup token** is printed in the logs. Open `/setup`, enter the token, and complete the wizard (admin account + LLM profile + organisation preset).
 
 ```bash
-docker compose logs app | grep "setup token"
+docker compose logs app | grep -i "setup token"
 ```
 
-### 3. Verify
+#### 3. Verify
 
 ```bash
 curl http://localhost:3000/api/health
 # → {"status":"ok"}
+```
+
+#### Port conflicts
+
+If port 3000 or 5432 is already in use, add to `.env`:
+
+```bash
+HARMOVEN_PORT=3001
+AUTH_URL="http://localhost:3001"   # must match HARMOVEN_PORT
+HARMOVEN_DB_PORT=5433
 ```
 
 ---
