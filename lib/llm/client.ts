@@ -29,7 +29,7 @@ import { BUILT_IN_PROFILES, loadActiveProfiles, dbRowToLlmProfileConfig } from '
 import { selectByTier, selectLlm } from './selector'
 import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
-import { validateLLMBaseUrl } from '@/lib/security/ssrf-protection'
+import { validateLLMBaseUrl, assertLocalHost } from '@/lib/security/ssrf-protection'
 
 // ─── Orchestrator YAML types ───────────────────────────────────────────────────
 
@@ -177,8 +177,16 @@ async function buildOpenAIClient(profile: LlmProfileConfig): Promise<OpenAI> {
   // The 5-min client cache is kept for connection reuse, but the SSRF check
   // runs unconditionally so a DNS rebinding attack cannot exploit the cache window.
   // For fixed public endpoints (no base_url) the check is skipped — no SSRF risk.
+  //
+  // SEC-C-02: For `local` jurisdiction providers, REQUIRE the URL to resolve to a
+  // private/loopback address. This prevents a misconfigured orchestrator.yaml from
+  // leaking CRITICAL-confidentiality data to a public server.
   if (profile.base_url) {
-    await validateLLMBaseUrl(profile.base_url)
+    if (profile.jurisdiction === 'local') {
+      await assertLocalHost(profile.base_url)
+    } else {
+      await validateLLMBaseUrl(profile.base_url)
+    }
   }
 
   const cached = _openaiCache.get(profile.id)
