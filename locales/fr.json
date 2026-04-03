@@ -426,9 +426,28 @@
       "research": "Recherche"
     },
     "tab": {
-      "browse": "Parcourir",
+      "installed": "Agent Skills",
+      "browse": "Explorer",
       "git": "Ajouter depuis Git",
       "upload": "Importer un package"
+    },
+    "installed_tab": {
+      "search_placeholder": "Rechercher un skill…",
+      "filter_cap_all": "Tous les types",
+      "filter_status_all": "Tous les statuts",
+      "sort_recent": "Plus récents",
+      "sort_name": "Nom",
+      "sort_version": "Version",
+      "count": "{from}–{to} sur {total}",
+      "empty_filtered": "Aucun skill ne correspond aux filtres."
+    },
+    "capability_type": {
+      "domain_pack": "Pack domaine",
+      "mcp_skill": "Skill MCP",
+      "prompt_only": "Prompt",
+      "harmoven_agent": "Agent",
+      "js_ts_plugin": "Plugin JS/TS",
+      "slash_command": "Slash Command"
     },
     "browse": {
       "loading": "Chargement des registries…"

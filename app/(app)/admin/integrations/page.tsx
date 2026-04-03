@@ -58,7 +58,7 @@ export default async function AdminSkillsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-foreground">{skill.name}</span>
                     {skill.version && (
-                      <span className="text-xs text-muted-foreground font-mono">v{skill.version}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{/^\d/.test(skill.version) ? `v${skill.version}` : skill.version}</span>
                     )}
                     <Badge variant={SCAN_VARIANT[skill.scan_status] ?? 'pending'}>
                       {skill.scan_status}

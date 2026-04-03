@@ -161,7 +161,7 @@ export async function BrowseTab({ locale }: { locale?: SupportedLocale | string 
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{plugin.name}</p>
                     {plugin.version && (
-                      <p className="text-xs font-mono text-muted-foreground">v{plugin.version}</p>
+                      <p className="text-xs font-mono text-muted-foreground">{/^\d/.test(plugin.version) ? `v${plugin.version}` : plugin.version}</p>
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">

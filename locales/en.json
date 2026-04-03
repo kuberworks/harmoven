@@ -426,9 +426,28 @@
       "research": "Research"
     },
     "tab": {
+      "installed": "Agent Skills",
       "browse": "Browse",
       "git": "Add from Git",
       "upload": "Upload Package"
+    },
+    "installed_tab": {
+      "search_placeholder": "Search skills…",
+      "filter_cap_all": "All types",
+      "filter_status_all": "All statuses",
+      "sort_recent": "Most recent",
+      "sort_name": "Name",
+      "sort_version": "Version",
+      "count": "{from}–{to} of {total}",
+      "empty_filtered": "No skills match your filters."
+    },
+    "capability_type": {
+      "domain_pack": "Domain Pack",
+      "mcp_skill": "MCP Skill",
+      "prompt_only": "Prompt",
+      "harmoven_agent": "Agent",
+      "js_ts_plugin": "JS/TS Plugin",
+      "slash_command": "Slash Command"
     },
     "browse": {
       "loading": "Loading registries…"
