@@ -13,11 +13,15 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { validateArgon2Memory }       = await import('@/lib/bootstrap/validate-argon2-memory')
+    const { validateAuthUrl }           = await import('@/lib/bootstrap/validate-auth-url')
     const { verifyMCPSkillsFromConfig } = await import('@/lib/bootstrap/verify-mcp-skills')
     const { syncInstanceConfig }        = await import('@/lib/bootstrap/sync-instance-config')
 
     // Synchronous — throws if Argon2 memory configuration is dangerously low.
     validateArgon2Memory()
+
+    // Synchronous — logs an error if AUTH_URL port does not match HARMOVEN_PORT.
+    validateAuthUrl()
 
     // Non-blocking — a missing or broken MCP skill pack must not prevent startup.
     await verifyMCPSkillsFromConfig().catch((err: unknown) =>
