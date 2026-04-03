@@ -125,6 +125,26 @@ git merge --no-ff feat/<name> -m "chore(merge): ..."
 
 Never push to `main` directly. All merges target `develop`.
 
+### Commit message format
+
+Every commit message **must** have:
+- A concise subject line: `type(scope): short description` (≤72 chars)
+- A **body** listing every file changed and what was done — one bullet per logical change
+
+Example:
+```
+feat(marketplace): add edit dialog for integration name and config
+
+- app/(app)/admin/integrations/skill-actions-client.tsx: add Edit dialog
+  with name field + JSON config textarea, PATCH /api/admin/integrations/:id
+- app/api/admin/integrations/[id]/route.ts: extend PATCH body schema to
+  accept optional `name` (z.string().min(1).max(128))
+- locales/en.json + fr.json: add integration.edit.* i18n keys
+- openapi/v1.yaml: document name field in PATCH /admin/integrations/{id}
+```
+
+The body is **mandatory** — a subject-only commit is not acceptable.
+
 ---
 
 ## Hard rules (never break)
