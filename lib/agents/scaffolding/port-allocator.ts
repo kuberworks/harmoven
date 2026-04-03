@@ -30,15 +30,15 @@ export class PortExhaustedError extends Error {
  */
 export async function allocatePreviewPort(runId: string): Promise<number> {
   // Check if this run already has a port (idempotent)
-  const existing = await (db as any).previewPort.findUnique({ where: { run_id: runId } })
+  const existing = await db.previewPort.findUnique({ where: { run_id: runId } })
   if (existing) return existing.port as number
 
   // Scan range for an unclaimed port
   for (let port = PORT_START; port <= PORT_END; port++) {
-    const inUse = await (db as any).previewPort.findUnique({ where: { port } })
+    const inUse = await db.previewPort.findUnique({ where: { port } })
     if (!inUse) {
       try {
-        await (db as any).previewPort.create({ data: { port, run_id: runId } })
+        await db.previewPort.create({ data: { port, run_id: runId } })
         return port
       } catch {
         // Unique constraint violation: another concurrent request claimed this port.
@@ -59,13 +59,13 @@ export async function allocatePreviewPort(runId: string): Promise<number> {
  * Safe to call multiple times (idempotent).
  */
 export async function releasePreviewPort(runId: string): Promise<void> {
-  await (db as any).previewPort.deleteMany({ where: { run_id: runId } }).catch(() => {})
+  await db.previewPort.deleteMany({ where: { run_id: runId } }).catch(() => {})
 }
 
 /**
  * Return the port currently allocated for a run, or null if not allocated.
  */
 export async function getPreviewPort(runId: string): Promise<number | null> {
-  const row = await (db as any).previewPort.findUnique({ where: { run_id: runId } })
+  const row = await db.previewPort.findUnique({ where: { run_id: runId } })
   return row ? (row.port as number) : null
 }

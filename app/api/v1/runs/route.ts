@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
+import type { Prisma }               from '@prisma/client'
 import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertProjectAccess }       from '@/lib/auth/ownership'
@@ -147,8 +148,7 @@ export async function POST(req: NextRequest) {
       created_by:        actorId,    // H-04: never null — always traceable
       status:            'PENDING',
       domain_profile:    body.domain_profile,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      task_input:        body.task_input as any,
+      task_input:        body.task_input as Prisma.InputJsonValue,
       dag:               { nodes: [], edges: [] },
       run_config:        { providers: [] },
       transparency_mode: body.transparency_mode ?? false,

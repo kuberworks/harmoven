@@ -134,8 +134,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   await db.project.update({
     where: { id: projectId },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data:  { archived_at: new Date() } as any,
+    data:  { archived_at: new Date() },
   })
 
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`

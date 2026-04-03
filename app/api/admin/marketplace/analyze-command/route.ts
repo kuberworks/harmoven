@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof ForbiddenError || err instanceof UnauthorizedError) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
-    throw err
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   let body: unknown
@@ -82,6 +82,6 @@ export async function POST(req: NextRequest) {
         { status: err.status },
       )
     }
-    throw err
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

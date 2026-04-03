@@ -41,6 +41,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ projects })
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    throw e
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

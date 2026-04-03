@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof ImportReasonRequiredError) {
       return NextResponse.json({ error: 'IMPORT_REASON_REQUIRED' }, { status: 422 })
     }
-    throw err
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   const arrayBuf = await file.arrayBuffer()
@@ -88,6 +88,6 @@ export async function POST(req: NextRequest) {
       // SEC-12: opaque violation count to client
       return NextResponse.json({ error: err.code, message: err.message }, { status: 422 })
     }
-    throw err
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

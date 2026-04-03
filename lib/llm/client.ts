@@ -25,6 +25,7 @@ import {
 } from '@google/generative-ai'
 
 import type { ILLMClient, ChatMessage, ChatOptions, ChatResult } from '@/lib/llm/interface'
+import type { LlmProfile, Prisma as PrismaTypes }            from '@prisma/client'
 import { BUILT_IN_PROFILES, loadActiveProfiles, dbRowToLlmProfileConfig } from './profiles'
 import { selectByTier, selectLlm } from './selector'
 import type { SelectLlmInput } from './selector'
@@ -483,13 +484,13 @@ export class DirectLLMClient implements ILLMClient {
  */
 async function seedMissingProfilesToDb(
   activeIds: string[],
-  db: { llmProfile: { upsert: Function } },
+  db: { llmProfile: { upsert: (args: PrismaTypes.LlmProfileUpsertArgs) => Promise<LlmProfile> } },
 ): Promise<void> {
   for (const id of activeIds) {
     const built = BUILT_IN_PROFILES.find(p => p.id === id)
     if (!built) continue
     try {
-      await (db.llmProfile.upsert as Function)({
+      await db.llmProfile.upsert({
         where: { id },
         // Only create if missing — never overwrite admin-customised rows.
         update: {},
@@ -557,7 +558,14 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   // Must use await import() (not require()) so webpack treats it as a proper
   // async import — synchronous require() of an async webpack module returns
   // an unresolved namespace where named exports are undefined.
-  const { db } = await import('@/lib/db/client') as unknown as { db: { llmProfile: { findMany: Function; upsert: Function } } }
+  const { db } = await import('@/lib/db/client') as unknown as {
+    db: {
+      llmProfile: {
+        findMany: (args: PrismaTypes.LlmProfileFindManyArgs) => Promise<LlmProfile[]>
+        upsert:   (args: PrismaTypes.LlmProfileUpsertArgs)    => Promise<LlmProfile>
+      }
+    }
+  }
 
   // Seed BUILT_IN_PROFILES for the active ids listed in orchestrator.yaml.
   // Upsert is idempotent — admin-customised rows are never overwritten.
@@ -570,9 +578,8 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   }
 
   // Load all enabled profiles from DB — this is the live source of truth.
-  const rows = await (db.llmProfile.findMany as Function)({ where: { enabled: true } })
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const profiles: LlmProfileConfig[] = (rows as any[]).map(dbRowToLlmProfileConfig)
+  const rows = await db.llmProfile.findMany({ where: { enabled: true } })
+  const profiles: LlmProfileConfig[] = rows.map(dbRowToLlmProfileConfig)
 
   if (profiles.length === 0) {
     // Absolute fallback — should never happen after seeding, but guard anyway.

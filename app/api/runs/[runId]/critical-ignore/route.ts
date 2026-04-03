@@ -65,7 +65,7 @@ export async function POST(
   }
 
   // ─── Validate that result_id belongs to this run ───────────────────────────
-  const reviewResult = await (db as any).criticalReviewResult.findUnique({
+  const reviewResult = await db.criticalReviewResult.findUnique({
     where: { id: result_id },
     select: { run_id: true },
   })
@@ -74,7 +74,7 @@ export async function POST(
   }
 
   // ─── Idempotency guard — don't double-ignore ────────────────────────────────
-  const existing = await (db as any).criticalFindingIgnore.findFirst({
+  const existing = await db.criticalFindingIgnore.findFirst({
     where: { result_id, finding_id },
     select: { id: true },
   })
@@ -86,7 +86,7 @@ export async function POST(
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
 
   // ─── Record ignore (immutable) ─────────────────────────────────────────────
-  const ignoreRecord = await (db as any).criticalFindingIgnore.create({
+  const ignoreRecord = await db.criticalFindingIgnore.create({
     data: {
       result_id,
       finding_id,
