@@ -201,7 +201,8 @@
       "developer": "Developer",
       "admin": "Admin",
       "instance_admin": "Instance admin"
-    }
+    },
+    "subtitle": "Manage who has access to {name} and what they can do."
   },
   "api_keys": {
     "title": "API keys",
@@ -254,7 +255,15 @@
     "totp_enabled": "Two-factor authentication is enabled",
     "passkey_add": "Add a passkey",
     "passkeys": "Passkeys",
-    "passkey_remove": "Remove"
+    "passkey_remove": "Remove",
+    "security_title": "Security",
+    "security_subtitle": "Manage two-factor authentication, passkeys, and active sessions.",
+    "subtitle": "Manage your account and preferences.",
+    "profile_subtitle": "Update your display name and view account details.",
+    "email_readonly": "Email cannot be changed here.",
+    "expert_mode": "Expert Mode",
+    "authenticator_app": "Authenticator app",
+    "passkey_added_on": "Added {date}"
   },
   "admin": {
     "title": "Admin",
@@ -458,7 +467,15 @@
       "slash_command": "Slash command registered in the agent command palette"
     },
     "browse": {
-      "loading": "Loading registries…"
+      "loading": "Loading registries…",
+      "no_registry_title": "No registry configured",
+      "no_registry_hint": "Add a registry in Admin → Marketplace to browse available plugins.",
+      "feed_error": "Error fetching feeds",
+      "no_plugins": "No plugins available",
+      "invalid_json": "Invalid response format (non-JSON)",
+      "network_error": "Network error",
+      "source_label": "Source: {registry}",
+      "unverified": "Unverified"
     },
     "installed_section": {
       "title": "Installed packs",
@@ -534,17 +551,6 @@
       "manifest": "Manifest",
       "import_another": "Import another package",
       "remove_file": "Remove file"
-    },
-    "browse": {
-      "loading": "Loading registries…",
-      "no_registry_title": "No registry configured",
-      "no_registry_hint": "Add a registry in Admin → Marketplace to browse available plugins.",
-      "feed_error": "Error fetching feeds",
-      "no_plugins": "No plugins available",
-      "invalid_json": "Invalid response format (non-JSON)",
-      "network_error": "Network error",
-      "source_label": "Source: {registry}",
-      "unverified": "Unverified"
     }
   },
   "analytics": {
@@ -688,5 +694,20 @@
     "restart": "Restart and update",
     "tonight": "Tonight",
     "skip": "Skip this version"
+  },
+  "project_settings": {
+    "title": "Project settings",
+    "transparency_mode": "Transparency mode",
+    "expert_badge": "Expert"
+  },
+  "config_history": {
+    "title": "Config history",
+    "breadcrumb_settings": "Settings"
+  },
+  "triggers": {
+    "webhook": "Webhook",
+    "new_trigger": "New trigger",
+    "webhook_auth_hint_pre": "Requests must include the project's API key in the",
+    "webhook_auth_hint_post": "header."
   }
 }

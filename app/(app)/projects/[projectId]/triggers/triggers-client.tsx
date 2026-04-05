@@ -17,6 +17,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
+import { useT } from '@/lib/i18n/client'
 import {
   Clock, Webhook, Plus, Trash2, Loader2, Copy, Check, Zap,
 } from 'lucide-react'
@@ -60,6 +61,7 @@ function humanizeCron(expr: string): string {
 
 export function TriggersClient({ projectId, triggers: initialTriggers, canManage, webhookBase }: Props) {
   const { toast } = useToast()
+  const t = useT()
   const router = useRouter()
 
   const [triggers, setTriggers]       = useState(initialTriggers)
@@ -84,7 +86,7 @@ export function TriggersClient({ projectId, triggers: initialTriggers, canManage
         body: JSON.stringify({ enabled }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setTriggers((prev) => prev.map((t) => (t.id === id ? { ...t, enabled } : t)))
+      setTriggers((prev) => prev.map((tr) => (tr.id === id ? { ...tr, enabled } : tr)))
     } catch {
       toast({ title: 'Failed to update trigger', variant: 'destructive' })
     }
@@ -256,7 +258,7 @@ export function TriggersClient({ projectId, triggers: initialTriggers, canManage
               )}
             </TabsTrigger>
             <TabsTrigger value="webhook" className="gap-1.5">
-              <Webhook className="h-3.5 w-3.5" /> Webhook
+              <Webhook className="h-3.5 w-3.5" /> {t('triggers.webhook')}
               {webhookTriggers.length > 0 && (
                 <Badge variant="secondary" className="text-xs ml-1">{webhookTriggers.length}</Badge>
               )}
@@ -266,7 +268,7 @@ export function TriggersClient({ projectId, triggers: initialTriggers, canManage
           {canManage && (
             <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setCreateOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
-              New trigger
+              {t('triggers.new_trigger')}
             </Button>
           )}
         </div>
@@ -278,7 +280,7 @@ export function TriggersClient({ projectId, triggers: initialTriggers, canManage
                 <EmptyTriggers type="CRON" />
               ) : (
                 <ul className="divide-y divide-surface-border">
-                  {cronTriggers.map((t) => <TriggerCard key={t.id} trigger={t} />)}
+                  {cronTriggers.map((tr) => <TriggerCard key={tr.id} trigger={tr} />)}
                 </ul>
               )}
             </CardContent>
@@ -289,8 +291,8 @@ export function TriggersClient({ projectId, triggers: initialTriggers, canManage
           <Card>
             <CardHeader className="pb-2">
               <p className="text-xs text-muted-foreground">
-                Webhook triggers fire a new run when a POST request is received at the endpoint URL.
-                Requests must include the project&apos;s API key in the <code className="font-mono">Authorization</code> header.
+                Webhook triggers fire a new run when a POST request is received at the endpoint URL.{' '}
+                {t('triggers.webhook_auth_hint_pre')} <code className="font-mono">Authorization</code> {t('triggers.webhook_auth_hint_post')}
               </p>
             </CardHeader>
             <CardContent className="p-0">
@@ -298,7 +300,7 @@ export function TriggersClient({ projectId, triggers: initialTriggers, canManage
                 <EmptyTriggers type="WEBHOOK" />
               ) : (
                 <ul className="divide-y divide-surface-border">
-                  {webhookTriggers.map((t) => <TriggerCard key={t.id} trigger={t} />)}
+                  {webhookTriggers.map((tr) => <TriggerCard key={tr.id} trigger={tr} />)}
                 </ul>
               )}
             </CardContent>
@@ -338,7 +340,7 @@ export function TriggersClient({ projectId, triggers: initialTriggers, canManage
                   className="flex-1 gap-1.5"
                   onClick={() => setCreateType('WEBHOOK')}
                 >
-                  <Webhook className="h-3.5 w-3.5" /> Webhook
+                  <Webhook className="h-3.5 w-3.5" /> {t('triggers.webhook')}
                 </Button>
               </div>
             </div>

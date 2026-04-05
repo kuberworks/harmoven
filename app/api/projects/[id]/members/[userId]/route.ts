@@ -12,32 +12,38 @@ import { assertProjectAccess } from '@/lib/auth/ownership'
 import {
   resolvePermissions,
   invalidatePermCache,
-  ForbiddenError,
-  UnauthorizedError,
 } from '@/lib/auth/rbac'
+import type { Caller } from '@/lib/auth/rbac'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string; userId: string }> }
 
-async function authGuard(req: NextRequest, projectId: string) {
+type AuthGuardResult =
+  | { code: 'ok'; caller: Caller }
+  | { code: 'unauthorized' | 'forbidden' }
+
+async function authGuard(req: NextRequest, projectId: string): Promise<AuthGuardResult> {
   const caller = await resolveCaller(req)
-  if (!caller) throw new UnauthorizedError()
-  await assertProjectAccess(caller, projectId)
+  if (!caller) return { code: 'unauthorized' }
+  try {
+    await assertProjectAccess(caller, projectId)
+  } catch {
+    return { code: 'forbidden' }
+  }
   const perms = await resolvePermissions(caller, projectId)
-  if (!perms.has('project:members')) throw new ForbiddenError()
-  return caller
+  if (!perms.has('project:members')) return { code: 'forbidden' }
+  return { code: 'ok', caller }
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { id: projectId, userId } = await params
 
-  let caller
-  try {
-    caller = await authGuard(req, projectId)
-  } catch (e) {
-    if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const guard = await authGuard(req, projectId)
+  if (guard.code !== 'ok') {
+    if (guard.code === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const { caller } = guard
 
   let body: { role_id: string }
   try {
@@ -104,13 +110,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(req: NextRequest, { params }: Params) {
   const { id: projectId, userId } = await params
 
-  let caller
-  try {
-    caller = await authGuard(req, projectId)
-  } catch (e) {
-    if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const guard = await authGuard(req, projectId)
+  if (guard.code !== 'ok') {
+    if (guard.code === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const { caller } = guard
 
   const existing = await db.projectMember.findUnique({
     where: { project_id_user_id: { project_id: projectId, user_id: userId } },

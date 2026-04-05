@@ -10,6 +10,7 @@ import { Button }  from '@/components/ui/button'
 import { Input }   from '@/components/ui/input'
 import { Label }   from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
+import { useT } from '@/lib/i18n/client'
 import { Loader2, User } from 'lucide-react'
 
 interface Props {
@@ -19,6 +20,7 @@ interface Props {
 
 export function ProfileClient({ initialName, email }: Props) {
   const { toast } = useToast()
+  const t = useT()
   const [name, setName] = useState(initialName)
   const [saving, setSaving] = useState(false)
 
@@ -64,7 +66,7 @@ export function ProfileClient({ initialName, email }: Props) {
           <div className="space-y-1.5">
             <Label>Email</Label>
             <Input value={email} disabled className="opacity-60" />
-            <p className="text-xs text-muted-foreground">Email cannot be changed here.</p>
+            <p className="text-xs text-muted-foreground">{t('settings.email_readonly')}</p>
           </div>
 
           <Button type="submit" size="sm" disabled={saving || !name.trim()}>

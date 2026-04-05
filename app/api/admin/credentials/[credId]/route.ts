@@ -139,9 +139,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const { value, ...rest } = parsed.data
 
   // If a new plaintext value is supplied, encrypt it and update rotated_at
-  const encData = value
-    ? { value_enc: encryptValue(value), rotated_at: new Date() }
-    : {}
+  let encData: { value_enc?: string; rotated_at?: Date } = {}
+  if (value) {
+    let enc: string
+    try {
+      enc = encryptValue(value)
+    } catch {
+      return NextResponse.json({ error: 'ENCRYPTION_KEY_NOT_CONFIGURED' }, { status: 500 })
+    }
+    encData = { value_enc: enc, rotated_at: new Date() }
+  }
 
   const credential = await db.projectCredential.update({
     where:  { id: credId },

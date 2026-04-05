@@ -111,7 +111,7 @@ export function PreferencesClient({
             <div className="space-y-1.5">
               <Label>{t('settings.email')}</Label>
               <Input value={initialEmail} disabled className="opacity-60" />
-              <p className="text-xs text-muted-foreground">Email cannot be changed here.</p>
+              <p className="text-xs text-muted-foreground">{t('settings.email_readonly')}</p>
             </div>
             <Button type="submit" size="sm" disabled={savingProfile}>
               {savingProfile && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -190,7 +190,7 @@ export function PreferencesClient({
           {/* Expert Mode */}
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-foreground">Expert Mode</p>
+              <p className="text-sm font-medium text-foreground">{t('settings.expert_mode')}</p>
               <p className="text-xs text-muted-foreground">
                 Show DAG graph, raw tokens, cost breakdown, and code diffs.
               </p>

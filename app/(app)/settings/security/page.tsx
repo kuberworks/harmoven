@@ -7,6 +7,8 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { getSessionLocale } from '@/lib/auth/session-helpers'
+import { createT } from '@/lib/i18n/t'
 import { SecurityClient } from './security-client'
 
 export const metadata: Metadata = { title: 'Security — Settings' }
@@ -31,6 +33,9 @@ export default async function SecurityPage() {
   } catch {
     // Non-critical — show empty list
   }
+
+  const locale = getSessionLocale(session.user as Record<string, unknown>)
+  const t = createT(locale)
 
   const currentToken = session.session.token
 
@@ -66,9 +71,9 @@ export default async function SecurityPage() {
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Security</h1>
+        <h1 className="text-xl font-semibold text-foreground">{t('settings.security_title')}</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Manage two-factor authentication, passkeys, and active sessions.
+          {t('settings.security_subtitle')}
         </p>
       </div>
 

@@ -146,7 +146,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Encrypt before persisting
-  const value_enc = encryptValue(value)
+  let value_enc: string
+  try {
+    value_enc = encryptValue(value)
+  } catch {
+    return NextResponse.json({ error: 'ENCRYPTION_KEY_NOT_CONFIGURED' }, { status: 500 })
+  }
 
   const credential = await db.projectCredential.create({
     data: {

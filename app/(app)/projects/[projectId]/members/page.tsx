@@ -9,6 +9,8 @@ import { notFound, redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { resolvePermissions } from '@/lib/auth/rbac'
+import { getSessionLocale } from '@/lib/auth/session-helpers'
+import { createT } from '@/lib/i18n/t'
 import { ProjectMembersClient } from './members-client'
 
 interface Props {
@@ -39,6 +41,8 @@ export default async function ProjectMembersPage({ params }: Props) {
   if (!permissions.has('project:read')) redirect('/projects')
 
   const canManage = permissions.has('project:members')
+  const locale    = getSessionLocale(session.user as Record<string, unknown>)
+  const t         = createT(locale)
 
   const [rawMembers, rawRoles] = await Promise.all([
     db.projectMember.findMany({
@@ -74,9 +78,9 @@ export default async function ProjectMembersPage({ params }: Props) {
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Members</h1>
+        <h1 className="text-xl font-semibold text-foreground">{t('members.title')}</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Manage who has access to <span className="text-foreground font-medium">{project.name}</span> and what they can do.
+          {t('members.subtitle', { name: project.name })}
         </p>
       </div>
 
