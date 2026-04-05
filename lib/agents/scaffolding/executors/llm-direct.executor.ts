@@ -220,6 +220,28 @@ export class LLMDirectExecutor implements ILayerAgentExecutor {
   async execute(input: LayerAgentInput): Promise<LayerAgentOutput> {
     const start = Date.now()
 
+    // WORKTREE_BASE_DIR guard — mirrors repair.agent.ts / smoke-test.agent.ts.
+    // Must run before any fs/exec operation so a manipulated worktree_path cannot
+    // escape the allowed directory.
+    const worktreeBase = process.env.WORKTREE_BASE_DIR
+    if (!worktreeBase) {
+      throw new Error(
+        '[LLMDirectExecutor] WORKTREE_BASE_DIR env variable is not set. '
+        + 'Set it to the parent directory of all generated app worktrees.',
+      )
+    }
+    const baseResolved     = path.resolve(worktreeBase)
+    const worktreeResolved = path.resolve(input.worktree_path)
+    if (
+      !worktreeResolved.startsWith(baseResolved + path.sep)
+      && worktreeResolved !== baseResolved
+    ) {
+      throw new Error(
+        `[LLMDirectExecutor] Rejected worktree path "${input.worktree_path}" `
+        + `— must be under WORKTREE_BASE_DIR (${baseResolved}).`,
+      )
+    }
+
     try {
       const contextContent = loadContextFiles(input.context_files)
       const tier           = LAYER_TIER[input.layer] ?? 'balanced'

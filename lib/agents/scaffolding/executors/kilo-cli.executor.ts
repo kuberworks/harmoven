@@ -139,8 +139,30 @@ export class KiloCliExecutor implements ILayerAgentExecutor {
   async execute(input: LayerAgentInput): Promise<LayerAgentOutput> {
     const startMs = Date.now()
 
+    // ── 0. WORKTREE_BASE_DIR guard — mirrors repair.agent.ts / smoke-test.agent.ts.
+    //   Must run before any fs/exec operation to prevent path traversal outside the
+    //   allowed base directory via a manipulated input.worktree_path.
+    const worktreeBase = process.env.WORKTREE_BASE_DIR
+    if (!worktreeBase) {
+      throw new Error(
+        '[KiloCliExecutor] WORKTREE_BASE_DIR env variable is not set. '
+        + 'Set it to the parent directory of all generated app worktrees.',
+      )
+    }
+    const baseResolved     = path.resolve(worktreeBase)
+    const worktreeResolved = path.resolve(input.worktree_path)
+    if (
+      !worktreeResolved.startsWith(baseResolved + path.sep)
+      && worktreeResolved !== baseResolved
+    ) {
+      throw new Error(
+        `[KiloCliExecutor] Rejected worktree path "${input.worktree_path}" `
+        + `— must be under WORKTREE_BASE_DIR (${baseResolved}).`,
+      )
+    }
+
     // ── 1. Write permissions config ────────────────────────────────────────
-    const permissionsPath = path.join(input.worktree_path, PERMISSIONS_FILENAME)
+    const permissionsPath = path.join(worktreeResolved, PERMISSIONS_FILENAME)
     try {
       fs.writeFileSync(
         permissionsPath,
