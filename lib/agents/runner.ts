@@ -28,6 +28,8 @@ import { runSmokeTest } from '@/lib/agents/scaffolding/smoke-test.agent'
 import { repairForSubpath } from '@/lib/agents/scaffolding/repair.agent'
 import { CriticalReviewer } from '@/lib/agents/critical-reviewer'
 import { resolveCriticalSeverity } from '@/lib/agents/reviewer/critical-reviewer.types'
+import { PromptSummaryCaptureClient } from '@/lib/agents/prompt-summary'
+import { db } from '@/lib/db/client'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -170,6 +172,46 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
     // Wrap llm to carry the per-node context — agents call llm.chat() normally.
     const contextualLlm = new ContextualLLMClient(llm, selectionContext)
 
+    // Amendment 86: Wrap with PromptSummaryCapture to snapshot execution context
+    // after each agent completes (without storing full prompts).
+    const captureClient = new PromptSummaryCaptureClient(
+      contextualLlm,
+      node.run_id,
+      node.node_id,
+      node.agent_type,
+      typeof node.metadata === 'object' && node.metadata !== null
+        ? asProfileId((node.metadata as Record<string, unknown>).domain_profile)
+        : 'generic',
+    )
+
+    // Helper to fetch upstream node info for context snapshot
+    const getUpstreamNodes = async () => {
+      const allNodes = await db.node.findMany({
+        where: { run_id: node.run_id },
+        select: { node_id: true, agent_type: true, handoff_out: true },
+      })
+      // Find nodes that feed into this one (based on DAG edges)
+      const run = await db.run.findUnique({ where: { id: node.run_id }, select: { dag: true } })
+      const dag = (run?.dag as any) ?? { edges: [] }
+      const upstreamEdges = (dag.edges || []).filter((e: any) => e.to === node.node_id)
+      return allNodes
+        .filter(n => upstreamEdges.some((e: any) => e.from === n.node_id))
+        .map(n => ({
+          node_id: n.node_id,
+          agent_type: n.agent_type,
+          handoff_out: n.handoff_out,
+        }))
+    }
+
+    const upstreamNodes = await getUpstreamNodes()
+    captureClient.setUpstreamNodes(upstreamNodes)
+
+    // Set additional context for the snapshot
+    if (meta['complexity']) captureClient.setComplexity(meta['complexity'] as any)
+    if (meta['expected_output_type']) captureClient.setExpectedOutputType(meta['expected_output_type'] as string)
+    if (meta['domain_profile']) captureClient.setProfileDetectedAt(node.agent_type)
+    if (meta['task_input']) captureClient.setTaskInputTruncated(meta['task_input'])
+
     const normalizedType = node.agent_type.toUpperCase()
 
     // #13 — whitelist validation: reject unknown agent types before the switch.
@@ -198,7 +240,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         // and neutralises role-override openers. See sanitizeTaskInput() above.
         const input = sanitizeTaskInput(rawInput)
 
-        const result = await new IntentClassifier(contextualLlm).classify(input, signal)
+        const result = await new IntentClassifier(captureClient).classify(input, signal)
         return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
       }
 
@@ -217,7 +259,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         // defence-in-depth against jailbreak via prompt flooding or role-override.
         const taskInput = sanitizeTaskInput(rawTaskInput)
 
-        const result = await new Planner(contextualLlm).plan(
+        const result = await new Planner(captureClient).plan(
           taskInput, classifierResult, node.run_id, signal,
         )
         return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
@@ -238,7 +280,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           run_id:         node.run_id,
         }
 
-        const result = await new Writer(contextualLlm).execute(nodeInput, signal, onChunk)
+        const result = await new Writer(captureClient).execute(nodeInput, signal, onChunk)
         return {
           handoffOut: result,
           costUsd:   contextualLlm.totalCostUsd,
@@ -255,7 +297,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           : handoffIn != null ? [handoffIn as WriterOutput] : []
         const profile = asProfileId(meta['domain_profile'])
 
-        const result = await new Reviewer(contextualLlm).review(
+        const result = await new Reviewer(captureClient).review(
           writerOutputs, profile, node.run_id, signal,
         )
         return {

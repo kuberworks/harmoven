@@ -709,5 +709,26 @@
     "new_trigger": "Nouveau déclencheur",
     "webhook_auth_hint_pre": "Les requêtes doivent inclure la clé API du projet dans l'en-tête",
     "webhook_auth_hint_post": "."
+  },
+  "prompt_summaries": {
+    "title": "Contexte d'exécution",
+    "subtitle": "Piste d'audit légère de l'exécution des agents — les prompts ne sont pas stockés pour la conformité RGPD",
+    "node_id": "Nœud",
+    "agent_type": "Agent",
+    "domain_profile": "Profil de domaine",
+    "status": "Statut",
+    "execution_context": "Contexte d'exécution",
+    "context_profile_detected_at": "Profil détecté par",
+    "context_complexity": "Complexité",
+    "context_output_type": "Type de sortie",
+    "context_upstream_nodes": "Nœuds amont",
+    "context_task_input": "Entrée de tâche (premiers 200 caractères)",
+    "token_estimate": "Estimation de tokens",
+    "token_actual": "Tokens réels",
+    "tokens_in": "Entrée",
+    "tokens_out": "Sortie",
+    "upstream_hash": "Hash du snapshot amont",
+    "snapshot_created": "Snapshot créé",
+    "no_summaries": "Aucun contexte d'exécution capturé pour cette exécution",
+    "amendment_86": "Amendement 86 — Contexte de prompt léger pour la transparence"
   }
-}
