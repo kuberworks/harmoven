@@ -2264,9 +2264,6 @@ paths:
                   has_admin:
                     type: boolean
                     description: "True if at least one user account exists."
-                  has_llm_profile:
-                    type: boolean
-                    description: "True if at least one LLM profile has been configured. Not required to complete setup but strongly recommended."
 
   /instance/policy:
     get:
@@ -3304,7 +3301,15 @@ paths:
         - **Accept suggestion** (`accept_suggestion: true`): promotes the pending
           AI-generated DAG suggestion into a new template version.
 
-        Only session-authenticated callers are allowed.
+        **Authorization rules:**
+        - Session authentication is required.
+        - The caller must have access to the project the template is scoped to
+          (or be an `instance_admin` for global templates).
+        - `accept_suggestion` is restricted to the template creator and
+          `instance_admin` accounts.
+        - When `run_id` is supplied, the run must belong to the same project.
+        - Returns 404 for templates that do not exist or are not visible to the
+          caller (prevents enumeration).
       tags: [pipeline-templates]
       parameters:
         - in: path
@@ -5782,6 +5787,128 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /admin/rate-limits:
+    get:
+      operationId: getAdminRateLimits
+      x-required-permissions: [admin:instance]
+      summary: Read configurable rate-limit settings
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Returns the effective rate-limit configuration for all configurable
+        endpoints. Each entry includes the currently active values alongside
+        the compiled-in defaults so the admin UI can show "reset to default"
+        options.
+
+        Values are read from `SystemSetting` rows (set via `PATCH`) with a 60-second
+        in-process cache. Changes made via `PATCH` take effect within 60 seconds.
+      tags: [admin]
+      responses:
+        '200':
+          description: "Current rate-limit configuration for all endpoints."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limits:
+                    type: object
+                    description: "Map of endpoint key → rate-limit values."
+                    additionalProperties:
+                      type: object
+                      properties:
+                        max:
+                          type: integer
+                          description: "Maximum number of requests allowed in the window."
+                        window_ms:
+                          type: integer
+                          description: "Window duration in milliseconds."
+                        default_max:
+                          type: integer
+                          description: "Compiled-in default for `max`."
+                        default_window_ms:
+                          type: integer
+                          description: "Compiled-in default for `window_ms`."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      operationId: updateAdminRateLimits
+      x-required-permissions: [admin:instance]
+      summary: Update rate-limit settings
+      description: |
+        > **Required permission:** `admin:instance` — minimum role: `instance_admin`
+
+        Upserts one or more rate-limit settings stored in `SystemSetting`.
+        Supports partial updates — only the supplied fields are written.
+
+        **Constraints:**
+        - `max` must be a positive integer ≥ 1
+        - `window_ms` must be an integer ≥ 1000 (1 second)
+
+        Changes are reflected within 60 seconds due to the in-process cache TTL.
+        The in-process cache is also invalidated immediately on the responding
+        replica.
+
+        **Configurable endpoints:** `signin`, `create-run`, `create-api-key`,
+        `webhook`, `admin-cred-create`
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [limits]
+              properties:
+                limits:
+                  type: object
+                  description: "Map of endpoint key → fields to update."
+                  minProperties: 1
+                  additionalProperties:
+                    type: object
+                    properties:
+                      max:
+                        type: integer
+                        minimum: 1
+                        description: "New max requests per window."
+                      window_ms:
+                        type: integer
+                        minimum: 1000
+                        description: "New window duration in milliseconds."
+                    additionalProperties: false
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Rate-limit settings updated. Returns the full updated configuration."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limits:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        max:               { type: integer }
+                        window_ms:         { type: integer }
+                        default_max:       { type: integer }
+                        default_window_ms: { type: integer }
+        '400':
+          description: "Invalid JSON body."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
 
   /admin/instance/orchestrator:
     get:

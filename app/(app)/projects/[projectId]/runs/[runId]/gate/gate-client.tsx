@@ -72,6 +72,9 @@ export function GateClient({
   const [submitting, setSubmitting] = useState<Decision | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [blockingWarn, setBlockingWarn] = useState(false)
+  // L-4 fix: track ignored/fixed findings locally so CriticalReviewTab stays reactive.
+  const [ignoredFindings, setIgnoredFindings] = useState<Set<string>>(new Set())
+  const [pendingFindings, setPendingFindings] = useState<Set<string>>(new Set())
 
   const hasOpenGate = !!gateId
   const canDecide = permissions.has('gates:write') && hasOpenGate
@@ -309,10 +312,10 @@ export function GateClient({
                 node_id={criticalReview.node_id}
                 result_id={criticalReview.id}
                 ui_level={uiLevel}
-                on_fix={(findingId) => console.log('fix', findingId)}
-                on_ignore={(findingId) => console.log('ignore', findingId)}
-                on_show_all={() => console.log('show all')}
-                on_increase={() => console.log('increase severity')}
+                on_fix={(findingId) => setPendingFindings(prev => new Set(prev).add(findingId))}
+                on_ignore={(findingId) => setIgnoredFindings(prev => new Set(prev).add(findingId))}
+                on_show_all={() => { /* future: load suppressed findings */ }}
+                on_increase={() => { /* future: rerun at higher severity */ }}
               />
             </PermissionGuard>
           </TabsContent>

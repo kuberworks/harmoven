@@ -57,7 +57,11 @@ export async function PATCH(req: Request) {
   const role = (session.user as Record<string, unknown>).role as string | null
   if (role !== 'instance_admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const body = await req.json()
+  // M-5 fix: wrap req.json() in try/catch — malformed JSON must return 400, not 500.
+  let body: unknown
+  try { body = await req.json() } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
   const parsed = PatchSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })

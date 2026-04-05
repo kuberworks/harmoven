@@ -1,6 +1,7 @@
 // GET  /api/pipeline-templates       — List templates visible to caller
 // POST /api/pipeline-templates       — Create a new pipeline template
 import { NextRequest, NextResponse } from 'next/server'
+import { z }                         from 'zod'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertProjectAccess }       from '@/lib/auth/ownership'
 import { listTemplates, createTemplate } from '@/lib/pipeline/templates'
@@ -9,6 +10,18 @@ import type { Dag } from '@/types/dag.types'
 // SEC-H-05: Maximum serialised size (bytes) for a DAG payload.
 // Prevents unbounded storage and LLM context overflow.
 const MAX_DAG_BYTES = 512_000
+
+// M-2 fix: strict Zod schema — replaces unsafe `body as Record<string, unknown>` cast.
+const CreateTemplateBody = z.object({
+  name:        z.string().min(1).max(256),
+  description: z.string().max(1024).optional(),
+  project_id:  z.string().uuid().optional(),
+  is_public:   z.boolean().optional(),
+  dag: z.object({
+    nodes: z.array(z.unknown()),
+    edges: z.array(z.unknown()),
+  }).passthrough(),
+}).strict()
 
 export async function GET(req: NextRequest) {
   const caller = await resolveCaller(req)
@@ -42,15 +55,13 @@ export async function POST(req: NextRequest) {
   const userId = caller.type === 'session' ? caller.userId : null
   if (!userId) return NextResponse.json({ error: 'API key callers cannot create templates' }, { status: 403 })
 
-  let body: unknown
-  try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
+  let rawBody: unknown
+  try { rawBody = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
-  const { name, description, project_id, is_public, dag } = body as Record<string, unknown>
+  const parsed = CreateTemplateBody.safeParse(rawBody)
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
 
-  if (!name || typeof name !== 'string') return NextResponse.json({ error: '`name` is required' }, { status: 422 })
-  if (!dag || typeof dag !== 'object' || !Array.isArray((dag as Dag).nodes) || !Array.isArray((dag as Dag).edges)) {
-    return NextResponse.json({ error: '`dag` must be { nodes: [], edges: [] }' }, { status: 422 })
-  }
+  const { name, description, project_id, is_public, dag } = parsed.data
 
   // SEC-H-05: Enforce maximum DAG payload size before writing to DB.
   if (JSON.stringify(dag).length > MAX_DAG_BYTES) {
@@ -61,8 +72,7 @@ export async function POST(req: NextRequest) {
   }
 
   // SEC-M-01: If scoping to a project, verify the caller is a member of that project.
-  // Prevents an authenticated user from creating templates inside a project they don't belong to.
-  if (typeof project_id === 'string') {
+  if (project_id) {
     try {
       await assertProjectAccess(caller, project_id)
     } catch {
@@ -72,9 +82,9 @@ export async function POST(req: NextRequest) {
 
   const template = await createTemplate({
     name,
-    description: typeof description === 'string' ? description : undefined,
-    project_id:  typeof project_id  === 'string' ? project_id  : undefined,
-    is_public:   is_public === true,
+    description,
+    project_id,
+    is_public:   is_public ?? false,
     dag:         dag as Dag,
     created_by:  userId,
   })

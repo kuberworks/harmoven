@@ -15,6 +15,7 @@ import type { ILLMClient } from '@/lib/llm/interface'
 import type { ProfileId } from '@/lib/agents/classifier'
 import { withRetry } from '@/lib/utils/retry'
 import { AgentCostError } from '@/lib/agents/agent-cost-error'
+import { createHash } from 'node:crypto'
 
 /** Max chars of upstream input content forwarded to the LLM (Section 24). */
 const MAX_UPSTREAM_INPUT_CHARS = 500_000
@@ -251,7 +252,13 @@ export class Writer {
         }
       }
     } catch {
-      console.error(`[Writer(${node.node_id})] full raw response:`, raw)
+      // M-3 fix: never log the raw LLM response — it may contain PII or confidential
+      // content from task_input. Log only a structural fingerprint for debugging.
+      const contentHash = createHash('sha256').update(raw).digest('hex').slice(0, 12)
+      console.error(
+        `[Writer(${node.node_id})] LLM returned invalid JSON — ` +
+        `length=${raw.length} sha256_prefix=${contentHash}`,
+      )
       throw new AgentCostError(
         `Writer(${node.node_id}): LLM returned invalid JSON — ${raw.slice(0, 200)}`,
         costUsd, tokensIn, tokensOut,

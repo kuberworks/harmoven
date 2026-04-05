@@ -25,6 +25,7 @@
 
 import type { NextRequest, NextResponse } from 'next/server'
 import { NextResponse as Response } from 'next/server'
+import { getRateLimitConfig } from '@/lib/auth/rate-limit-config'
 
 // ─── Redis client (optional) ─────────────────────────────────────────────────
 
@@ -229,14 +230,16 @@ export function checkRateLimit(
   return null
 }
 
-/** Async rate limit preset: sign-in — 5 attempts per 15 minutes. */
+/** Async rate limit preset: sign-in — default 10 attempts per 15 minutes (DB-configurable). */
 export async function signInRateLimitAsync(req: NextRequest): Promise<NextResponse | null> {
-  return checkRateLimitAsync(req, 'signin', 5, 15 * 60 * 1000)
+  const { max, window_ms } = await getRateLimitConfig('signin')
+  return checkRateLimitAsync(req, 'signin', max, window_ms)
 }
 
-/** Async rate limit preset: POST /api/runs — 10 requests per minute. */
+/** Async rate limit preset: POST /api/runs — default 60 requests per minute (DB-configurable). */
 export async function createRunRateLimitAsync(req: NextRequest): Promise<NextResponse | null> {
-  return checkRateLimitAsync(req, 'create-run', 10, 60 * 1000)
+  const { max, window_ms } = await getRateLimitConfig('create-run')
+  return checkRateLimitAsync(req, 'create-run', max, window_ms)
 }
 
 /** @deprecated Use signInRateLimitAsync() */

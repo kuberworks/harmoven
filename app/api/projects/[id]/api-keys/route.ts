@@ -14,7 +14,8 @@ import {
   UnauthorizedError,
 } from '@/lib/auth/rbac'
 import { createProjectApiKey } from '@/lib/auth/project-api-key'
-import { checkRateLimitAsync } from '@/lib/auth/rate-limit'
+import { checkRateLimitAsync }  from '@/lib/auth/rate-limit'
+import { getRateLimitConfig }   from '@/lib/auth/rate-limit-config'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ id: string }> }
@@ -66,8 +67,9 @@ interface CreateKeyBody {
 export async function POST(req: NextRequest, { params }: Params) {
   const { id: projectId } = await params
 
-  // LOW-3: prevent brute-force API key creation (10 per 15 min per IP)
-  const rl = await checkRateLimitAsync(req, 'create-api-key', 10, 15 * 60 * 1000)
+  // LOW-3: prevent brute-force API key creation (DB-configurable, default 10 per 15 min per IP)
+  const { max: rlMax, window_ms: rlWin } = await getRateLimitConfig('create-api-key')
+  const rl = await checkRateLimitAsync(req, 'create-api-key', rlMax, rlWin)
   if (rl) return rl
 
   const caller = await resolveCaller(req)

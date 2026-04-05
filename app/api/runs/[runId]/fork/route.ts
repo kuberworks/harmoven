@@ -20,9 +20,18 @@ import { uuidv7 }                               from '@/lib/utils/uuidv7'
 
 type Params = { params: Promise<{ runId: string }> }
 
+// M-1 fix: enforce 100 KB cap on patches (mirrors gate/route.ts CVE-HARM-012 guard).
+const MAX_PATCH_BYTES = 100_000
+
 const ForkBody = z.object({
-  task_input_patch: z.record(z.unknown()).optional(),
-  run_config_patch: z.record(z.unknown()).optional(),
+  task_input_patch: z.record(z.unknown()).refine(
+    (p) => JSON.stringify(p).length <= MAX_PATCH_BYTES,
+    { message: `task_input_patch exceeds maximum size of ${MAX_PATCH_BYTES} bytes` },
+  ).optional(),
+  run_config_patch: z.record(z.unknown()).refine(
+    (p) => JSON.stringify(p).length <= MAX_PATCH_BYTES,
+    { message: `run_config_patch exceeds maximum size of ${MAX_PATCH_BYTES} bytes` },
+  ).optional(),
 }).strict()
 
 export async function POST(req: NextRequest, { params }: Params) {

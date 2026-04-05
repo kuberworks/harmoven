@@ -3,6 +3,8 @@
 // DELETE /api/pipeline-templates/:id          — Delete template
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
+import { assertProjectAccess }       from '@/lib/auth/ownership'
+import { ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { getTemplate, updateTemplate, deleteTemplate } from '@/lib/pipeline/templates'
 import type { Dag } from '@/types/dag.types'
 
@@ -11,6 +13,43 @@ const MAX_DAG_BYTES = 512_000
 
 type Params = { params: Promise<{ id: string }> }
 
+/**
+ * Assert that a caller can read the given template.
+ * - Public global templates (is_public=true, project_id=null) → any authenticated user.
+ * - Project-scoped templates → must be a member of the project.
+ * - Private global templates (is_public=false, project_id=null) → creator or instance_admin.
+ *
+ * Returns 404 on failure (prevents enumeration — same response as truly missing).
+ */
+async function assertTemplateReadAccess(
+  caller: Awaited<ReturnType<typeof resolveCaller>>,
+  template: NonNullable<Awaited<ReturnType<typeof getTemplate>>>,
+): Promise<NextResponse | null> {
+  if (!caller) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const userId  = caller.type === 'session' ? caller.userId : null
+  const isAdmin = caller.type === 'session' && caller.instanceRole === 'instance_admin'
+
+  // Public global template — accessible to everyone
+  if (template.is_public && !template.project_id) return null
+
+  // Project-scoped template — must be a member
+  if (template.project_id) {
+    try {
+      await assertProjectAccess(caller, template.project_id)
+      return null
+    } catch (e) {
+      if (e instanceof UnauthorizedError) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+  }
+
+  // Private global template — creator or instance_admin only
+  if (isAdmin || (userId && template.created_by === userId)) return null
+
+  return NextResponse.json({ error: 'Not found' }, { status: 404 })
+}
+
 export async function GET(_req: NextRequest, { params }: Params) {
   const caller = await resolveCaller(_req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -18,6 +57,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params
   const template = await getTemplate(id)
   if (!template) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  // H-2 fix: enforce visibility rules (was missing — IDOR)
+  const accessErr = await assertTemplateReadAccess(caller, template)
+  if (accessErr) return accessErr
 
   return NextResponse.json({ template })
 }
