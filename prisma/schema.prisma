@@ -344,6 +344,7 @@ model Run {
   actor_stats  RunActorStats?
   eval_results EvalResult[]
   critical_reviews CriticalReviewResult[]
+  prompt_summaries PromptSummary[]
 
   @@index([project_id])
   @@index([status])
@@ -385,6 +386,41 @@ model Node {
   // last_heartbeat index — converted to partial (WHERE status='RUNNING') in migration SQL
   // for orphan detection. See migration down.sql for the replacement statement.
   @@index([last_heartbeat])
+}
+
+// ─── Prompt Summary – Lightweight audit trail ─────────────────────────────────
+// Amendment 86 – After each node execution, capture:
+// - Agent type + domain profile at execution time
+// - Upstream node references (to reconstruct context)
+// - Approximate token counts (for optimization)
+// Does NOT store full prompts (see analysis: prompt-storage.md)
+// Enables audit trail + basic transparency without GDPR/storage burden
+
+model PromptSummary {
+  id               String    @id @default(uuid())
+  run_id           String
+  run              Run       @relation(fields: [run_id], references: [id])
+  node_id          String    // "n1", "n2" etc
+  agent_type       String    // CLASSIFIER | PLANNER | WRITER | REVIEWER | SMOKE_TEST | REPAIR | CRITICAL_REVIEW
+  domain_profile   String    // data_reporting | app_scaffolding | generic | ... as executed
+  
+  // Execution context snapshot
+  execution_context Json    // {profile_detected_at, complexity, expected_output_type, task_input_truncated, upstream_nodes}
+  
+  // Approximate token consumption (for cost tracking)
+  estimated_tokens_in  Int?     // rough estimate before execution
+  estimated_tokens_out Int?     // rough estimate based on output_type
+  
+  // Metadata for reconstruction attempts
+  upstream_handoff_hash String?  // SHA256 of concatenated upstream handoff_outs
+  serialization_version String   // "1.0" for future-proofing
+  
+  // Timestamps
+  created_at       DateTime  @default(now())
+  
+  @@index([run_id])
+  @@index([node_id])
+  @@unique([run_id, node_id])
 }
 
 // ─── Handoffs ────────────────────────────────────────────────────────────────

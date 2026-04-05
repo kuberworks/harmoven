@@ -709,5 +709,27 @@
     "new_trigger": "New trigger",
     "webhook_auth_hint_pre": "Requests must include the project's API key in the",
     "webhook_auth_hint_post": "header."
+  },
+  "prompt_summaries": {
+    "title": "Execution context",
+    "subtitle": "Lightweight audit trail of agent execution — prompts not stored for GDPR compliance",
+    "node_id": "Node",
+    "agent_type": "Agent",
+    "domain_profile": "Domain profile",
+    "status": "Status",
+    "execution_context": "Execution context",
+    "context_profile_detected_at": "Profile detected by",
+    "context_complexity": "Complexity",
+    "context_output_type": "Output type",
+    "context_upstream_nodes": "Upstream nodes",
+    "context_task_input": "Task input (first 200 chars)",
+    "token_estimate": "Token estimate",
+    "token_actual": "Actual tokens",
+    "tokens_in": "Input",
+    "tokens_out": "Output",
+    "upstream_hash": "Upstream snapshot hash",
+    "snapshot_created": "Snapshot created",
+    "no_summaries": "No execution context captured for this run",
+    "amendment_86": "Amendment 86 — Lightweight prompt context for transparency"
   }
 }
