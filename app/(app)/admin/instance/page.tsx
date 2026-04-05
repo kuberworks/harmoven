@@ -37,7 +37,7 @@ export default async function AdminInstancePage() {
   const hdrs   = await headers()
   const base   = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-  const [security, health, orchestratorRaw] = await Promise.all([
+  const [security, health, orchestratorRaw, rgpd] = await Promise.all([
     fetchJson<{
       mfa_required_for_admin: boolean
       env_override_active: boolean
@@ -47,6 +47,11 @@ export default async function AdminInstancePage() {
       hdrs,
     ),
     readOrchestratorYaml(),
+    fetchJson<{
+      maintenance_enabled: boolean
+      data_retention_days: number
+      env_override_active: boolean
+    }>(`${base}/api/admin/rgpd`, hdrs),
   ])
 
   return (
@@ -106,6 +111,48 @@ export default async function AdminInstancePage() {
           mfaRequiredForAdmin={security?.mfa_required_for_admin ?? true}
           envOverrideActive={security?.env_override_active ?? false}
         />
+      </section>
+
+      {/* RGPD / Data retention */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Data retention (GDPR)</h2>
+        {(!rgpd || !rgpd.maintenance_enabled) && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+            <strong>Warning:</strong> Automated retention crons are <strong>disabled</strong>. Session IP
+            addresses and run content will accumulate indefinitely — this may violate Art.&nbsp;5&nbsp;§1(e) GDPR
+            (storage limitation).{' '}
+            {rgpd?.env_override_active
+              ? 'Override active via RGPD_MAINTENANCE_ENABLED=false env var — remove it to re-enable.'
+              : 'Enable maintenance via the GDPR settings endpoint or set RGPD_MAINTENANCE_ENABLED=true.'}
+          </div>
+        )}
+        <Card>
+          <CardContent className="pt-4 pb-4 divide-y divide-surface-border text-sm">
+            <div className="flex items-center justify-between py-2">
+              <span className="text-muted-foreground">Automated purge crons</span>
+              <Badge variant={rgpd?.maintenance_enabled ? 'completed' : 'failed'}>
+                {rgpd?.maintenance_enabled ? 'Enabled' : 'Disabled'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-muted-foreground">Run data retention</span>
+              <span className="font-mono text-foreground text-xs">
+                {rgpd ? `${rgpd.data_retention_days} days` : '—'}
+              </span>
+            </div>
+            {rgpd?.env_override_active && (
+              <div className="py-2 text-xs text-amber-400">
+                RGPD_MAINTENANCE_ENABLED=false env override is active — DB settings are ignored.
+              </div>
+            )}
+            <div className="py-2 text-xs text-muted-foreground">
+              Non-EU providers (jurisdiction: <span className="font-mono">us</span>,{' '}
+              <span className="font-mono">cn</span>) require a valid Art.&nbsp;44 transfer
+              framework (SCC or adequacy decision). Configure provider jurisdictions in{' '}
+              <a href="/admin/models" className="underline hover:text-foreground">AI Models</a>.
+            </div>
+          </CardContent>
+        </Card>
       </section>
 
       {/* Instance configuration (orchestrator.yaml) */}
