@@ -126,20 +126,36 @@ function NoTokenScreen() {
       <CardHeader>
         <CardTitle>Open the setup URL</CardTitle>
         <CardDescription>
-          The setup URL is printed in your Docker logs and includes a one-time security token.
-          Copy and open the full URL — do not paste only the token.
+          The setup URL includes a one-time security token. There are two ways to get it.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
-          <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>docker compose logs app | grep &quot;Setup URL&quot;</span>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-foreground">Option 1 — Docker logs (default)</p>
+          <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
+            <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <span>docker compose logs app | grep &quot;Setup URL&quot;</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Copy the full URL from the output and open it in your browser.
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          The URL looks like{' '}
-          <code className="font-mono text-[var(--text-code)]">http://your-host/setup?token=…</code>.
-          Open it directly in your browser.
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-foreground">Option 2 — Predictable token (recommended)</p>
+          <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
+            <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <span>HARMOVEN_SETUP_TOKEN=your-secret</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Set{' '}
+            <code className="font-mono text-[var(--text-code)]">HARMOVEN_SETUP_TOKEN</code>{' '}
+            in your{' '}
+            <code className="font-mono text-[var(--text-code)]">.env</code>{' '}
+            before starting Harmoven. Then navigate to{' '}
+            <code className="font-mono text-[var(--text-code)]">/setup?token=your-secret</code>.
+            Min. 20 characters.
+          </p>
+        </div>
       </CardContent>
     </Card>
   )

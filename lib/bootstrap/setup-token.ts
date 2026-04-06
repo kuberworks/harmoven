@@ -1,33 +1,96 @@
 // lib/bootstrap/setup-token.ts
 // One-time setup token — protects POST /api/setup/admin during first-run wizard.
 //
-// Generated at server startup when no admin account exists yet.
-// Printed to stdout (visible in Docker logs) so the operator can copy it into
-// the setup wizard.  Consumed (cleared) on the first valid use of POST /api/setup/admin.
+// TOKEN SOURCE — resolved in this order:
 //
-// Security properties:
-//   - 128 bits of entropy (crypto.randomBytes(16) → 32 hex chars)
+//   1. HARMOVEN_SETUP_TOKEN env var (operator-defined, set in .env before launch).
+//      The operator knows the token before starting the server, so the setup URL
+//      is predictable.  Recommended for Docker Compose, CI/CD, and scripted deploys.
+//      Minimum length: 20 characters.
+//
+//   2. Random generation (default fallback).
+//      128 bits of entropy (crypto.randomBytes(16) → 32 hex chars).
+//      Printed to stdout in Docker logs — requires the operator to run
+//      `docker compose logs app | grep "Setup URL"` to retrieve it.
+//
+// Security properties (both modes):
 //   - Timing-safe comparison via crypto.timingSafeEqual()
 //   - Single-use: token is nullified immediately after first successful verification
 //   - Generated only when userCount === 0 to avoid log spam on subsequent restarts
+//   - HARMOVEN_SETUP_TOKEN equivalence: .env already stores AUTH_SECRET, DATABASE_URL,
+//     POSTGRES_PASSWORD — a compromised .env is a total instance compromise regardless.
+//     Adding the setup token there does NOT weaken the security model.
 
 import crypto from 'crypto'
 
-let _token: Buffer | null = null
-let _consumed             = false
+// ─── Internal state ───────────────────────────────────────────────────────────
 
-/** Generate the setup token (idempotent — no-op if already generated). */
+// _token:  used when the token was randomly generated (Buffer, hex-compared).
+// _envRaw: used when HARMOVEN_SETUP_TOKEN was set (raw string, utf8-compared).
+// Exactly one of the two is non-null when a token is active; both null when consumed.
+let _token:   Buffer | null = null
+let _envRaw:  string | null = null
+let _consumed               = false
+
+// ─── Minimum-length guard ─────────────────────────────────────────────────────
+
+const ENV_TOKEN_MIN_LENGTH = 20
+
+/**
+ * Returns true if the HARMOVEN_SETUP_TOKEN value is valid for use.
+ * Intentionally kept simple: length + printable-ASCII check.
+ * We do NOT enforce complexity — the operator knows this is a secret.
+ */
+function isValidEnvToken(t: string): boolean {
+  if (t.length < ENV_TOKEN_MIN_LENGTH) return false
+  // Allow only printable ASCII (0x21–0x7E) so the token is safe in URLs
+  // and shell scripts without quoting issues.
+  return /^[\x21-\x7E]+$/.test(t)
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/** Returns the current raw token string (hex for random, literal for env var).
+ *  Used only for printing the setup URL — never exposed via HTTP. */
+function currentTokenString(): string {
+  if (_envRaw !== null) return encodeURIComponent(_envRaw)
+  if (_token  !== null) return _token.toString('hex')
+  return ''
+}
+
+/** Generate the setup token (idempotent — no-op if already generated or consumed). */
 export function generateSetupToken(): void {
-  if (_token !== null || _consumed) return
-  _token = crypto.randomBytes(16)
-  const hex = _token.toString('hex')
-  const bar = '━'.repeat(62)
-  // APP_URL lets operators override the default when Harmoven is behind a proxy.
+  if (_token !== null || _envRaw !== null || _consumed) return
+
   const base = (process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  const bar  = '━'.repeat(62)
+
+  const envToken = process.env.HARMOVEN_SETUP_TOKEN?.trim() ?? ''
+
+  if (envToken) {
+    if (!isValidEnvToken(envToken)) {
+      // Env var is set but invalid — warn loudly and fall back to random.
+      console.warn(`\n[Harmoven] WARNING: HARMOVEN_SETUP_TOKEN is set but invalid.`)
+      console.warn(`[Harmoven]   Reason: must be ≥${ENV_TOKEN_MIN_LENGTH} printable ASCII characters.`)
+      console.warn(`[Harmoven]   Falling back to randomly-generated token.\n`)
+    } else {
+      _envRaw = envToken
+      console.log(`\n[Harmoven] ${bar}`)
+      console.log(`[Harmoven]  Setup URL: ${base}/setup?token=${currentTokenString()}`)
+      console.log(`[Harmoven]  Token source: HARMOVEN_SETUP_TOKEN env var`)
+      console.log(`[Harmoven]  Single-use — expires after first successful setup.`)
+      console.log(`[Harmoven] ${bar}\n`)
+      return
+    }
+  }
+
+  // Default: random 128-bit token
+  _token = crypto.randomBytes(16)
   console.log(`\n[Harmoven] ${bar}`)
-  console.log(`[Harmoven]  Setup URL: ${base}/setup?token=${hex}`)
+  console.log(`[Harmoven]  Setup URL: ${base}/setup?token=${currentTokenString()}`)
   console.log(`[Harmoven]  Open this URL in your browser to complete first-run setup.`)
   console.log(`[Harmoven]  Replace "localhost:3000" with your server address if needed.`)
+  console.log(`[Harmoven]  Tip: set HARMOVEN_SETUP_TOKEN in .env for a predictable URL.`)
   console.log(`[Harmoven]  Single-use — expires after first successful setup.`)
   console.log(`[Harmoven] ${bar}\n`)
 }
@@ -49,11 +112,28 @@ export async function maybeGenerateSetupToken(): Promise<void> {
  * Returns false if the token is wrong, already consumed, or was never generated.
  */
 export function verifyAndConsumeSetupToken(candidate: string): boolean {
-  if (_consumed || _token === null) return false
+  if (_consumed) return false
 
-  // Pad both buffers to the same length before timingSafeEqual to avoid
-  // argument-length side-channel.  An invalid-length candidate is rejected.
-  const expected  = _token                              // 16 bytes
+  // ── Env-var token path ───────────────────────────────────────────────────────
+  if (_envRaw !== null) {
+    // URL-decode the candidate (the wizard sends encodeURIComponent output via the URL,
+    // browser and fetch naturally decode it before reaching the server — but be explicit).
+    const decodedCandidate = (() => {
+      try { return decodeURIComponent(candidate) } catch { return candidate }
+    })()
+    const a = Buffer.from(decodedCandidate)
+    const b = Buffer.from(_envRaw)
+    // timingSafeEqual requires same length — different length = immediate reject.
+    if (a.length !== b.length) return false
+    const ok = crypto.timingSafeEqual(a, b)
+    if (ok) { _consumed = true; _envRaw = null }
+    return ok
+  }
+
+  // ── Random token path (hex) ──────────────────────────────────────────────────
+  if (_token === null) return false
+
+  const expected     = _token                               // 16 bytes
   const candidateBuf = Buffer.from(candidate, 'hex')
   if (candidateBuf.length !== expected.length) return false
 
@@ -64,3 +144,4 @@ export function verifyAndConsumeSetupToken(candidate: string): boolean {
   }
   return ok
 }
+

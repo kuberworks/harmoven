@@ -2273,8 +2273,13 @@ paths:
         Public endpoint (no auth required). Creates the first `instance_admin` user
         and persists organization config to `orchestrator.yaml`.
 
-        **Guard 1 — setup token:** Requires `setup_token` generated at server startup
-        (printed in Docker logs). Single-use; invalidated after first successful call.
+        **Guard 1 — setup token:** Requires `setup_token` generated at server startup.
+        Token source (resolved in order):
+        1. `HARMOVEN_SETUP_TOKEN` env var — set in `.env` before launch for a predictable URL.
+           Minimum 20 printable ASCII characters.
+        2. Random 128-bit token — printed as a full URL in Docker logs:
+           `docker compose logs app | grep "Setup URL"`
+        Single-use; invalidated after first successful call.
         Returns `403` if the token is missing, wrong, or already consumed.
 
         **Guard 2 — double-setup:** Returns `409` if any user already exists
@@ -2296,7 +2301,9 @@ paths:
                 setup_token:
                   type: string
                   minLength: 1
-                  description: "One-time token printed in Docker logs at server startup."
+                  description: |
+                    One-time token. Source: `HARMOVEN_SETUP_TOKEN` env var if set (≥20 chars),
+                    otherwise the random token printed in Docker logs at server startup.
                 org_name:
                   type: string
                   minLength: 1
