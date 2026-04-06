@@ -6,52 +6,30 @@
 
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
-import { Loader2, Terminal } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { peekSetupToken } from '@/lib/bootstrap/setup-token'
-import { SetupWizard } from './_wizard'
+import { SetupWizard, AutoRefresh } from './_wizard'
 
 // ── No-token fallback (server component — no hooks) ───────────────────────────
 // Shown only when the server has no active token: setup is already complete
 // (middleware would redirect) or the server restarted before the token was used.
 
+// Shown for ~1.5 s during the startup race between instrumentation.ts and the
+// first HTTP request.  AutoRefresh re-runs the Server Component; once the token
+// is in memory the page redirects automatically with no operator action.
 function NoTokenScreen() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Generating your setup link&hellip;</CardTitle>
-        <CardDescription>
-          If this screen persists, the server may have restarted before the token
-          was used. Use one of the options below to retrieve the setup URL.
-        </CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          Starting up&hellip;
+        </CardTitle>
+        <CardDescription>Preparing your setup link. This takes a moment.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium text-foreground">Option 1 — Docker logs (default)</p>
-          <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
-            <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <span>docker compose logs app | grep &quot;Setup URL&quot;</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Copy the full URL from the output and open it in your browser.
-          </p>
-        </div>
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium text-foreground">Option 2 — Predictable token (recommended)</p>
-          <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
-            <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <span>HARMOVEN_SETUP_TOKEN=your-secret</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Set{' '}
-            <code className="font-mono text-[var(--text-code)]">HARMOVEN_SETUP_TOKEN</code>{' '}
-            in your{' '}
-            <code className="font-mono text-[var(--text-code)]">.env</code>{' '}
-            before starting Harmoven. Then navigate to{' '}
-            <code className="font-mono text-[var(--text-code)]">/setup?token=your-secret</code>.
-            Min. 20 characters.
-          </p>
-        </div>
+      <CardContent className="flex justify-center py-4">
+        <AutoRefresh />
       </CardContent>
     </Card>
   )
