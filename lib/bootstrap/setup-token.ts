@@ -103,6 +103,14 @@ export function generateSetupToken(): void {
 
   // Default: random 128-bit token
   state.token = crypto.randomBytes(16)
+  // Belt-and-suspenders: also write to process.env so peekSetupToken() can read
+  // the token even in edge cases where webpack module layers produce separate
+  // module instances (each with their own `state` const reference).
+  // process.env is a plain Node.js process property — guaranteed shared across
+  // ALL modules in the same process, regardless of bundler isolation.
+  // Cleared on consumption (verifyAndConsumeSetupToken) and on subsequent startups
+  // (state.consumed=false and state.token=null mean we'd regenerate a new token).
+  process.env.__HV_SETUP_TOKEN_CACHE = state.token.toString('hex')
   console.log(`\n[Harmoven] ${bar}`)
   console.log(`[Harmoven]  Setup URL: ${base}/setup?token=${currentTokenString()}`)
   console.log(`[Harmoven]  Open this URL in your browser to complete first-run setup.`)
@@ -129,6 +137,12 @@ export function peekSetupToken(): string | null {
   if (state.consumed) return null
   if (state.envRaw !== null) return state.envRaw
   if (state.token  !== null) return state.token.toString('hex')
+  // Fallback: read from process.env cache written by generateSetupToken().
+  // Covers cases where webpack creates separate module instances per chunk
+  // (e.g. instrumentation chunk vs Server Component chunk), each holding a
+  // different `state` reference despite sharing the same globalThis object.
+  const cached = process.env.__HV_SETUP_TOKEN_CACHE
+  if (cached) return cached
   return null
 }
 
@@ -163,7 +177,7 @@ export function verifyAndConsumeSetupToken(candidate: string): boolean {
     // timingSafeEqual requires same length — different length = immediate reject.
     if (a.length !== b.length) return false
     const ok = crypto.timingSafeEqual(a, b)
-    if (ok) { state.consumed = true; state.envRaw = null }
+    if (ok) { state.consumed = true; state.envRaw = null; delete process.env.__HV_SETUP_TOKEN_CACHE }
     return ok
   }
 
@@ -178,6 +192,7 @@ export function verifyAndConsumeSetupToken(candidate: string): boolean {
   if (ok) {
     state.consumed = true
     state.token    = null
+    delete process.env.__HV_SETUP_TOKEN_CACHE
   }
   return ok
 }
