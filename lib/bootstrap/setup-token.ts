@@ -125,25 +125,32 @@ export function generateSetupToken(): void {
  * Used exclusively by the /setup Server Component to auto-inject the token
  * into the page URL via a server-side redirect — no HTTP API, no network hop.
  *
- * Returns null when the token is consumed or was never generated
- * (setup complete, or server restarted after generation).
+ * Returns null only when setup is already complete (token consumed) or when
+ * the DB is genuinely unavailable (maybeGenerateSetupToken throws and
+ * no HARMOVEN_SETUP_TOKEN env var is set).
  *
  * The returned string matches what is printed in Docker logs and what
  * verifyAndConsumeSetupToken() expects:
  *   - env-var mode: raw token string (caller should encodeURIComponent it)
  *   - random mode:  32-char lowercase hex string
  */
-export function peekSetupToken(): string | null {
+export async function peekSetupToken(): Promise<string | null> {
   if (state.consumed) return null
   if (state.envRaw !== null) return state.envRaw
   if (state.token  !== null) return state.token.toString('hex')
-  // Fallback: read from process.env cache written by generateSetupToken().
-  // Covers cases where webpack creates separate module instances per chunk
-  // (e.g. instrumentation chunk vs Server Component chunk), each holding a
-  // different `state` reference despite sharing the same globalThis object.
+  // Belt-and-suspenders: check process.env cache in case webpack created
+  // separate module instances per chunk (different `state` references).
   const cached = process.env.__HV_SETUP_TOKEN_CACHE
   if (cached) return cached
-  return null
+
+  // Token not yet in memory — instrumentation.ts may not have finished its
+  // async DB query yet (startup race condition).  Generate now if needed.
+  // generateSetupToken() is idempotent: safe to call concurrently.
+  await maybeGenerateSetupToken().catch(() => { /* DB unavailable — handled below */ })
+
+  if (state.envRaw !== null) return state.envRaw
+  if (state.token  !== null) return (state.token as Buffer).toString('hex')
+  return process.env.__HV_SETUP_TOKEN_CACHE ?? null
 }
 
 /**

@@ -48,8 +48,11 @@ export default async function SetupPage({
   const { token } = await searchParams
 
   if (!token) {
-    // No token in the URL — try to read from in-process Node.js memory.
-    const serverToken = peekSetupToken()
+    // No token in the URL — generate on demand if instrumentation.ts hasn’t
+    // completed yet (async startup race condition).  peekSetupToken() calls
+    // maybeGenerateSetupToken() internally as a fallback, so this always
+    // resolves immediately in normal operation with no spinner.
+    const serverToken = await peekSetupToken()
     if (serverToken) {
       // Auto-inject: server-side redirect to /setup?token=<token>.
       redirect(`/setup?token=${encodeURIComponent(serverToken)}`)
