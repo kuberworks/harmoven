@@ -78,7 +78,7 @@ export function LoginForm({ allowSignup }: Props) {
         router.push(callbackURL)
       }
     } catch {
-      toast({ variant: 'destructive', title: 'Sign in failed', description: 'An unexpected error occurred.' })
+      toast({ variant: 'destructive', title: 'Sign in failed', description: 'Could not connect to the server. Please try again.' })
     } finally {
       setIsPendingEmail(false)
     }
@@ -110,7 +110,7 @@ export function LoginForm({ allowSignup }: Props) {
       // Some browsers throw a DOMException directly instead of returning { error }.
       // NotAllowedError = user cancelled or timed out — ignore silently.
       if (err instanceof DOMException && err.name === 'NotAllowedError') return
-      toast({ variant: 'destructive', title: 'Passkey sign in failed', description: 'An unexpected error occurred.' })
+      toast({ variant: 'destructive', title: 'Passkey sign in failed', description: 'Could not complete passkey authentication. Please try again.' })
     } finally {
       setIsPendingPasskey(false)
     }
