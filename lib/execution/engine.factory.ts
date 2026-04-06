@@ -24,23 +24,6 @@ import { resumeSuspendedRunsFromCrash, resetStaleRunningRuns } from '@/lib/execu
 import { db as _prismaDb } from '@/lib/db/client'
 import { projectEventBus as _defaultEventBus } from '@/lib/events/project-event-bus.factory'
 
-// ─── In-process handoff mutex ─────────────────────────────────────────────────
-/**
- * Serializes concurrent handoff inserts for the same run within this process.
- *
- * Node.js is single-threaded: Map.get + Map.set is synchronous and atomic —
- * no two callbacks can interleave between them. Chaining each new insert onto
- * the previous Promise for the same run_id guarantees T2 waits for T1 to
- * commit before reading MAX(sequence_number), eliminating P2002 entirely.
- *
- * Stored on globalThis (same pattern as the engine singleton) so the Map
- * survives Next.js HMR module re-evaluations and webpack chunk splits that
- * could otherwise give each module instance its own empty Map.
- */
-// globalThis declaration lives next to __harmoven_execution_engine below.
-globalThis.__harmoven_handoff_locks ??= new Map<string, Promise<void>>()
-const _handoffLocks = globalThis.__harmoven_handoff_locks
-
 // ─── ExecutorDb adapter — wraps PrismaClient and adds findOrphaned ────────────
 /**
  * Lazy ExecutorDb implementation for production.
@@ -57,51 +40,10 @@ class PrismaExecutorDb implements ExecutorDb {
       create:    (args)  => (_prismaDb.handoff.create    as Function)(args),
       aggregate: (args)  => (_prismaDb.handoff.aggregate as Function)(args),
       /**
-       * Atomic handoff insertion via an in-process Promise chain mutex
-       * with P2002 retry as a safety net.
-       *
-       * Chain semantics: each insert is appended to the previous Promise for
-       * this run_id.  `.catch(() => {})` on `prev` ensures the chain always
-       * continues even if the previous operation failed — `.then()` alone
-       * would skip all subsequent work on rejection, freezing the chain.
-       *
-       * Retry semantics: if a P2002 (unique constraint) somehow slips through
-       * (e.g. module re-evaluation edge case), re-read MAX and retry up to 3
-       * times.  This makes the system self-healing regardless of how the
-       * conflict originated.
+       * sequence_number is now @default(autoincrement()) — PostgreSQL assigns
+       * it atomically via a SEQUENCE. No application-level mutex needed.
        */
-      createAtomic: async (data) => {
-        const prev = _handoffLocks.get(data.run_id) ?? Promise.resolve()
-        const next: Promise<void> = prev.catch(() => {}).then(async () => {
-          const MAX_RETRIES = 3
-          for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            const maxSeq = await (_prismaDb.handoff.aggregate as Function)({
-              where: { run_id: data.run_id },
-              _max: { sequence_number: true },
-            }) as { _max: { sequence_number: number | null } }
-            const sequenceNumber = (maxSeq._max.sequence_number ?? 0) + 1
-            try {
-              await (_prismaDb.handoff.create as Function)({
-                data: { ...data, sequence_number: sequenceNumber },
-              })
-              return  // success — exit loop
-            } catch (err: unknown) {
-              const code = (err as { code?: string })?.code
-              if (code === 'P2002' && attempt < MAX_RETRIES - 1) {
-                // Unique constraint collision — retry with fresh MAX
-                continue
-              }
-              throw err  // non-retryable or last attempt
-            }
-          }
-        }).finally(() => {
-          if (_handoffLocks.get(data.run_id) === next) {
-            _handoffLocks.delete(data.run_id)
-          }
-        })
-        _handoffLocks.set(data.run_id, next)
-        return next
-      },
+      createAtomic: (data) => (_prismaDb.handoff.create as Function)({ data }),
     }
   }
 
@@ -333,8 +275,6 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
 declare global {
   // eslint-disable-next-line no-var
   var __harmoven_execution_engine: IExecutionEngine | undefined
-  // eslint-disable-next-line no-var
-  var __harmoven_handoff_locks: Map<string, Promise<void>>
 }
 
 /**
