@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils/cn'
 type Step = 1 | 2 | 3 | 4
 
 interface StepState {
+  // Setup token — from Docker logs, required before account creation
+  setupToken: string
   // Step 1
   orgName: string
   deploymentMode: 'docker' | 'personal'
@@ -98,6 +100,7 @@ export default function SetupPage() {
   const [isPending, startTransition] = useTransition()
 
   const [form, setForm] = useState<StepState>({
+    setupToken: '',
     orgName: '',
     deploymentMode: 'docker',
     preset: 'small_business',
@@ -117,6 +120,10 @@ export default function SetupPage() {
 
   function handleStep1(e: React.FormEvent) {
     e.preventDefault()
+    if (!form.setupToken.trim()) {
+      toast({ variant: 'destructive', title: 'Setup token required', description: 'Find the token in Docker logs: docker compose logs app | grep "SETUP TOKEN"' })
+      return
+    }
     if (!form.orgName.trim()) return
     setStep(2)
   }
@@ -132,6 +139,7 @@ export default function SetupPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          setup_token: form.setupToken,
           org_name: form.orgName,
           deployment_mode: form.deploymentMode,
           preset: form.preset,
@@ -206,6 +214,22 @@ export default function SetupPage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleStep1} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="setup-token">Setup token</Label>
+                  <Input
+                    id="setup-token"
+                    type="password"
+                    placeholder="Paste the token from Docker logs"
+                    value={form.setupToken}
+                    onChange={e => update('setupToken', e.target.value)}
+                    autoComplete="off"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Run <code className="font-mono">docker compose logs app | grep &quot;SETUP TOKEN&quot;</code> to retrieve it.
+                  </p>
+                </div>
+
                 <div className="space-y-1.5">
                   <Label htmlFor="org-name">Organization name</Label>
                   <Input

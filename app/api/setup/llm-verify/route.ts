@@ -1,21 +1,29 @@
 // app/api/setup/llm-verify/route.ts
-// POST /api/setup/llm-verify — First-run wizard: verify an LLM provider API key.
+// POST /api/setup/llm-verify — Verify an LLM provider API key.
 //
 // Makes a minimal test call to the chosen provider to confirm the key is valid.
 // Does NOT store the key — the admin must set the appropriate env var
 // (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) before or after completing setup.
 //
+// Callable in two contexts:
+//   1. During the first-run wizard (before any user exists, userCount === 0).
+//   2. By an authenticated instance_admin after setup is complete (e.g. to verify
+//      a changed key in Admin Settings).  The wizard calls this in Step 4 which
+//      runs AFTER POST /api/setup/admin creates the admin in Step 2.
+//
 // Security:
-//   - Public route (no auth required — invoked before admin account is usable).
-//   - Guard: only callable before setup is complete (userCount === 0).
-//   - api_key input sanitised (max 256 chars, pattern-validated per provider).
-//   - SSRF: providers called via their official SDKs — no user-supplied base URLs.
+//   - Pre-setup: public — no auth required (no admin exists yet).
+//   - Post-setup: requires instance_admin session.
+//   - api_key is sanitised (max 256 chars) and never logged or returned.
+//   - Redacts both sk-* (OpenAI/Anthropic) and AIza* (Gemini) patterns from errors.
+//   - SSRF: providers called via official SDKs — no user-supplied base URLs.
 //   - Zod .strict() validation — no mass-assignment.
-//   - api_key is never logged or returned in responses.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { headers }                   from 'next/headers'
 import { z }                         from 'zod'
 import { db }                        from '@/lib/db/client'
+import { auth }                      from '@/lib/auth'
 
 // ─── Validation ────────────────────────────────────────────────────────────────
 
@@ -27,11 +35,10 @@ const VerifyBody = z.object({
 
 // ─── Per-provider verification ────────────────────────────────────────────────
 
-/** Minimal test: list models (Anthropic) — 1 token call, cheapest possible. */
+/** Minimal test: list models (Anthropic) — pure metadata call, no tokens consumed. */
 async function verifyAnthropic(apiKey: string): Promise<void> {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey })
-  // models.list() does not consume tokens — pure metadata call
   await client.models.list({ limit: 1 })
 }
 
@@ -39,16 +46,13 @@ async function verifyAnthropic(apiKey: string): Promise<void> {
 async function verifyOpenAI(apiKey: string): Promise<void> {
   const { default: OpenAI } = await import('openai')
   const client = new OpenAI({ apiKey })
-  // models.list() does not consume tokens
   await client.models.list()
 }
 
-/** Minimal test: list models (Gemini). */
+/** Minimal test: generate 1 token (cheapest Gemini validation). */
 async function verifyGemini(apiKey: string): Promise<void> {
   const { GoogleGenerativeAI } = await import('@google/generative-ai')
   const genAI = new GoogleGenerativeAI(apiKey)
-  // getGenerativeModel is synchronous — calling generateContent with max 1 token
-  // is the cheapest way to validate a key
   const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
   await model.generateContent({
     contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
@@ -76,13 +80,15 @@ const ENV_VAR_HINT: Record<string, string> = {
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  // ── Setup-complete guard ────────────────────────────────────────────────────
+  // ── Auth guard — differs by setup state ─────────────────────────────────────
+  // Pre-setup (no users yet): open to allow the wizard to run.
+  // Post-setup: require an instance_admin session.
   const userCount = await db.user.count()
   if (userCount > 0) {
-    return NextResponse.json(
-      { error: 'Setup already complete.' },
-      { status: 409 },
-    )
+    const session = await auth.api.getSession({ headers: await headers() })
+    if (!session?.user || session.user.role !== 'instance_admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
   }
 
   // ── Input validation ────────────────────────────────────────────────────────
@@ -112,8 +118,10 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // Strip any api_key echo from SDK error messages before returning
-    const safe = msg.replace(/sk-[a-zA-Z0-9_-]{20,}/g, '[REDACTED]')
+    // Redact OpenAI/Anthropic keys (sk-...) and Gemini keys (AIza...) from SDK errors
+    const safe = msg
+      .replace(/sk-[a-zA-Z0-9_-]{20,}/g, '[REDACTED]')
+      .replace(/AIza[A-Za-z0-9_-]{30,}/g, '[REDACTED]')
     return NextResponse.json(
       { error: `Provider connection failed: ${safe}` },
       { status: 400 },
@@ -121,9 +129,10 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    ok:          true,
+    ok:           true,
     provider,
     env_var_hint: ENV_VAR_HINT[provider],
-    message:     `Connection verified. Set ${ENV_VAR_HINT[provider]} in your environment to persist this key.`,
+    message:      `Connection verified. Set ${ENV_VAR_HINT[provider]} in your environment to persist this key.`,
   })
 }
+
