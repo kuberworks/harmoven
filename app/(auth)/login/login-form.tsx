@@ -96,11 +96,20 @@ export function LoginForm({ allowSignup }: Props) {
       }
       const { error } = await signInPasskey()
       if (error) {
-        toast({ variant: 'destructive', title: 'Passkey sign in failed', description: error.message })
+        // NotAllowedError = user cancelled or timed out — not a real failure.
+        // The WebAuthn spec mandates this error for privacy reasons (the browser
+        // must not distinguish "no passkey" from "user cancelled"). Silently
+        // ignore it; showing a toast would be confusing and noisy.
+        const msg = error.message ?? ''
+        if (msg.includes('not allowed') || msg.includes('timed out')) return
+        toast({ variant: 'destructive', title: 'Passkey sign in failed', description: msg })
       } else {
         router.push(callbackURL)
       }
-    } catch {
+    } catch (err) {
+      // Some browsers throw a DOMException directly instead of returning { error }.
+      // NotAllowedError = user cancelled or timed out — ignore silently.
+      if (err instanceof DOMException && err.name === 'NotAllowedError') return
       toast({ variant: 'destructive', title: 'Passkey sign in failed', description: 'An unexpected error occurred.' })
     } finally {
       setIsPendingPasskey(false)
