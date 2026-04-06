@@ -771,8 +771,17 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
   const stream = useRunStream(initialRun.id)
   const { reconnect } = stream
 
-  // Use SSE state when available, fall back to initial server-fetched state
-  const run = stream.run ?? {
+  // Cache the last non-null run and nodes from the SSE state.
+  // This prevents a RESET (triggered by reconnect after a clean es.close()) from
+  // reverting the UI to `initialRun` (which has status='RUNNING' if the page was
+  // loaded mid-run) and hiding the conditionally-rendered 'result' tab.
+  const lastRunRef   = useRef<RunState | null>(null)
+  const lastNodesRef = useRef<NodeState[]>([])
+  if (stream.run)                lastRunRef.current   = stream.run
+  if (stream.nodes.length > 0)  lastNodesRef.current = stream.nodes
+
+  // Use last-known SSE state when available, fall back to initial server-fetched state
+  const run = lastRunRef.current ?? {
     id: initialRun.id,
     status: initialRun.status as RunStatus,
     cost_actual_usd: initialRun.cost_actual_usd,
@@ -783,7 +792,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
     dag: initialRun.dag,
   }
 
-  const nodes: (InitialNode | NodeState)[] = stream.nodes.length > 0 ? stream.nodes : initialNodes
+  const nodes: (InitialNode | NodeState)[] = lastNodesRef.current.length > 0 ? lastNodesRef.current : initialNodes
 
   const isLive = run.status === 'RUNNING' || run.status === 'PAUSED'
   const isTerminal = run.status === 'COMPLETED' || run.status === 'FAILED'
