@@ -2372,7 +2372,7 @@ paths:
         - `anthropic` — calls `models.list()` (Anthropic SDK, 0 tokens)
         - `openai` — calls `models.list()` (OpenAI SDK, 0 tokens)
         - `gemini` — calls `generateContent` with 1 token (Google GenAI SDK)
-        - `ollama` — pings `http://localhost:11434/api/tags` (no key required)
+        - `ollama` — pings `${OLLAMA_BASE_URL}/api/tags` (defaults to `http://localhost:11434`, no key required)
       security: []
       tags: [auth]
       requestBody:
