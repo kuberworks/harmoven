@@ -9,7 +9,7 @@
 import { useState, useTransition, Fragment, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import { CheckCircle2, Loader2, ExternalLink, ArrowLeft, ArrowRight } from 'lucide-react'
+import { CheckCircle2, Loader2, ExternalLink, ArrowLeft, ArrowRight, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -487,14 +487,55 @@ export function SetupWizard() {
 }
 
 // ── Auto-refresh helper ───────────────────────────────────────────────────────
-// Used by the Server Component fallback: re-runs the server render after
-// `delayMs` so peekSetupToken() is retried once instrumentation.ts has finished.
+// Retries the Server Component render every 1.5 s so peekSetupToken() is
+// re-evaluated once instrumentation.ts has finished generating the token.
+// After MAX_RETRIES (≈ 7.5 s) without success, shows manual instructions
+// instead of looping forever.
 
-export function AutoRefresh({ delayMs = 1500 }: { delayMs?: number }) {
+const MAX_RETRIES = 5
+
+export function AutoRefresh() {
   const router = useRouter()
+  const [retries, setRetries] = useState(0)
+
   useEffect(() => {
-    const t = setTimeout(() => router.refresh(), delayMs)
+    if (retries >= MAX_RETRIES) return
+    const t = setTimeout(() => {
+      setRetries(r => r + 1)
+      router.refresh()
+    }, 1500)
     return () => clearTimeout(t)
-  }, [router, delayMs])
-  return null
+  }, [router, retries])
+
+  if (retries < MAX_RETRIES) return null
+
+  // Server didn't produce a token after 7.5 s — something is wrong.
+  // Fall back to manual instructions.
+  return (
+    <div className="space-y-4 pt-2">
+      <p className="text-xs text-muted-foreground">
+        The server took too long to generate the setup token. Use one of the
+        options below to complete setup.
+      </p>
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium text-foreground">Option 1 — Docker logs</p>
+        <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
+          <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <span>docker compose logs app | grep &quot;Setup URL&quot;</span>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium text-foreground">Option 2 — Predictable token</p>
+        <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
+          <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <span>HARMOVEN_SETUP_TOKEN=your-secret</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Set in <code className="font-mono text-[var(--text-code)]">.env</code> before
+          starting Harmoven (min. 20 chars), then open{' '}
+          <code className="font-mono text-[var(--text-code)]">/setup?token=your-secret</code>.
+        </p>
+      </div>
+    </div>
+  )
 }
