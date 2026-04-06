@@ -654,12 +654,28 @@ export class CustomExecutor implements IExecutionEngine {
       const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
       const currentStatus = currentRun.status as RunStatus
       if (!isTerminalRun(currentStatus) && currentStatus !== 'SUSPENDED') {
+        const completedAt = new Date()
         await this.transitionRun(runId, currentStatus, finalStatus)
-        await this.db.run.update({ where: { id: runId }, data: { completed_at: new Date() } })
+        await this.db.run.update({ where: { id: runId }, data: { completed_at: completedAt } })
 
-        // Emit terminal-state SSE events
+        // Emit terminal-state SSE events.
+        // IMPORTANT: use the post-transition values for status and completed_at.
+        // `currentRun` was fetched BEFORE transitionRun(), so its status field
+        // still reflects the old value (e.g. RUNNING). The client reducer replaces
+        // the entire run object when it receives `completed`, so emitting the stale
+        // snapshot would overwrite the correct COMPLETED status that the preceding
+        // `state_change` event already applied, causing the UI to show "running"
+        // even after the run has finished.
         if (finalStatus === 'COMPLETED') {
-          this._emit(runId, { type: 'completed', run: currentRun, handoff_note: '' })
+          this._emit(runId, {
+            type: 'completed',
+            run: {
+              ...currentRun,
+              status: finalStatus,
+              completed_at: completedAt,
+            },
+            handoff_note: '',
+          })
         }
         // run_finished lifecycle event (always, regardless of terminal status)
         this._emit(runId, { type: 'run_finished', status: finalStatus })
