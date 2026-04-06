@@ -99,6 +99,14 @@ export class InMemoryRunStore implements ExecutorDb {
       this._handoffs.push(data)
       return data
     },
+    aggregate: async ({ where }: { where: { run_id: string }; _max: { sequence_number: true } }) => {
+      const existing = this._handoffs.filter(
+        (h): h is { run_id: string; sequence_number: number } =>
+          typeof h === 'object' && h !== null && (h as Record<string, unknown>).run_id === where.run_id,
+      )
+      const max = existing.reduce((m, h) => Math.max(m, h.sequence_number ?? 0), 0)
+      return { _max: { sequence_number: existing.length > 0 ? max : null } }
+    },
   }
 
   humanGate = {
