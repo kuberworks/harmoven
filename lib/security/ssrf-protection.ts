@@ -180,3 +180,87 @@ export async function assertLocalHost(url: string): Promise<void> {
     }
   }
 }
+
+/**
+ * Validate a user-supplied Ollama base URL.
+ *
+ * Threat model: who supplies this URL?
+ *   - During setup: the operator who holds the single-use setup token.
+ *   - Post-setup:   an authenticated instance_admin.
+ * In both cases, the actor is already trusted to administer the instance.
+ * RFC1918 / LAN addresses are therefore *legitimate* — that is exactly where
+ * a self-hosted Ollama instance lives.
+ *
+ * What we DO block (synchronous, no DNS required):
+ *   - Non-http(s) protocols (file://, data://, …)
+ *   - Credentials embedded in the URL
+ *   - 169.254.0.0/16 — cloud IMDS (AWS, GCP, Azure, ECS task role)
+ *   - 127.0.0.0/8 and ::1 — localhost / loopback services (Postgres, Redis, …)
+ *   - 0.0.0.0 — OS-undefined behaviour
+ *
+ * What we intentionally ALLOW:
+ *   - RFC1918 privates (10.x, 172.16.x, 192.168.x) — on-prem LAN Ollama
+ *   - Public IPs — hosted Ollama-compatible endpoints
+ *
+ * No DNS resolution is performed: Ollama URLs are typically bare IPs or
+ * stable LAN hostnames and we do not want to fail-close on DNS timeouts
+ * in air-gapped or low-connectivity environments.
+ *
+ * @throws ValidationError
+ */
+export function validateOllamaUrl(rawUrl: string): void {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    throw new ValidationError('Ollama URL must be a non-empty string')
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    throw new ValidationError(`Invalid URL: "${rawUrl.slice(0, 100)}"`)
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new ValidationError(
+      `Blocked protocol "${parsed.protocol}" — only http/https are allowed`,
+    )
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new ValidationError('Credentials embedded in URL are not allowed')
+  }
+
+  // Resolve the raw hostname for IP-literal checks (no DNS, no I/O).
+  // For hostnames like "ollama.local" we skip the IP checks — DNS
+  // resolution over LAN is left to the actual fetch in verifyOllama().
+  const host = parsed.hostname.replace(/^\[|\]$/g, '') // strip IPv6 brackets
+
+  // Block 169.254.x.x — IMDS on AWS, GCP, Azure, ECS task role credentials
+  const imdsV4 = /^169\.254\.\d{1,3}\.\d{1,3}$/.test(host)
+  // AWS ECS task-role metadata specifically
+  const imdsEcs = host === '169.254.170.2'
+  if (imdsV4 || imdsEcs) {
+    throw new ValidationError(
+      'SSRF blocked: 169.254.0.0/16 is the cloud instance metadata range — ' +
+      'this address could expose cloud credentials',
+    )
+  }
+
+  // Block loopback — 127.x.x.x and ::1 allow probing localhost services
+  const loopbackV4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+  const loopbackV6 = host === '::1' || host.toLowerCase() === '::ffff:127.0.0.1'
+  if (loopbackV4 || loopbackV6) {
+    throw new ValidationError(
+      'SSRF blocked: loopback addresses are not allowed for Ollama — ' +
+      'use "http://localhost:11434" only when Ollama runs on the same host as Harmoven, ' +
+      'in which case no URL override is needed (leave the field empty)',
+    )
+  }
+
+  // Block 0.0.0.0 — OS behaviour is undefined (often maps to localhost)
+  if (host === '0.0.0.0' || host === '::') {
+    throw new ValidationError(
+      'SSRF blocked: 0.0.0.0 / :: is not a valid target address',
+    )
+  }
+}

@@ -2372,7 +2372,11 @@ paths:
         - `anthropic` — calls `models.list()` (Anthropic SDK, 0 tokens)
         - `openai` — calls `models.list()` (OpenAI SDK, 0 tokens)
         - `gemini` — calls `generateContent` with 1 token (Google GenAI SDK)
-        - `ollama` — pings `${OLLAMA_BASE_URL}/api/tags` (defaults to `http://localhost:11434`, no key required)
+        - `ollama` — pings `<ollama_url>/api/tags` where `<ollama_url>` is
+          resolved in this order: `ollama_url` body field → `OLLAMA_BASE_URL` env var
+          → `http://localhost:11434` fallback. No API key required.
+          `ollama_url` is validated server-side: IMDS (169.254.x.x), loopback, and 0.0.0.0
+          are blocked; RFC1918 LAN addresses are explicitly allowed.
       security: []
       tags: [auth]
       requestBody:
@@ -2391,6 +2395,18 @@ paths:
                   type: string
                   maxLength: 256
                   description: "API key for the provider. Required for all providers except `ollama`."
+                ollama_url:
+                  type: string
+                  maxLength: 512
+                  format: uri
+                  example: "http://192.168.1.50:11434"
+                  description: |
+                    Optional Ollama base URL override. Only used when `provider` is `ollama`.
+                    Overrides the `OLLAMA_BASE_URL` env var for this verification call only — not stored.
+                    Must be http/https. IMDS range (169.254.x.x), loopback (127.x.x.x / ::1),
+                    and 0.0.0.0 are rejected; RFC1918 LAN addresses (192.168.x.x, 10.x.x.x,
+                    172.16–31.x.x) are explicitly allowed.
+                    Leave empty to fall back to `OLLAMA_BASE_URL` env var or `http://localhost:11434`.
       responses:
         '200':
           description: "Provider connection verified."
@@ -2409,6 +2425,11 @@ paths:
                     type: string
                     description: "Name of the environment variable to set for this provider."
                     example: ANTHROPIC_API_KEY
+                  effective_url:
+                    type: string
+                    nullable: true
+                    description: "Ollama only — the base URL that was actually used for the ping."
+                    example: "http://192.168.1.50:11434"
                   message:
                     type: string
                     description: "Human-readable instructions."

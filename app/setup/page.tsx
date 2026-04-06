@@ -29,6 +29,9 @@ interface FormState {
   adminCreated: boolean
   llmProvider: 'anthropic' | 'openai' | 'gemini' | 'ollama'
   apiKey: string
+  // User-supplied Ollama base URL — empty string means "use OLLAMA_BASE_URL env var
+  // or the http://localhost:11434 fallback" (server-side resolution order).
+  ollamaUrl: string
   verified: boolean
 }
 
@@ -162,6 +165,7 @@ function SetupWizard() {
     adminCreated: false,
     llmProvider: 'anthropic',
     apiKey: '',
+    ollamaUrl: '',
     verified: false,
   })
 
@@ -222,8 +226,9 @@ function SetupWizard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: form.llmProvider,
-          api_key: form.apiKey || undefined,
+          provider:   form.llmProvider,
+          api_key:    form.apiKey    || undefined,
+          ollama_url: form.ollamaUrl || undefined,
         }),
       })
       if (!res.ok) {
@@ -450,14 +455,22 @@ function SetupWizard() {
                 </div>
 
                 {form.llmProvider === 'ollama' ? (
-                  <div className="rounded-lg border border-border bg-surface-hover p-3 space-y-1">
-                    <p className="text-xs font-medium text-foreground">Connection details</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ollama-url">Ollama base URL</Label>
+                    <Input
+                      id="ollama-url"
+                      type="url"
+                      placeholder="http://192.168.1.50:11434"
+                      value={form.ollamaUrl}
+                      onChange={e => update('ollamaUrl', e.target.value)}
+                      autoComplete="off"
+                    />
                     <p className="text-xs text-muted-foreground">
-                      Harmoven connects to{' '}
+                      Leave empty to use{' '}
                       <code className="font-mono text-[var(--text-code)]">OLLAMA_BASE_URL</code>{' '}
-                      (defaults to{' '}
-                      <code className="font-mono text-[var(--text-code)]">http://localhost:11434</code>).
-                      Set this env var before starting Harmoven if Ollama runs on a different host.
+                      env var, or{' '}
+                      <code className="font-mono text-[var(--text-code)]">http://localhost:11434</code>{' '}
+                      if Ollama runs on the same host as Harmoven.
                     </p>
                   </div>
                 ) : (
