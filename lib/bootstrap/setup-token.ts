@@ -21,10 +21,13 @@ export function generateSetupToken(): void {
   if (_token !== null || _consumed) return
   _token = crypto.randomBytes(16)
   const hex = _token.toString('hex')
-  const bar = '━'.repeat(54)
+  const bar = '━'.repeat(62)
+  // APP_URL lets operators override the default when Harmoven is behind a proxy.
+  const base = (process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
   console.log(`\n[Harmoven] ${bar}`)
-  console.log(`[Harmoven]  SETUP TOKEN: ${hex}`)
-  console.log(`[Harmoven]  Open /setup and paste this token to continue.`)
+  console.log(`[Harmoven]  Setup URL: ${base}/setup?token=${hex}`)
+  console.log(`[Harmoven]  Open this URL in your browser to complete first-run setup.`)
+  console.log(`[Harmoven]  Replace "localhost:3000" with your server address if needed.`)
   console.log(`[Harmoven]  Single-use — expires after first successful setup.`)
   console.log(`[Harmoven] ${bar}\n`)
 }
