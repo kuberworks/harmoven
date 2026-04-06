@@ -58,6 +58,7 @@ export interface ExecutorDb {
   }
   handoff: {
     create(args: { data: unknown }): Promise<unknown>
+    aggregate(args: { where: { run_id: string }; _max: { sequence_number: true } }): Promise<{ _max: { sequence_number: number | null } }>
   }
   humanGate: {
     create(args: { data: unknown }): Promise<{ id: string }>
