@@ -86,11 +86,12 @@ async function fetchSetupRequired(base: string): Promise<boolean> {
     if (res.ok) {
       const data = await res.json() as { setup_required?: boolean }
       const setupRequired = data.setup_required ?? false
-      // Only cache when setup is complete — while setup is required, the state
-      // can change at any moment (wizard in progress) so we must not cache it.
-      if (!setupRequired) {
-        setupCache = { setup_required: false, until: now + 60_000 }
-      }
+      // Cache duration depends on state:
+      //   - setup complete (stable): 60 s
+      //   - setup required (transient): 5 s — short enough that the wizard
+      //     completion is reflected quickly, long enough to avoid a DB hit on
+      //     every page navigation during the setup flow.
+      setupCache = { setup_required: setupRequired, until: now + (setupRequired ? 5_000 : 60_000) }
       return setupRequired
     }
   } catch { /* ignore — assume setup complete to fail safe */ }
