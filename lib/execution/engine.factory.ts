@@ -57,27 +57,44 @@ class PrismaExecutorDb implements ExecutorDb {
       create:    (args)  => (_prismaDb.handoff.create    as Function)(args),
       aggregate: (args)  => (_prismaDb.handoff.aggregate as Function)(args),
       /**
-       * Atomic handoff insertion via an in-process Promise chain mutex.
+       * Atomic handoff insertion via an in-process Promise chain mutex
+       * with P2002 retry as a safety net.
        *
-       * Each new insert is chained onto the tail of the existing Promise for
-       * this run_id. Because Node.js is single-threaded, the .get()/.set() pair
-       * is synchronous and atomic: no two callers can both read `prev` before
-       * either has called .set(). The chain guarantees T2 reads
-       * MAX(sequence_number) only after T1's insert has committed.
+       * Chain semantics: each insert is appended to the previous Promise for
+       * this run_id.  `.catch(() => {})` on `prev` ensures the chain always
+       * continues even if the previous operation failed — `.then()` alone
+       * would skip all subsequent work on rejection, freezing the chain.
+       *
+       * Retry semantics: if a P2002 (unique constraint) somehow slips through
+       * (e.g. module re-evaluation edge case), re-read MAX and retry up to 3
+       * times.  This makes the system self-healing regardless of how the
+       * conflict originated.
        */
       createAtomic: async (data) => {
         const prev = _handoffLocks.get(data.run_id) ?? Promise.resolve()
-        const next: Promise<void> = prev.then(async () => {
-          const maxSeq = await (_prismaDb.handoff.aggregate as Function)({
-            where: { run_id: data.run_id },
-            _max: { sequence_number: true },
-          }) as { _max: { sequence_number: number | null } }
-          const sequenceNumber = (maxSeq._max.sequence_number ?? 0) + 1
-          await (_prismaDb.handoff.create as Function)({
-            data: { ...data, sequence_number: sequenceNumber },
-          })
+        const next: Promise<void> = prev.catch(() => {}).then(async () => {
+          const MAX_RETRIES = 3
+          for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            const maxSeq = await (_prismaDb.handoff.aggregate as Function)({
+              where: { run_id: data.run_id },
+              _max: { sequence_number: true },
+            }) as { _max: { sequence_number: number | null } }
+            const sequenceNumber = (maxSeq._max.sequence_number ?? 0) + 1
+            try {
+              await (_prismaDb.handoff.create as Function)({
+                data: { ...data, sequence_number: sequenceNumber },
+              })
+              return  // success — exit loop
+            } catch (err: unknown) {
+              const code = (err as { code?: string })?.code
+              if (code === 'P2002' && attempt < MAX_RETRIES - 1) {
+                // Unique constraint collision — retry with fresh MAX
+                continue
+              }
+              throw err  // non-retryable or last attempt
+            }
+          }
         }).finally(() => {
-          // Release lock entry only if no newer chain has replaced it.
           if (_handoffLocks.get(data.run_id) === next) {
             _handoffLocks.delete(data.run_id)
           }
