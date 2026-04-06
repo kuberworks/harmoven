@@ -81,13 +81,23 @@ export class InMemoryRunStore implements ExecutorDb {
       }
       return result as unknown as ReturnType<ExecutorDb['node']['findOrphaned']> extends Promise<infer T> ? T : never
     },
-    updateMany: async ({ where, data }: { where: { run_id: string; status?: string }; data: Record<string, unknown> }) => {
+    updateMany: async ({ where, data }: { where: { id?: string; run_id?: string; status?: string | { in: string[] } }; data: Record<string, unknown> }) => {
       let count = 0
-      const list = this._nodes.get(where.run_id) ?? []
-      for (const node of list) {
-        if (!where.status || node['status'] === where.status) {
-          Object.assign(node, data)
-          count++
+      const pools = where.run_id
+        ? [this._nodes.get(where.run_id) ?? []]
+        : [...this._nodes.values()]
+      for (const list of pools) {
+        for (const node of list) {
+          const idMatch = !where.id || node['id'] === where.id
+          const statusMatch = !where.status
+            ? true
+            : typeof where.status === 'string'
+              ? node['status'] === where.status
+              : (where.status as { in: string[] }).in.includes(node['status'] as string)
+          if (idMatch && statusMatch) {
+            Object.assign(node, data)
+            count++
+          }
         }
       }
       return { count } as unknown as ReturnType<ExecutorDb['node']['updateMany']> extends Promise<infer T> ? T : never

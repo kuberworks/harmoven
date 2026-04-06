@@ -57,6 +57,11 @@ export const OrchestratorPatchSchema = z.object({
     default_update_policy:  z.enum(['auto', 'notify', 'manual']).optional(),
     auto_check_updates:     z.boolean().optional(),
   }).optional(),
+
+  llm: z.object({
+    default_provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama', 'cometapi', 'litellm']).optional(),
+    profiles_active:  z.array(z.string()).optional(),
+  }).optional(),
 }).strict()
 
 export type OrchestratorPatch = z.infer<typeof OrchestratorPatchSchema>

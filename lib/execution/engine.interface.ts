@@ -54,7 +54,7 @@ export interface ExecutorDb {
     findOrphaned(args: { before: Date }): Promise<NodeRow[]>
     create(args: { data: Omit<NodeRow, 'id'> }): Promise<NodeRow>
     update(args: { where: { id: string }; data: Partial<NodeRow> }): Promise<NodeRow>
-    updateMany(args: { where: { run_id: string; status?: string }; data: Partial<NodeRow> }): Promise<{ count: number }>
+    updateMany(args: { where: { id?: string; run_id?: string; status?: string | { in: string[] } }; data: Partial<NodeRow> }): Promise<{ count: number }>
   }
   handoff: {
     create(args: { data: unknown }): Promise<unknown>

@@ -27,6 +27,7 @@ import { db }                        from '@/lib/db/client'
 import { auth }                      from '@/lib/auth'
 import { validateOllamaUrl }         from '@/lib/security/ssrf-protection'
 import { ValidationError }           from '@/lib/utils/input-validation'
+import { patchOrchestratorYaml }     from '@/lib/config-git/orchestrator-config'
 
 // ─── Validation ────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,15 @@ const ENV_VAR_HINT: Record<string, string> = {
   openai:    'OPENAI_API_KEY',
   gemini:    'GOOGLE_API_KEY',
   ollama:    '(no key needed)',
+}
+
+// ─── Provider → default profiles_active mapping ──────────────────────────────
+
+const PROVIDER_PROFILES: Record<string, string[]> = {
+  anthropic: ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6'],
+  openai:    ['gpt-4o-mini', 'gpt-4o', 'gpt-5-4'],
+  gemini:    ['gemini-flash', 'gemini-3-1-pro'],
+  ollama:    ['ollama_local'],
 }
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
@@ -160,6 +170,17 @@ export async function POST(req: NextRequest) {
     provider === 'ollama'
       ? (resolvedOllamaUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434')
       : undefined
+
+  // Update orchestrator.yaml with the verified provider and its default profiles.
+  // Non-fatal — verification already succeeded; profile update is best-effort.
+  try {
+    await patchOrchestratorYaml(
+      { llm: { default_provider: provider as 'anthropic' | 'openai' | 'gemini' | 'ollama', profiles_active: PROVIDER_PROFILES[provider] ?? [] } },
+      'setup:llm-verify',
+    )
+  } catch (err) {
+    console.warn('[llm-verify] Failed to update orchestrator.yaml profiles_active (non-fatal):', err)
+  }
 
   return NextResponse.json({
     ok:                true,

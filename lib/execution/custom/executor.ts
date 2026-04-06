@@ -350,14 +350,25 @@ export class CustomExecutor implements IExecutionEngine {
       throw new Error(`Run '${runId}' cannot be restarted (status: '${run.status}') — must be SUSPENDED or FAILED`)
     }
 
+    // ── Atomic claim ──────────────────────────────────────────────────────────
+    // Use a conditional updateMany to atomically transition the node from
+    // INTERRUPTED/FAILED → PENDING. This prevents two concurrent gate calls for
+    // the same node from both proceeding: only the first one will find count > 0.
+    const claimed = await this.db.node.updateMany({
+      where: { id: node.id, status: { in: ['INTERRUPTED', 'FAILED'] } },
+      data:  { status: 'PENDING' },
+    })
+    if (claimed.count === 0) {
+      throw new Error(`Node '${nodeId}' cannot be restarted (status: '${node.status}') — already claimed by a concurrent gate request`)
+    }
+
     switch (gate.decision) {
       case 'resume_from_partial': {
-        // Store edited partial in node metadata as seed context for the resumed agent.
+        // Atomic claim already set status = 'PENDING'. Update remaining fields.
         const meta = (node.metadata as object) ?? {}
         await this.db.node.update({
           where: { id: node.id },
           data: {
-            status: 'PENDING',
             interrupted_at: null,
             interrupted_by: null,
             partial_output: null,
@@ -381,10 +392,10 @@ export class CustomExecutor implements IExecutionEngine {
       }
 
       case 'replay_from_scratch': {
+        // Atomic claim already set status = 'PENDING'. Update remaining fields.
         await this.db.node.update({
           where: { id: node.id },
           data: {
-            status: 'PENDING',
             interrupted_at: null,
             interrupted_by: null,
             partial_output: null,
