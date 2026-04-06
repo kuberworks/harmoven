@@ -2273,9 +2273,12 @@ paths:
         Public endpoint (no auth required). Creates the first `instance_admin` user
         and persists organization config to `orchestrator.yaml`.
 
-        **Guard:** Returns `409` if any user already exists (`setup_complete = true`).
-        This route is self-sealing — it cannot be called after setup is complete,
-        preventing privilege-escalation via double-setup.
+        **Guard 1 — setup token:** Requires `setup_token` generated at server startup
+        (printed in Docker logs). Single-use; invalidated after first successful call.
+        Returns `403` if the token is missing, wrong, or already consumed.
+
+        **Guard 2 — double-setup:** Returns `409` if any user already exists
+        (`setup_complete = true`). Self-sealing against privilege-escalation.
 
         The created account has `emailVerified: true` to allow immediate login
         without requiring a mail server during initial setup.
@@ -2287,9 +2290,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [org_name, deployment_mode, preset, name, email, password]
+              required: [setup_token, org_name, deployment_mode, preset, name, email, password]
               additionalProperties: false
               properties:
+                setup_token:
+                  type: string
+                  minLength: 1
+                  description: "One-time token printed in Docker logs at server startup."
                 org_name:
                   type: string
                   minLength: 1
@@ -2329,6 +2336,12 @@ paths:
                   ok:
                     type: boolean
                     example: true
+        '403':
+          description: "Invalid or already-consumed setup token."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: "Setup already complete — a user already exists."
           content:
@@ -2341,15 +2354,19 @@ paths:
   /setup/llm-verify:
     post:
       operationId: setupLlmVerify
-      summary: Verify LLM provider API key (first-run wizard)
+      summary: Verify LLM provider API key
       description: |
-        Public endpoint (no auth required). Makes a minimal non-destructive test
-        call to the selected LLM provider to verify the API key is valid.
+        Makes a minimal non-destructive test call to the selected LLM provider
+        to verify the API key is valid.
 
         **Does not store the key.** Returns the name of the environment variable
         to set in order to activate the provider (`env_var_hint`).
 
-        **Guard:** Returns `409` if any user already exists (`setup_complete = true`).
+        **Auth:** callable in two contexts:
+        - Pre-setup (`userCount === 0`): public — no auth required.
+        - Post-setup: requires an authenticated `instance_admin` session.
+          The first-run wizard calls this in Step 4, which runs after admin creation
+          in Step 2, so the session cookie must be included.
 
         Supported providers:
         - `anthropic` — calls `models.list()` (Anthropic SDK, 0 tokens)
@@ -2401,8 +2418,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: "Setup already complete."
+        '401':
+          description: "Post-setup call without an instance_admin session."
           content:
             application/json:
               schema:

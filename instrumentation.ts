@@ -58,5 +58,12 @@ export async function register(): Promise<void> {
     const { startRunDataTtlCron }     = await import('@/lib/maintenance/run-data-ttl')
     startSessionCleanupCron()
     startRunDataTtlCron()
+
+    // Generate and log a one-time setup token when no admin exists yet.
+    // The operator copies this token from Docker logs and enters it in the wizard.
+    const { maybeGenerateSetupToken } = await import('@/lib/bootstrap/setup-token')
+    await maybeGenerateSetupToken().catch((err: unknown) =>
+      console.warn('[bootstrap] maybeGenerateSetupToken failed (non-fatal):', err),
+    )
   }
 }
