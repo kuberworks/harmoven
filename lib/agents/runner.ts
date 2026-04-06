@@ -276,9 +276,11 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           description:          (meta['description'] as string | undefined) ?? '',
           complexity:           (meta['complexity'] as WriterNodeInput['complexity'] | undefined) ?? 'medium',
           expected_output_type: (meta['expected_output_type'] as string | undefined) ?? 'document',
-          // handoff_in from the executor holds the merged upstream outputs keyed by "output:nX"
-          inputs: (typeof node.handoff_in === 'object' && node.handoff_in !== null
-            ? node.handoff_in
+          // handoffIn is collected in-memory from upstream nodes via collectHandoffIn().
+          // node.handoff_in (the DB field) is intentionally left null — the DB snapshot
+          // is not needed because handoffIn is always available in the executor context.
+          inputs: (typeof handoffIn === 'object' && handoffIn !== null
+            ? handoffIn as Record<string, unknown>
             : {}) as Record<string, unknown>,
           domain_profile: asProfileId(meta['domain_profile']),
           run_id:         node.run_id,
