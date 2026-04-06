@@ -8,6 +8,9 @@
 //   gemini     → @google/generative-ai
 //   cometapi   → openai (OpenAI-compatible; base_url = api.cometapi.com/v1)
 //   ollama     → openai (OpenAI-compatible; base_url = localhost:11434/v1)
+//   litellm    → openai (OpenAI-compatible; user-supplied base_url)
+//   mistral    → openai (OpenAI-compatible; base_url = api.mistral.ai/v1)
+//   custom     → openai (OpenAI-compatible; user-supplied base_url)
 //
 // Factory: createLLMClient(yamlPath?)
 //   litellm.enabled in orchestrator.yaml → LiteLLMClient (opt-in sidecar)
@@ -463,6 +466,9 @@ export class DirectLLMClient implements ILLMClient {
       case 'openai':    return callOpenAI(profile, messages, options)
       case 'cometapi':  return callOpenAI(profile, messages, options)  // OpenAI-compat
       case 'ollama':    return callOpenAI(profile, messages, options)  // OpenAI-compat
+      case 'litellm':   return callOpenAI(profile, messages, options)  // OpenAI-compat
+      case 'mistral':   return callOpenAI(profile, messages, options)  // OpenAI-compat
+      case 'custom':    return callOpenAI(profile, messages, options)  // OpenAI-compat
       case 'gemini':    return callGemini(profile, messages, options)
       default:
         throw new Error(`[DirectLLMClient] Unknown provider: "${profile.provider}"`)
@@ -480,6 +486,9 @@ export class DirectLLMClient implements ILLMClient {
       case 'openai':    return streamOpenAI(profile, messages, options, onChunk)
       case 'cometapi':  return streamOpenAI(profile, messages, options, onChunk)  // OpenAI-compat
       case 'ollama':    return streamOpenAI(profile, messages, options, onChunk)  // OpenAI-compat
+      case 'litellm':   return streamOpenAI(profile, messages, options, onChunk)  // OpenAI-compat
+      case 'mistral':   return streamOpenAI(profile, messages, options, onChunk)  // OpenAI-compat
+      case 'custom':    return streamOpenAI(profile, messages, options, onChunk)  // OpenAI-compat
       case 'gemini':    return streamGemini(profile, messages, options, onChunk)
       default:
         throw new Error(`[DirectLLMClient] Unknown provider: "${profile.provider}"`)
