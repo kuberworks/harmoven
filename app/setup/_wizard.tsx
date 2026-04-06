@@ -27,11 +27,13 @@ interface FormState {
   adminEmail: string
   adminPassword: string
   adminCreated: boolean
-  llmProvider: 'anthropic' | 'openai' | 'gemini' | 'ollama'
+  llmProvider: 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'litellm'
   apiKey: string
   // User-supplied Ollama base URL — empty string means "use OLLAMA_BASE_URL env var
   // or the http://localhost:11434 fallback" (server-side resolution order).
   ollamaUrl: string
+  // User-supplied base URL for OpenAI-compatible providers (LiteLLM, Together, Groq…)
+  litellmUrl: string
   verified: boolean
 }
 
@@ -109,6 +111,7 @@ const LLM_PROVIDERS: readonly { value: string; label: string; sublabel: string; 
   { value: 'openai',    label: 'OpenAI (ChatGPT)',   sublabel: '' },
   { value: 'gemini',    label: 'Google Gemini',      sublabel: 'Free tier available' },
   { value: 'ollama',    label: 'Ollama (local)',      sublabel: 'Free, private, runs on your machine' },
+  { value: 'litellm',   label: 'Other (OpenAI-compatible)', sublabel: 'LiteLLM, Together AI, Groq, Mistral…' },
 ]
 
 const PROVIDER_KEY_LINK: Record<string, string> = {
@@ -116,6 +119,7 @@ const PROVIDER_KEY_LINK: Record<string, string> = {
   openai:    'https://platform.openai.com/api-keys',
   gemini:    'https://aistudio.google.com/app/apikey',
   ollama:    '',
+  litellm:   '',
 }
 
 // ── Main wizard ───────────────────────────────────────────────────────────────
@@ -128,6 +132,15 @@ export function SetupWizard() {
 
   const [step, setStep] = useState<Step>(1)
   const [isPending, startTransition] = useTransition()
+
+  // ── Custom (OpenAI-compatible) provider state ──────────────────────────────
+  // Phase 1: user enters base URL + key, clicks "Fetch models"
+  // Phase 2: user assigns tiers to fetched models, then submits
+  const [customModels, setCustomModels] = useState<
+    Array<{ id: string; tier: 'fast' | 'balanced' | 'powerful' | 'skip' }> | null
+  >(null)
+  const [customFetching, setCustomFetching] = useState(false)
+  const [customFetchError, setCustomFetchError] = useState<string | null>(null)
 
   // Clear the AutoRefresh retry counter — we reached the wizard, so the token
   // was found. Ensures a clean state if the user ever returns to /setup.
@@ -142,6 +155,7 @@ export function SetupWizard() {
     llmProvider: 'anthropic',
     apiKey: '',
     ollamaUrl: '',
+    litellmUrl: '',
     verified: false,
   })
 
@@ -196,15 +210,47 @@ export function SetupWizard() {
 
   function handleVerify(e: React.FormEvent) {
     e.preventDefault()
+
+    // Pre-flight validation for the custom (litellm) provider
+    if (form.llmProvider === 'litellm') {
+      if (!customModels) {
+        toast({ variant: 'destructive', title: 'Fetch models first', description: 'Click \"Fetch available models\" to load the model list from your endpoint.' })
+        return
+      }
+      const selected = customModels.filter(m => m.tier !== 'skip')
+      const hasFast     = selected.some(m => m.tier === 'fast')
+      const hasBalanced = selected.some(m => m.tier === 'balanced')
+      const hasPowerful = selected.some(m => m.tier === 'powerful')
+      if (!hasFast || !hasBalanced || !hasPowerful) {
+        const missing = [
+          !hasFast     && 'fast',
+          !hasBalanced && 'balanced',
+          !hasPowerful && 'powerful',
+        ].filter(Boolean).join(', ')
+        toast({ variant: 'destructive', title: 'Tier assignment required', description: `Assign at least one model to each tier. Missing: ${missing}.` })
+        return
+      }
+    }
+
     startTransition(async () => {
+      const requestBody: Record<string, unknown> = {
+        provider:    form.llmProvider,
+        api_key:     form.apiKey     || undefined,
+        ollama_url:  form.ollamaUrl  || undefined,
+        litellm_url: form.litellmUrl || undefined,
+      }
+
+      // Include tier-assigned models so the server can persist them as LlmProfile rows
+      if (form.llmProvider === 'litellm' && customModels) {
+        requestBody.models = customModels
+          .filter(m => m.tier !== 'skip')
+          .map(m => ({ id: m.id, tier: m.tier }))
+      }
+
       const res = await fetch('/api/setup/llm-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider:   form.llmProvider,
-          api_key:    form.apiKey    || undefined,
-          ollama_url: form.ollamaUrl || undefined,
-        }),
+        body: JSON.stringify(requestBody),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -214,6 +260,38 @@ export function SetupWizard() {
       update('verified', true)
       router.push('/dashboard')
     })
+  }
+
+  // ── Fetch model list from a custom endpoint ────────────────────────────────
+  async function handleFetchModels() {
+    if (!form.litellmUrl.trim()) return
+    setCustomFetching(true)
+    setCustomFetchError(null)
+    try {
+      const res = await fetch('/api/admin/models/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_url: form.litellmUrl,
+          api_key:  form.apiKey || undefined,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setCustomFetchError((data as { error?: string }).error ?? 'Failed to fetch models')
+        return
+      }
+      const fetched = (data as { models?: { id: string }[] }).models ?? []
+      setCustomModels(fetched.map(m => ({ id: m.id, tier: 'skip' as const })))
+    } catch {
+      setCustomFetchError('Network error — check base URL and try again')
+    } finally {
+      setCustomFetching(false)
+    }
+  }
+
+  function updateModelTier(id: string, tier: 'fast' | 'balanced' | 'powerful' | 'skip') {
+    setCustomModels(prev => prev?.map(m => m.id === id ? { ...m, tier } : m) ?? null)
   }
 
   const pw      = passwordStrength(form.adminPassword)
@@ -413,6 +491,117 @@ export function SetupWizard() {
                       <code className="font-mono text-[var(--text-code)]">http://localhost:11434</code>{' '}
                       if Ollama runs on the same host as Harmoven.
                     </p>
+                  </div>
+                ) : form.llmProvider === 'litellm' ? (
+                  <div className="space-y-3">
+                    {/* ── Phase 1: endpoint coordinates ─────────────────── */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="litellm-url">Base URL</Label>
+                      <Input
+                        id="litellm-url"
+                        type="url"
+                        placeholder="http://localhost:4000/v1"
+                        value={form.litellmUrl}
+                        onChange={e => { update('litellmUrl', e.target.value); setCustomModels(null) }}
+                        required
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        OpenAI-compatible endpoint. Examples: LiteLLM proxy, Together AI, Groq, Mistral, Fireworks&hellip;
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="litellm-api-key">API key <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                      <Input
+                        id="litellm-api-key"
+                        type="password"
+                        placeholder="sk-…"
+                        value={form.apiKey}
+                        onChange={e => update('apiKey', e.target.value)}
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Leave empty if your endpoint does not require authentication.
+                      </p>
+                    </div>
+
+                    {/* Fetch button */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      disabled={!form.litellmUrl.trim() || customFetching}
+                      onClick={handleFetchModels}
+                    >
+                      {customFetching
+                        ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Fetching models…</>
+                        : 'Fetch available models'}
+                    </Button>
+
+                    {customFetchError && (
+                      <p className="text-xs text-destructive">{customFetchError}</p>
+                    )}
+
+                    {/* ── Phase 2: tier assignment ───────────────────────── */}
+                    {customModels !== null && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">
+                          Assign models to tiers
+                          <span className="ml-1.5 font-normal text-muted-foreground">
+                            ({customModels.length} available)
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Assign at least one model to each tier: <strong>fast</strong>, <strong>balanced</strong>, and <strong>powerful</strong>.
+                          Models set to &ldquo;skip&rdquo; will not be used.
+                        </p>
+                        <div className="max-h-52 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                          {customModels.map(m => (
+                            <div key={m.id} className="flex items-center gap-3 px-3 py-2">
+                              <span
+                                className="flex-1 truncate font-mono text-xs text-foreground"
+                                title={m.id}
+                              >
+                                {m.id}
+                              </span>
+                              <select
+                                value={m.tier}
+                                onChange={e => updateModelTier(m.id, e.target.value as typeof m.tier)}
+                                className="shrink-0 rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+                              >
+                                <option value="skip">— skip —</option>
+                                <option value="fast">fast</option>
+                                <option value="balanced">balanced</option>
+                                <option value="powerful">powerful</option>
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                        {(() => {
+                          const sel      = customModels.filter(m => m.tier !== 'skip')
+                          const hasFast     = sel.some(m => m.tier === 'fast')
+                          const hasBalanced = sel.some(m => m.tier === 'balanced')
+                          const hasPowerful = sel.some(m => m.tier === 'powerful')
+                          if (hasFast && hasBalanced && hasPowerful) {
+                            return (
+                              <p className="flex items-center gap-1 text-xs text-[var(--color-status-completed)]">
+                                <CheckCircle2 className="h-3.5 w-3.5" /> All tiers assigned
+                              </p>
+                            )
+                          }
+                          const missing = [
+                            !hasFast     && 'fast',
+                            !hasBalanced && 'balanced',
+                            !hasPowerful && 'powerful',
+                          ].filter(Boolean).join(', ')
+                          return (
+                            <p className="text-xs text-muted-foreground">
+                              Still needed: <strong>{missing}</strong>
+                            </p>
+                          )
+                        })()}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-1.5">
