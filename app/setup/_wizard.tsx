@@ -416,17 +416,19 @@ export function SetupWizard() {
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {keyLink && (
-                      <a
-                        href={keyLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-[var(--accent-amber-9)] hover:underline"
-                      >
-                        Get your API key <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                    <Label htmlFor="api-key">API key</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="api-key">API key</Label>
+                      {keyLink && (
+                        <a
+                          href={keyLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-[var(--accent-amber-9)] hover:underline"
+                        >
+                          Get your API key <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
                     <Input
                       id="api-key"
                       type="password"
