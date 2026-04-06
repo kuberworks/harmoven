@@ -134,6 +134,13 @@ export function useRunStream(runId: string) {
     let reconnectTimer: ReturnType<typeof setTimeout>
     let destroyed = false
     let attempt = 0
+    // Set to true when a `completed` event is received.
+    // Prevents onerror from triggering a reconnect+RESET cascade when the browser
+    // fires onerror after a client-side es.close() (Firefox does this).
+    // The cascade causes `stream.run` to reset to null, the UI to fall back to
+    // `initialRun` (RUNNING), and the 'result' tab to disappear while the user
+    // is looking at it (because the tab is conditionally rendered on COMPLETED).
+    let completedClean = false
 
     function connect() {
       if (destroyed) return
@@ -156,12 +163,17 @@ export function useRunStream(runId: string) {
           // Keep listening on FAILED — a user may restart a failed node, which pushes
           // new state_change events that need to reach the client.
           if (payload.type === 'completed') {
+            completedClean = true
             es.close()
           }
         } catch { /* malformed SSE frame — skip */ }
       }
 
       es.onerror = () => {
+        // If we intentionally closed after `completed`, ignore the onerror that
+        // Firefox (and occasionally other browsers) fire on es.close() — we don't
+        // want to trigger RESET + reconnect for a cleanly finished run.
+        if (completedClean) return
         dispatch({ type: 'ERROR' })
         es.close()
         if (!destroyed) {
