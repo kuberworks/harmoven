@@ -159,8 +159,12 @@ export async function peekSetupToken(): Promise<string | null> {
  */
 export async function maybeGenerateSetupToken(): Promise<void> {
   const { db } = await import('@/lib/db/client')
-  const count = await db.user.count()
-  if (count > 0) return   // setup already complete — no token needed
+  // Check SystemSetting rather than user.count() so that bootstrap seed users
+  // (created by `npm run db:seed`) do not suppress token generation.
+  // The wizard writes 'setup.wizard_complete' = 'true' only after the operator
+  // has fully completed the first-run form — until then, a token must be issued.
+  const setting = await db.systemSetting.findUnique({ where: { key: 'setup.wizard_complete' } })
+  if (setting?.value === 'true') return   // setup already complete — no token needed
   generateSetupToken()
 }
 
