@@ -790,15 +790,21 @@ export class CustomExecutor implements IExecutionEngine {
         payload:        output.handoffOut,
       })
 
-      // Update node with output + cost
+      // Update node with output + cost + resolved LLM model
       await this.db.node.update({
         where: { id: node.id },
         data: {
-          handoff_out: output.handoffOut,
-          cost_usd: output.costUsd,
-          tokens_in: output.tokensIn,
-          tokens_out: output.tokensOut,
-          completed_at: new Date(),
+          handoff_out:    output.handoffOut,
+          cost_usd:       output.costUsd,
+          tokens_in:      output.tokensIn,
+          tokens_out:     output.tokensOut,
+          completed_at:   new Date(),
+          // Write the resolved model string (e.g. "claude-opus-4-5-20251001") so the
+          // run detail UI can display which model executed this node.
+          ...(output.llm_model ? {
+            llm_profile_id:  output.llm_model,
+            llm_assigned_at: new Date(),
+          } : {}),
         },
       })
 
@@ -952,13 +958,16 @@ export class CustomExecutor implements IExecutionEngine {
         type: 'node_snapshot',
         node_id: node.node_id ?? node.id,
         data: {
-          status:      'COMPLETED',
-          cost_usd:    output.costUsd,
-          tokens_in:   output.tokensIn,
-          tokens_out:  output.tokensOut,
-          handoff_out: output.handoffOut,
-          completed_at: new Date().toISOString(),
+          status:         'COMPLETED',
+          cost_usd:       output.costUsd,
+          tokens_in:      output.tokensIn,
+          tokens_out:     output.tokensOut,
+          handoff_out:    output.handoffOut,
+          completed_at:   new Date().toISOString(),
           partial_output: null,
+          // Surface the resolved model string so the run detail UI can display it
+          // without a page reload (NodeState.llm_profile_id in useRunStream).
+          ...(output.llm_model ? { llm_profile_id: output.llm_model } : {}),
         },
       })
     } catch (err) {

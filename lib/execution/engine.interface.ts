@@ -37,6 +37,13 @@ export interface AgentOutput {
   tokensIn: number
   /** Output tokens produced. */
   tokensOut: number
+  /**
+   * The actual model string returned by the LLM provider for this node
+   * (e.g. "claude-opus-4-5-20251001", "gpt-4o-2024-11-20").
+   * Populated by runner.ts via ContextualLLMClient.lastModel.
+   * Written to Node.llm_profile_id so the UI can display it.
+   */
+  llm_model?: string
 }
 
 /**
