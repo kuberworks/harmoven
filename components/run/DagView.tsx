@@ -592,10 +592,16 @@ export function DagView({ dag, nodeStates, onRestartNode, className }: DagViewPr
       {selectedId && (() => {
         const dagNode = dagNodes.find(n => n.id === selectedId)
         if (!dagNode) return null
+        // Optimistically clear error when a restart is in-flight so the user
+        // doesn't keep seeing the stale error message before the SSE event arrives.
+        const rawState = nodeStates[selectedId]
+        const state = restarting.has(selectedId) && rawState
+          ? { ...rawState, error: undefined }
+          : rawState
         return (
           <DetailPanel
             dagNode={dagNode}
-            state={nodeStates[selectedId]}
+            state={state}
             edges={edges}
             allNodes={dagNodes}
             onClose={() => setSelectedId(null)}
