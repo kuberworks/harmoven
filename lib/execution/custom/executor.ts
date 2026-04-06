@@ -851,15 +851,18 @@ export class CustomExecutor implements IExecutionEngine {
               agent_type: pn.agent,
             }))
 
-            // Remap edge IDs; also add edge from PLANNER node to first root plan node.
-            const plannerEdge = { from: node.node_id, to: idRemap.get(plan.dag.nodes.find(pn => pn.dependencies.length === 0)?.node_id ?? '')! }
+            // Remap edge IDs; add edges from PLANNER to ALL root plan nodes (nodes with
+            // no dependencies). The original code only added an edge to the first root,
+            // leaving additional root nodes visually disconnected in the DAG.
             const remappedEdges = plan.dag.edges.map(e => ({
               from: idRemap.get(e.from) ?? e.from,
               to:   idRemap.get(e.to)   ?? e.to,
             }))
-            const newDagEdges = plannerEdge.to
-              ? [plannerEdge, ...remappedEdges]
-              : remappedEdges
+            const rootPlannerEdges = plan.dag.nodes
+              .filter(pn => pn.dependencies.length === 0)
+              .map(pn => ({ from: node.node_id, to: idRemap.get(pn.node_id)! }))
+              .filter(e => e.to)
+            const newDagEdges = [...rootPlannerEdges, ...remappedEdges]
 
             const expandedDag = {
               nodes: [...currentDag.nodes, ...newDagNodes],
