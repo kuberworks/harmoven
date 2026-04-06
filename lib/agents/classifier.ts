@@ -189,14 +189,25 @@ export class IntentClassifier {
     )
 
     let parsed: unknown
+    const content = result.content ?? ''
     try {
-      // Strip markdown code fences (```json ... ``` or ``` ... ```) that some
-      // models emit even when prompted for raw JSON.
-      const stripped = result.content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-      parsed = JSON.parse(stripped)
+      // Attempt 1: strip markdown fences from start/end then parse.
+      let raw = content
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```\s*$/, '')
+        .trim()
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        // Attempt 2: the model may have wrapped JSON in prose — extract the
+        // first {...} block (greedy, handles multi-line JSON objects).
+        const match = raw.match(/\{[\s\S]*\}/)
+        if (!match) throw new Error('no JSON object found in response')
+        parsed = JSON.parse(match[0])
+      }
     } catch {
       throw new Error(
-        `IntentClassifier: LLM returned invalid JSON — ${result.content.slice(0, 200)}`,
+        `IntentClassifier: LLM returned invalid JSON — ${content.slice(0, 300)}`,
       )
     }
 
