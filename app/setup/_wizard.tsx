@@ -130,6 +130,10 @@ export function SetupWizard() {
   const [step, setStep] = useState<Step>(1)
   const [isPending, startTransition] = useTransition()
 
+  // Clear the AutoRefresh retry counter — we reached the wizard, so the token
+  // was found. Ensures a clean state if the user ever returns to /setup.
+  useEffect(() => { sessionStorage.removeItem('hv_setup_retries') }, [])
+
   const [form, setForm] = useState<FormState>({
     orgName: '',
     deploymentMode: 'docker',
@@ -487,25 +491,40 @@ export function SetupWizard() {
 }
 
 // ── Auto-refresh helper ───────────────────────────────────────────────────────
-// Retries the Server Component render every 1.5 s so peekSetupToken() is
-// re-evaluated once instrumentation.ts has finished generating the token.
-// After MAX_RETRIES (≈ 7.5 s) without success, shows manual instructions
-// instead of looping forever.
+// Retries the page load every 1.5 s so the Server Component re-runs and
+// peekSetupToken() is re-evaluated once instrumentation.ts has finished.
+//
+// WHY window.location.reload() instead of router.refresh():
+//   router.refresh() unmounts + remounts this component on each call, resetting
+//   useState(0) back to 0 — the MAX_RETRIES guard never fires → infinite loop.
+//   A full page reload preserves sessionStorage, so the retry count survives
+//   across reloads and the cap actually works.
+//
+// WHY NOT router.refresh() for the redirect:
+//   redirect() in a Server Component during router.refresh() is not guaranteed
+//   to trigger a client navigation. A full reload lets the browser follow the
+//   HTTP redirect natively.
 
 const MAX_RETRIES = 5
+const RETRY_KEY   = 'hv_setup_retries'
 
 export function AutoRefresh() {
-  const router = useRouter()
-  const [retries, setRetries] = useState(0)
+  const [retries] = useState(() => {
+    if (typeof window === 'undefined') return 0
+    return parseInt(sessionStorage.getItem(RETRY_KEY) ?? '0', 10)
+  })
 
   useEffect(() => {
-    if (retries >= MAX_RETRIES) return
+    if (retries >= MAX_RETRIES) {
+      sessionStorage.removeItem(RETRY_KEY)
+      return
+    }
     const t = setTimeout(() => {
-      setRetries(r => r + 1)
-      router.refresh()
+      sessionStorage.setItem(RETRY_KEY, String(retries + 1))
+      window.location.reload()
     }, 1500)
     return () => clearTimeout(t)
-  }, [router, retries])
+  }, [retries])
 
   if (retries < MAX_RETRIES) return null
 
