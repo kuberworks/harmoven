@@ -107,6 +107,14 @@ export class InMemoryRunStore implements ExecutorDb {
       const max = existing.reduce((m, h) => Math.max(m, h.sequence_number ?? 0), 0)
       return { _max: { sequence_number: existing.length > 0 ? max : null } }
     },
+    createAtomic: async (data: { run_id: string; source_agent: string; source_node_id: string | null | undefined; target_agent: string; payload: unknown }) => {
+      // In-memory: no concurrency in tests, compute sequence_number inline.
+      const existing = this._handoffs.filter(
+        (h) => typeof h === 'object' && h !== null && (h as Record<string, unknown>).run_id === data.run_id,
+      )
+      const max = existing.reduce((m, h) => Math.max(m as number, Number((h as Record<string, unknown>).sequence_number ?? 0)), 0)
+      this._handoffs.push({ ...data, sequence_number: (max as number) + 1 })
+    },
   }
 
   humanGate = {

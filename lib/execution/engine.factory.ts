@@ -32,9 +32,39 @@ import { projectEventBus as _defaultEventBus } from '@/lib/events/project-event-
  */
 class PrismaExecutorDb implements ExecutorDb {
   get run()       { return _prismaDb.run       as unknown as ExecutorDb['run'] }
-  get handoff()   { return _prismaDb.handoff   as unknown as ExecutorDb['handoff'] }
   get humanGate() { return _prismaDb.humanGate as unknown as ExecutorDb['humanGate'] }
   get auditLog()  { return _prismaDb.auditLog  as unknown as ExecutorDb['auditLog'] }
+
+  get handoff(): ExecutorDb['handoff'] {
+    return {
+      create:    (args)  => (_prismaDb.handoff.create    as Function)(args),
+      aggregate: (args)  => (_prismaDb.handoff.aggregate as Function)(args),
+      /**
+       * Atomic handoff insertion using a PostgreSQL advisory lock.
+       * pg_advisory_xact_lock(hashtext(run_id)) serializes all concurrent handoff
+       * inserts for the same run within the same transaction — eliminating the
+       * sequence_number unique-constraint race condition without a schema change.
+       * The lock is automatically released when the transaction commits or rolls back.
+       */
+      createAtomic: async (data) => {
+        await _prismaDb.$transaction(async (tx) => {
+          // Serialize all handoff inserts for this run_id using an advisory lock.
+          await tx.$executeRawUnsafe(
+            'SELECT pg_advisory_xact_lock(hashtext($1))',
+            data.run_id,
+          )
+          const maxSeq = await (tx.handoff.aggregate as Function)({
+            where: { run_id: data.run_id },
+            _max: { sequence_number: true },
+          }) as { _max: { sequence_number: number | null } }
+          const sequenceNumber = (maxSeq._max.sequence_number ?? 0) + 1
+          await (tx.handoff.create as Function)({
+            data: { ...data, sequence_number: sequenceNumber },
+          })
+        })
+      },
+    }
+  }
 
   get node(): ExecutorDb['node'] {
     return {

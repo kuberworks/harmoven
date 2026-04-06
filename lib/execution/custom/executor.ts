@@ -42,35 +42,17 @@ const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 const POLL_INTERVAL_MS = 100
 
 /**
- * Insert a Handoff row with an atomic sequence_number by reading MAX+1 from the DB,
- * retrying up to 3 times on a unique-constraint collision (P2002).
- *
- * The MAX aggregate approach is not fully serializable under high concurrency, but
- * the retry loop handles the rare race without requiring raw SQL or advisory locks.
- * In practice parallel agent completion racing is uncommon; retrying once is enough.
+ * Insert a Handoff row with an atomically computed sequence_number.
+ * Delegates to db.handoff.createAtomic() which uses a PostgreSQL advisory lock
+ * (in production) or an in-memory stub (in tests) to guarantee that two concurrent
+ * node completions for the same run never produce duplicate sequence numbers.
+ * This eliminates the P2002 unique-constraint error entirely.
  */
-async function createHandoffWithRetry(
+async function createHandoffAtomic(
   db: import('@/lib/execution/engine.interface').ExecutorDb,
   data: { run_id: string; source_agent: string; source_node_id: string | null | undefined; target_agent: string; payload: unknown },
-  maxRetries = 3,
 ): Promise<void> {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const maxSeq = await db.handoff.aggregate({
-      where: { run_id: data.run_id },
-      _max: { sequence_number: true },
-    })
-    const sequenceNumber = (maxSeq._max.sequence_number ?? 0) + 1
-    try {
-      await db.handoff.create({ data: { ...data, sequence_number: sequenceNumber } })
-      return
-    } catch (err: unknown) {
-      // P2002 = unique constraint — another concurrent node grabbed the same sequence number.
-      // Re-read MAX and retry.
-      const isPrismaUnique = typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'P2002'
-      if (isPrismaUnique && attempt < maxRetries - 1) continue
-      throw err
-    }
-  }
+  await db.handoff.createAtomic(data)
 }
 
 // ─── CustomExecutor ───────────────────────────────────────────────────────────
@@ -432,7 +414,7 @@ export class CustomExecutor implements IExecutionEngine {
       case 'accept_partial': {
         // Promote partial_output to the final handoff_out; mark node COMPLETED.
         const partialContent = node.partial_output ?? ''
-        await createHandoffWithRetry(this.db, {
+        await createHandoffAtomic(this.db, {
           run_id:         runId,
           source_agent:   node.agent_type,
           source_node_id: nodeId,
@@ -762,8 +744,8 @@ export class CustomExecutor implements IExecutionEngine {
         }
       })
 
-      // Store handoff (immutable) — atomic MAX+1 with retry on collision
-      await createHandoffWithRetry(this.db, {
+      // Store handoff (immutable) — advisory lock guarantees no sequence_number collision
+      await createHandoffAtomic(this.db, {
         run_id:         runId,
         source_agent:   node.agent_type,
         source_node_id: node.node_id ?? null,

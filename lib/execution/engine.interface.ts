@@ -59,6 +59,16 @@ export interface ExecutorDb {
   handoff: {
     create(args: { data: unknown }): Promise<unknown>
     aggregate(args: { where: { run_id: string }; _max: { sequence_number: true } }): Promise<{ _max: { sequence_number: number | null } }>
+    /** Atomically compute and insert the next sequence_number without a race condition.
+     *  Implementations must guarantee that two concurrent calls for the same run_id
+     *  never produce duplicate sequence numbers (e.g. via advisory lock or a mutex). */
+    createAtomic(data: {
+      run_id: string
+      source_agent: string
+      source_node_id: string | null | undefined
+      target_agent: string
+      payload: unknown
+    }): Promise<void>
   }
   humanGate: {
     create(args: { data: unknown }): Promise<{ id: string }>
