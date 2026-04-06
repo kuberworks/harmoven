@@ -915,7 +915,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
             {run.status === 'COMPLETED' && (
               <TabsContent value="result">
-                <ResultTab nodes={nodes} dag={initialRun.dag} />
+                <ResultTab nodes={nodes} dag={run.dag} />
               </TabsContent>
             )}
 
@@ -935,7 +935,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
             <TabsContent value="dag">
               <DagView
-                dag={initialRun.dag}
+                dag={run.dag}
                 nodeStates={Object.fromEntries(
                   nodes.map(n => [n.node_id, {
                     status:          n.status,
@@ -1054,7 +1054,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               )}
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">DAG nodes</span>
-                <span className="font-mono">{initialRun.dag.nodes.length}</span>
+                <span className="font-mono">{run.dag.nodes.length}</span>
               </div>
             </CardContent>
           </Card>
