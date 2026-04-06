@@ -59,9 +59,8 @@ export interface ExecutorDb {
   handoff: {
     create(args: { data: unknown }): Promise<unknown>
     aggregate(args: { where: { run_id: string }; _max: { sequence_number: true } }): Promise<{ _max: { sequence_number: number | null } }>
-    /** Atomically compute and insert the next sequence_number without a race condition.
-     *  Implementations must guarantee that two concurrent calls for the same run_id
-     *  never produce duplicate sequence numbers (e.g. via advisory lock or a mutex). */
+    /** Insert a handoff row. sequence_number is assigned atomically by the DB SEQUENCE
+     *  (@default(autoincrement())); callers must NOT supply it. */
     createAtomic(data: {
       run_id: string
       source_agent: string
