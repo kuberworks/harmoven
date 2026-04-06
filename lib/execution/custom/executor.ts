@@ -779,6 +779,10 @@ export class CustomExecutor implements IExecutionEngine {
           _lastChunkEmit = now
           this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { partial_output: _partialBuffer } })
         }
+      }, (model) => {
+        // Emit the resolved model as soon as the first LLM call responds so the
+        // run detail UI shows the model while the node is still RUNNING.
+        this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { llm_profile_id: model } })
       })
 
       // Store handoff (immutable) — advisory lock guarantees no sequence_number collision

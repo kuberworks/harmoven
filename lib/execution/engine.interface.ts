@@ -134,15 +134,20 @@ export interface NodeRow {
  * In production: calls IAgentRunner which builds context, calls ILLMClient.
  * In tests: replaced by MockAgentRunner which resolves immediately.
  *
- * @param onChunk  Optional streaming callback. Called for every text chunk
- *                 produced by the LLM. The executor accumulates chunks and
- *                 flushes to Node.partial_output every 5 s (spec §DoD partial_output).
+ * @param onChunk          Optional streaming callback. Called for every text chunk
+ *                         produced by the LLM. The executor accumulates chunks and
+ *                         flushes to Node.partial_output every 5 s (spec §DoD partial_output).
+ * @param onModelResolved  Optional callback fired once the first LLM call resolves
+ *                         and the model string is known. The executor uses this to
+ *                         emit a node_snapshot SSE event so the UI can display the
+ *                         model while the node is still RUNNING (not only on completion).
  */
 export type AgentRunnerFn = (
-  node:      NodeRow,
-  handoffIn: unknown,
-  signal:    AbortSignal,
-  onChunk?:  (chunk: string) => void,
+  node:             NodeRow,
+  handoffIn:        unknown,
+  signal:           AbortSignal,
+  onChunk?:         (chunk: string) => void,
+  onModelResolved?: (model: string) => void,
 ) => Promise<AgentOutput>
 
 /**
