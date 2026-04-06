@@ -85,8 +85,13 @@ async function fetchSetupRequired(base: string): Promise<boolean> {
     const res = await fetch(`${base}/api/auth/setup-status`)
     if (res.ok) {
       const data = await res.json() as { setup_required?: boolean }
-      setupCache = { setup_required: data.setup_required ?? false, until: now + 60_000 }
-      return setupCache.setup_required
+      const setupRequired = data.setup_required ?? false
+      // Only cache when setup is complete — while setup is required, the state
+      // can change at any moment (wizard in progress) so we must not cache it.
+      if (!setupRequired) {
+        setupCache = { setup_required: false, until: now + 60_000 }
+      }
+      return setupRequired
     }
   } catch { /* ignore — assume setup complete to fail safe */ }
   return false

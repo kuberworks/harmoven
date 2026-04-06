@@ -39,9 +39,10 @@ const SetupAdminBody = z.object({
 
 export async function POST(req: NextRequest) {
   // ── Double-setup guard ──────────────────────────────────────────────────────
-  // If any user already exists, setup is complete — reject to prevent takeover.
-  const userCount = await db.user.count()
-  if (userCount > 0) {
+  // Check SystemSetting rather than user.count() so that bootstrap seed users
+  // (created by `npm run db:seed`) do not prematurely seal the wizard.
+  const existingSetting = await db.systemSetting.findUnique({ where: { key: 'setup.wizard_complete' } })
+  if (existingSetting?.value === 'true') {
     return NextResponse.json(
       { error: 'Setup already complete. Use Admin settings to manage users.' },
       { status: 409 },
@@ -133,6 +134,19 @@ export async function POST(req: NextRequest) {
     }, 'setup_wizard')
   } catch (err) {
     console.warn('[setup/admin] Failed to write org config to orchestrator.yaml (non-fatal):', err)
+  }
+
+  // ── Seal the wizard ─────────────────────────────────────────────────────────
+  // Write setup.wizard_complete so subsequent requests to /api/auth/setup-status
+  // return setup_required: false, and the middleware redirects /setup → /login.
+  try {
+    await db.systemSetting.upsert({
+      where:  { key: 'setup.wizard_complete' },
+      create: { key: 'setup.wizard_complete', value: 'true', updated_by: userId },
+      update: { value: 'true', updated_by: userId },
+    })
+  } catch (err) {
+    console.warn('[setup/admin] Failed to write setup.wizard_complete (non-fatal):', err)
   }
 
   return NextResponse.json({ ok: true }, { status: 201 })
