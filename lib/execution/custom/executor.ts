@@ -678,6 +678,16 @@ export class CustomExecutor implements IExecutionEngine {
       return
     }
 
+    // Claim this node synchronously — BEFORE the first await — so the execution loop
+    // never double-launches the same node across two iterations.  Without this guard,
+    // a slow DB round-trip in the first executeNode() invocation could keep the node
+    // in PENDING status long enough for the loop to fire a second one, producing two
+    // concurrent agent calls and duplicate handoff inserts.
+    // JS is single-threaded so this check+add is atomic w.r.t. the event loop.
+    if (this._runningNodeIds.has(node.id)) return
+    this._runningNodeIds.add(node.id)
+    this._nodeRunId.set(node.id, runId)
+
     // Collect handoff inputs from upstream nodes
     const nodes = await this.db.node.findMany({ where: { run_id: runId } })
     const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
@@ -692,8 +702,6 @@ export class CustomExecutor implements IExecutionEngine {
       data: { started_at: nodeStartedAt, last_heartbeat: nodeStartedAt },
     })
     this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { started_at: nodeStartedAt.toISOString() } })
-    this._runningNodeIds.add(node.id)
-    this._nodeRunId.set(node.id, runId)
 
     // Start heartbeat — keeps last_heartbeat fresh so orphan detection ignores this node.
     this._heartbeat.start(node.id, async () => {
