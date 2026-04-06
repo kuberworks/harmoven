@@ -265,12 +265,22 @@ export class Planner {
         )
 
         let parsed: unknown
+        const content = result.content ?? ''
         try {
-          const stripped = result.content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-          parsed = JSON.parse(stripped)
+          let raw = content
+            .replace(/^```(?:json)?\s*/i, '')
+            .replace(/\s*```\s*$/, '')
+            .trim()
+          try {
+            parsed = JSON.parse(raw)
+          } catch {
+            const match = raw.match(/\{[\s\S]*\}/)
+            if (!match) throw new Error('no JSON object found in response')
+            parsed = JSON.parse(match[0])
+          }
         } catch {
           throw new Error(
-            `Planner: LLM returned invalid JSON — ${result.content.slice(0, 200)}`,
+            `Planner: LLM returned invalid JSON — ${content.slice(0, 300)}`,
           )
         }
 
