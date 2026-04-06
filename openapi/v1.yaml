@@ -2265,6 +2265,151 @@ paths:
                     type: boolean
                     description: "True if at least one user account exists."
 
+  /setup/admin:
+    post:
+      operationId: setupAdmin
+      summary: Create initial admin account (first-run wizard)
+      description: |
+        Public endpoint (no auth required). Creates the first `instance_admin` user
+        and persists organization config to `orchestrator.yaml`.
+
+        **Guard:** Returns `409` if any user already exists (`setup_complete = true`).
+        This route is self-sealing — it cannot be called after setup is complete,
+        preventing privilege-escalation via double-setup.
+
+        The created account has `emailVerified: true` to allow immediate login
+        without requiring a mail server during initial setup.
+      security: []
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [org_name, deployment_mode, preset, name, email, password]
+              additionalProperties: false
+              properties:
+                org_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                  description: "Organization name — written to `orchestrator.yaml` `organization.name`."
+                deployment_mode:
+                  type: string
+                  enum: [docker, personal]
+                  description: "Deployment mode selected in the wizard (cosmetic; does not affect engine behaviour)."
+                preset:
+                  type: string
+                  enum: [small_business, enterprise, developer]
+                  description: "Org preset — written to `orchestrator.yaml` `organization.preset`."
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                  description: "Admin user full name."
+                email:
+                  type: string
+                  format: email
+                  maxLength: 255
+                  description: "Admin user email address."
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+                  description: "Admin password (Argon2id hashed server-side). Min 12 characters."
+      responses:
+        '201':
+          description: "Admin account created successfully."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        '409':
+          description: "Setup already complete — a user already exists."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /setup/llm-verify:
+    post:
+      operationId: setupLlmVerify
+      summary: Verify LLM provider API key (first-run wizard)
+      description: |
+        Public endpoint (no auth required). Makes a minimal non-destructive test
+        call to the selected LLM provider to verify the API key is valid.
+
+        **Does not store the key.** Returns the name of the environment variable
+        to set in order to activate the provider (`env_var_hint`).
+
+        **Guard:** Returns `409` if any user already exists (`setup_complete = true`).
+
+        Supported providers:
+        - `anthropic` — calls `models.list()` (Anthropic SDK, 0 tokens)
+        - `openai` — calls `models.list()` (OpenAI SDK, 0 tokens)
+        - `gemini` — calls `generateContent` with 1 token (Google GenAI SDK)
+        - `ollama` — pings `http://localhost:11434/api/tags` (no key required)
+      security: []
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              additionalProperties: false
+              properties:
+                provider:
+                  type: string
+                  enum: [anthropic, openai, gemini, ollama]
+                api_key:
+                  type: string
+                  maxLength: 256
+                  description: "API key for the provider. Required for all providers except `ollama`."
+      responses:
+        '200':
+          description: "Provider connection verified."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  provider:
+                    type: string
+                    example: anthropic
+                  env_var_hint:
+                    type: string
+                    description: "Name of the environment variable to set for this provider."
+                    example: ANTHROPIC_API_KEY
+                  message:
+                    type: string
+                    description: "Human-readable instructions."
+        '400':
+          description: "Provider connection failed (invalid key, wrong region, network error)."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: "Setup already complete."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
   /instance/policy:
     get:
       operationId: getInstancePolicy

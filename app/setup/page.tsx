@@ -29,7 +29,7 @@ interface StepState {
   adminEmail: string
   adminPassword: string
   // Step 3
-  llmProvider: 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'other'
+  llmProvider: 'anthropic' | 'openai' | 'gemini' | 'ollama'
   // Step 4
   apiKey: string
   verified: boolean
@@ -395,7 +395,7 @@ export default function SetupPage() {
                 </div>
               ) : (
                 <form onSubmit={handleVerify} className="space-y-3 animate-fade-in">
-                  {form.llmProvider !== 'ollama' && (
+                  {(form.llmProvider as string) !== 'ollama' && (
                     <>
                       {keyLink && (
                         <a
@@ -415,13 +415,13 @@ export default function SetupPage() {
                           placeholder="sk-ant-…"
                           value={form.apiKey}
                           onChange={e => update('apiKey', e.target.value)}
-                          required
+                        required
                           autoComplete="off"
                         />
                       </div>
                     </>
                   )}
-                  {form.llmProvider === 'ollama' && (
+                  {(form.llmProvider as string) === 'ollama' && (
                     <p className="text-sm text-muted-foreground">
                       Ollama runs locally — make sure it's running on <code className="font-mono text-[var(--text-code)]">localhost:11434</code>.
                     </p>

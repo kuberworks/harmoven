@@ -40,6 +40,9 @@ const PUBLIC_PATHS = [
   // Non-sensitive instance policy (mfa_required_for_admin flag) — read by the middleware
   // itself in parallel with get-session. Must be public to avoid a recursive auth loop.
   '/api/instance/policy',
+  // First-run setup wizard API routes — public because no admin exists yet.
+  // Both routes self-seal with a 409 once setup_complete = true.
+  '/api/setup',
 ]
 
 /**
