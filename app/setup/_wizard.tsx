@@ -516,15 +516,20 @@ export function AutoRefresh() {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    const stored = parseInt(sessionStorage.getItem(RETRY_KEY) ?? '0', 10)
-    setRetries(stored)
+    const stored = sessionStorage.getItem(RETRY_KEY)
+    // 'exhausted' sentinel means we already tried MAX_RETRIES times and the
+    // token was never available. Show the fallback immediately without retrying.
+    setRetries(stored === 'exhausted' ? MAX_RETRIES : parseInt(stored ?? '0', 10))
     setMounted(true)
   }, [])
 
   useEffect(() => {
     if (!mounted) return
     if (retries >= MAX_RETRIES) {
-      sessionStorage.removeItem(RETRY_KEY)
+      // Mark as exhausted — do NOT removeItem here.
+      // Removing the key would allow a manual page refresh to restart the loop.
+      // The key is cleared only by SetupWizard (token successfully received).
+      sessionStorage.setItem(RETRY_KEY, 'exhausted')
       return
     }
     const t = setTimeout(() => {
