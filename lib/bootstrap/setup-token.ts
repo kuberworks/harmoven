@@ -135,7 +135,25 @@ export function generateSetupToken(): void {
  *   - random mode:  32-char lowercase hex string
  */
 export async function peekSetupToken(): Promise<string | null> {
-  if (state.consumed) return null
+  // If the token was consumed in-process but the DB was reset without a server
+  // restart (common in dev), setup.wizard_complete won't exist — we must allow
+  // regeneration.  Re-check the DB before giving up.
+  if (state.consumed) {
+    try {
+      const { db } = await import('@/lib/db/client')
+      const setting = await db.systemSetting.findUnique({ where: { key: 'setup.wizard_complete' } })
+      if (setting?.value !== 'true') {
+        // DB was reset — clear in-memory state so a new token can be generated.
+        state.consumed = false
+        state.token    = null
+        state.envRaw   = null
+      } else {
+        return null
+      }
+    } catch {
+      return null
+    }
+  }
   if (state.envRaw !== null) return state.envRaw
   if (state.token  !== null) return state.token.toString('hex')
   // Belt-and-suspenders: check process.env cache in case webpack created
