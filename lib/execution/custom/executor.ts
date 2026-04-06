@@ -362,6 +362,7 @@ export class CustomExecutor implements IExecutionEngine {
             interrupted_by: null,
             partial_output: null,
             partial_updated_at: null,
+            error: null,
             metadata: { ...meta, resume_context: gate.edited_partial, patch: gate.patch ?? null },
           },
         })
@@ -429,6 +430,7 @@ export class CustomExecutor implements IExecutionEngine {
             completed_at: new Date(),
             interrupted_at: null,
             interrupted_by: null,
+            error: null,
           },
         })
         await this.db.auditLog.create({
