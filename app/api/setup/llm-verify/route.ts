@@ -25,19 +25,26 @@ import { headers }                   from 'next/headers'
 import { z }                         from 'zod'
 import { db }                        from '@/lib/db/client'
 import { auth }                      from '@/lib/auth'
-import { validateOllamaUrl }         from '@/lib/security/ssrf-protection'
+import { validateOllamaUrl, validateLLMBaseUrl } from '@/lib/security/ssrf-protection'
 import { ValidationError }           from '@/lib/utils/input-validation'
 import { patchOrchestratorYaml }     from '@/lib/config-git/orchestrator-config'
 
 // ─── Validation ────────────────────────────────────────────────────────────────
 
 const VerifyBody = z.object({
-  provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama']),
-  // api_key is optional for Ollama (no key needed — local connection only)
+  provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama', 'litellm']),
+  // api_key is optional for Ollama (no key needed) and litellm (endpoint may not require auth)
   api_key: z.string().max(256).optional(),
   // ollama_url overrides OLLAMA_BASE_URL env var for this verification call.
   // Validated server-side with validateOllamaUrl() — not stored.
   ollama_url: z.string().max(512).optional(),
+  // litellm_url: base URL for OpenAI-compatible providers (SSRF-validated before use)
+  litellm_url: z.string().max(512).optional(),
+  // For litellm: user-assigned model → tier mappings — saved as LlmProfile rows
+  models: z.array(z.object({
+    id:   z.string().min(1).max(200),
+    tier: z.enum(['fast', 'balanced', 'powerful']),
+  })).max(50).optional(),
 }).strict()
 
 // ─── Per-provider verification ────────────────────────────────────────────────
@@ -67,6 +74,16 @@ async function verifyGemini(apiKey: string): Promise<void> {
   })
 }
 
+/** Minimal test: call /models on an OpenAI-compatible endpoint. */
+async function verifyLiteLLM(litellmUrl: string, apiKey?: string): Promise<void> {
+  const base = litellmUrl.replace(/\/+$/, '')
+  const res = await fetch(`${base}/models`, {
+    headers: apiKey?.trim() ? { Authorization: `Bearer ${apiKey}` } : {},
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!res.ok) throw new Error(`Endpoint returned HTTP ${res.status}`)
+}
+
 /**
  * Minimal test: ping Ollama's /api/tags endpoint.
  *
@@ -90,6 +107,7 @@ const ENV_VAR_HINT: Record<string, string> = {
   openai:    'OPENAI_API_KEY',
   gemini:    'GOOGLE_API_KEY',
   ollama:    '(no key needed)',
+  litellm:   'LITELLM_API_KEY (set if needed)',
 }
 
 // ─── Provider → default profiles_active mapping ──────────────────────────────
@@ -124,11 +142,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { provider, api_key, ollama_url } = parsed.data
+  const { provider, api_key, ollama_url, litellm_url, models } = parsed.data
 
-  // api_key is required for non-Ollama providers
-  if (provider !== 'ollama' && !api_key?.trim()) {
+  // api_key is required for classic cloud providers (not Ollama or custom LiteLLM endpoints)
+  if (provider !== 'ollama' && provider !== 'litellm' && !api_key?.trim()) {
     return NextResponse.json({ error: 'api_key is required for this provider' }, { status: 422 })
+  }
+
+  // litellm_url is required when provider is 'litellm'
+  if (provider === 'litellm' && !litellm_url?.trim()) {
+    return NextResponse.json({ error: 'litellm_url is required for this provider' }, { status: 422 })
   }
 
   // Validate the Ollama URL before any network call.
@@ -143,6 +166,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Validate the LiteLLM base URL (SSRF guard — blocks private hosts / IMDS).
+  const resolvedLitellmUrl = litellm_url?.trim().replace(/\/+$/, '') || undefined
+  if (provider === 'litellm' && resolvedLitellmUrl) {
+    try {
+      await validateLLMBaseUrl(resolvedLitellmUrl)
+    } catch (err) {
+      const msg = err instanceof ValidationError ? err.message : 'Invalid LiteLLM URL'
+      return NextResponse.json({ error: msg }, { status: 422 })
+    }
+  }
+
   // ── Verify provider connection ──────────────────────────────────────────────
   try {
     const key = api_key?.trim() ?? ''
@@ -150,7 +184,8 @@ export async function POST(req: NextRequest) {
       case 'anthropic': await verifyAnthropic(key);             break
       case 'openai':    await verifyOpenAI(key);                break
       case 'gemini':    await verifyGemini(key);                break
-      case 'ollama':    await verifyOllama(resolvedOllamaUrl);  break
+      case 'ollama':    await verifyOllama(resolvedOllamaUrl);                break
+      case 'litellm':   await verifyLiteLLM(resolvedLitellmUrl!, api_key);  break
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -171,15 +206,61 @@ export async function POST(req: NextRequest) {
       ? (resolvedOllamaUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434')
       : undefined
 
+  // For litellm: save each assigned model as a LlmProfile row (upsert — idempotent).
+  // Profile IDs are derived from the base URL slug + model ID for stability.
+  if (provider === 'litellm' && resolvedLitellmUrl && models?.length) {
+    const urlSlug = resolvedLitellmUrl
+      .replace(/^https?:\/\//, '')
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase()
+      .slice(0, 48)
+    for (const m of models) {
+      const profileId = `custom_${urlSlug}_${m.id}`.slice(0, 128)
+      try {
+        await db.llmProfile.upsert({
+          where:  { id: profileId },
+          update: {},
+          create: {
+            id:                        profileId,
+            provider:                  'openai',
+            model_string:              m.id,
+            tier:                      m.tier,
+            context_window:            8192,
+            cost_per_1m_input_tokens:  0,
+            cost_per_1m_output_tokens: 0,
+            jurisdiction:              'local',
+            trust_tier:                3,
+            task_type_affinity:        [],
+            enabled:                   true,
+            config: {
+              base_url: resolvedLitellmUrl,
+              ...(api_key?.trim() ? { api_key_env: 'LITELLM_API_KEY' } : {}),
+            },
+          },
+        })
+      } catch (err) {
+        console.warn(`[llm-verify] Failed to upsert profile "${profileId}" (non-fatal):`, err)
+      }
+    }
+  }
+
   // Update orchestrator.yaml with the verified provider and its default profiles.
+  // For litellm, custom profiles are already in the DB — only set default_provider.
   // Non-fatal — verification already succeeded; profile update is best-effort.
   try {
-    await patchOrchestratorYaml(
-      { llm: { default_provider: provider as 'anthropic' | 'openai' | 'gemini' | 'ollama', profiles_active: PROVIDER_PROFILES[provider] ?? [] } },
-      'setup:llm-verify',
-    )
+    if (provider === 'litellm') {
+      await patchOrchestratorYaml(
+        { llm: { default_provider: 'litellm' } },
+        'setup:llm-verify',
+      )
+    } else {
+      await patchOrchestratorYaml(
+        { llm: { default_provider: provider as 'anthropic' | 'openai' | 'gemini' | 'ollama', profiles_active: PROVIDER_PROFILES[provider] ?? [] } },
+        'setup:llm-verify',
+      )
+    }
   } catch (err) {
-    console.warn('[llm-verify] Failed to update orchestrator.yaml profiles_active (non-fatal):', err)
+    console.warn('[llm-verify] Failed to update orchestrator.yaml (non-fatal):', err)
   }
 
   return NextResponse.json({
@@ -190,7 +271,11 @@ export async function POST(req: NextRequest) {
     message:
       provider === 'ollama'
         ? `Connection verified. Set OLLAMA_BASE_URL=${effectiveOllamaUrl} in your .env to persist this.`
-        : `Connection verified. Set ${ENV_VAR_HINT[provider]} in your environment to persist this key.`,
+        : provider === 'litellm'
+          ? (api_key?.trim()
+              ? 'Connection verified. Set LITELLM_API_KEY in your environment to persist this key.'
+              : 'Connection verified. Endpoint is accessible without authentication.')
+          : `Connection verified. Set ${ENV_VAR_HINT[provider]} in your environment to persist this key.`,
   })
 }
 
