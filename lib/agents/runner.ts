@@ -113,6 +113,8 @@ class ContextualLLMClient implements ILLMClient {
   totalCostUsd = 0
   totalTokensIn = 0
   totalTokensOut = 0
+  /** Set to the model string returned by the last successful LLM call (e.g. "claude-opus-4-5-20251001"). */
+  lastModel: string | null = null
 
   constructor(
     private readonly inner: ILLMClient,
@@ -124,6 +126,7 @@ class ContextualLLMClient implements ILLMClient {
     this.totalCostUsd   += result.costUsd
     this.totalTokensIn  += result.tokensIn
     this.totalTokensOut += result.tokensOut
+    if (result.model) this.lastModel = result.model
     return result
   }
 
@@ -136,6 +139,7 @@ class ContextualLLMClient implements ILLMClient {
     this.totalCostUsd   += result.costUsd
     this.totalTokensIn  += result.tokensIn
     this.totalTokensOut += result.tokensOut
+    if (result.model) this.lastModel = result.model
     return result
   }
 }
@@ -241,7 +245,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         const input = sanitizeTaskInput(rawInput)
 
         const result = await new IntentClassifier(captureClient).classify(input, signal)
-        return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
+        return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut, llm_model: contextualLlm.lastModel ?? undefined }
       }
 
       // ── PLANNER ─────────────────────────────────────────────────────────────
@@ -262,7 +266,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         const result = await new Planner(captureClient).plan(
           taskInput, classifierResult, node.run_id, signal,
         )
-        return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut }
+        return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut, llm_model: contextualLlm.lastModel ?? undefined }
       }
 
       // ── WRITER ──────────────────────────────────────────────────────────────
@@ -286,6 +290,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           costUsd:   contextualLlm.totalCostUsd,
           tokensIn:  contextualLlm.totalTokensIn,
           tokensOut: contextualLlm.totalTokensOut,
+          llm_model: contextualLlm.lastModel ?? undefined,
         }
       }
 
@@ -305,6 +310,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           costUsd:   contextualLlm.totalCostUsd,
           tokensIn:  contextualLlm.totalTokensIn,
           tokensOut: contextualLlm.totalTokensOut,
+          llm_model: contextualLlm.lastModel ?? undefined,
         }
       }
 
@@ -327,7 +333,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           signal,
         )
 
-        return { handoffOut: result, costUsd: 0, tokensIn: 0, tokensOut: 0 }
+        return { handoffOut: result, costUsd: 0, tokensIn: 0, tokensOut: 0, llm_model: contextualLlm.lastModel ?? undefined }
       }
 
       // ── REPAIR ──────────────────────────────────────────────────────────────
@@ -340,7 +346,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         if (!subpath)  throw new Error('[agentRunner] REPAIR node missing metadata.subpath')
 
         await repairForSubpath(worktree, subpath, contextualLlm, signal)
-        return { handoffOut: { repaired: true, worktree, subpath }, costUsd: 0, tokensIn: 0, tokensOut: 0 }
+        return { handoffOut: { repaired: true, worktree, subpath }, costUsd: 0, tokensIn: 0, tokensOut: 0, llm_model: contextualLlm.lastModel ?? undefined }
       }
 
       // ── CRITICAL_REVIEW ─────────────────────────────────────────────────────
@@ -370,6 +376,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           costUsd:   0,
           tokensIn:  result.meta.tokens_input,
           tokensOut: result.meta.tokens_output,
+          llm_model: contextualLlm.lastModel ?? undefined,
         }
       }
 
