@@ -24,13 +24,30 @@
 import crypto from 'crypto'
 
 // ─── Internal state ───────────────────────────────────────────────────────────
+//
+// IMPORTANT — stored on globalThis, NOT as module-scoped variables.
+//
+// Next.js webpack bundling can load this module as two separate chunk instances:
+// one in the instrumentation context (where generateSetupToken writes the token)
+// and one in the Server Component context (where peekSetupToken reads it).
+// Module-scoped `let` variables are NOT shared between chunks.
+// globalThis IS shared across all chunks in the same Node.js process, so it
+// acts as the single source of truth regardless of which chunk instance runs.
+//
+// Pattern mirrors lib/db/client.ts which uses the same globalThis trick to
+// prevent multiple Prisma client instances under Next.js HMR.
 
-// _token:  used when the token was randomly generated (Buffer, hex-compared).
-// _envRaw: used when HARMOVEN_SETUP_TOKEN was set (raw string, utf8-compared).
-// Exactly one of the two is non-null when a token is active; both null when consumed.
-let _token:   Buffer | null = null
-let _envRaw:  string | null = null
-let _consumed               = false
+interface SetupTokenState {
+  token:    Buffer | null   // random-generated token
+  envRaw:   string | null   // HARMOVEN_SETUP_TOKEN value
+  consumed: boolean
+}
+
+const g = globalThis as unknown as { __hvSetupToken?: SetupTokenState }
+if (!g.__hvSetupToken) {
+  g.__hvSetupToken = { token: null, envRaw: null, consumed: false }
+}
+const state = g.__hvSetupToken
 
 // ─── Minimum-length guard ─────────────────────────────────────────────────────
 
@@ -53,14 +70,14 @@ function isValidEnvToken(t: string): boolean {
 /** Returns the current raw token string (hex for random, literal for env var).
  *  Used only for printing the setup URL — never exposed via HTTP. */
 function currentTokenString(): string {
-  if (_envRaw !== null) return encodeURIComponent(_envRaw)
-  if (_token  !== null) return _token.toString('hex')
+  if (state.envRaw !== null) return encodeURIComponent(state.envRaw)
+  if (state.token  !== null) return state.token.toString('hex')
   return ''
 }
 
 /** Generate the setup token (idempotent — no-op if already generated or consumed). */
 export function generateSetupToken(): void {
-  if (_token !== null || _envRaw !== null || _consumed) return
+  if (state.token !== null || state.envRaw !== null || state.consumed) return
 
   const base = (process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '')
   const bar  = '━'.repeat(62)
@@ -74,7 +91,7 @@ export function generateSetupToken(): void {
       console.warn(`[Harmoven]   Reason: must be ≥${ENV_TOKEN_MIN_LENGTH} printable ASCII characters.`)
       console.warn(`[Harmoven]   Falling back to randomly-generated token.\n`)
     } else {
-      _envRaw = envToken
+      state.envRaw = envToken
       console.log(`\n[Harmoven] ${bar}`)
       console.log(`[Harmoven]  Setup URL: ${base}/setup?token=${currentTokenString()}`)
       console.log(`[Harmoven]  Token source: HARMOVEN_SETUP_TOKEN env var`)
@@ -85,7 +102,7 @@ export function generateSetupToken(): void {
   }
 
   // Default: random 128-bit token
-  _token = crypto.randomBytes(16)
+  state.token = crypto.randomBytes(16)
   console.log(`\n[Harmoven] ${bar}`)
   console.log(`[Harmoven]  Setup URL: ${base}/setup?token=${currentTokenString()}`)
   console.log(`[Harmoven]  Open this URL in your browser to complete first-run setup.`)
@@ -109,9 +126,9 @@ export function generateSetupToken(): void {
  *   - random mode:  32-char lowercase hex string
  */
 export function peekSetupToken(): string | null {
-  if (_consumed) return null
-  if (_envRaw !== null) return _envRaw
-  if (_token  !== null) return _token.toString('hex')
+  if (state.consumed) return null
+  if (state.envRaw !== null) return state.envRaw
+  if (state.token  !== null) return state.token.toString('hex')
   return null
 }
 
@@ -132,36 +149,35 @@ export async function maybeGenerateSetupToken(): Promise<void> {
  * Returns false if the token is wrong, already consumed, or was never generated.
  */
 export function verifyAndConsumeSetupToken(candidate: string): boolean {
-  if (_consumed) return false
+  if (state.consumed) return false
 
   // ── Env-var token path ───────────────────────────────────────────────────────
-  if (_envRaw !== null) {
+  if (state.envRaw !== null) {
     // URL-decode the candidate (the wizard sends encodeURIComponent output via the URL,
     // browser and fetch naturally decode it before reaching the server — but be explicit).
     const decodedCandidate = (() => {
       try { return decodeURIComponent(candidate) } catch { return candidate }
     })()
     const a = Buffer.from(decodedCandidate)
-    const b = Buffer.from(_envRaw)
+    const b = Buffer.from(state.envRaw)
     // timingSafeEqual requires same length — different length = immediate reject.
     if (a.length !== b.length) return false
     const ok = crypto.timingSafeEqual(a, b)
-    if (ok) { _consumed = true; _envRaw = null }
+    if (ok) { state.consumed = true; state.envRaw = null }
     return ok
   }
 
   // ── Random token path (hex) ──────────────────────────────────────────────────
-  if (_token === null) return false
+  if (state.token === null) return false
 
-  const expected     = _token                               // 16 bytes
+  const expected     = state.token                          // 16 bytes
   const candidateBuf = Buffer.from(candidate, 'hex')
   if (candidateBuf.length !== expected.length) return false
 
   const ok = crypto.timingSafeEqual(candidateBuf, expected)
   if (ok) {
-    _consumed = true
-    _token    = null
+    state.consumed = true
+    state.token    = null
   }
   return ok
 }
-
