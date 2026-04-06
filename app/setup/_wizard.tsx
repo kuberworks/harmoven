@@ -23,7 +23,6 @@ type Step = 1 | 2 | 3
 
 interface FormState {
   orgName: string
-  deploymentMode: 'docker' | 'personal'
   adminName: string
   adminEmail: string
   adminPassword: string
@@ -136,7 +135,6 @@ export function SetupWizard() {
 
   const [form, setForm] = useState<FormState>({
     orgName: '',
-    deploymentMode: 'docker',
     adminName: '',
     adminEmail: '',
     adminPassword: '',
@@ -174,7 +172,6 @@ export function SetupWizard() {
         body: JSON.stringify({
           setup_token:     setupToken,
           org_name:        form.orgName,
-          deployment_mode: form.deploymentMode,
           preset:          'small_business',
           name:            form.adminName,
           email:           form.adminEmail,
@@ -244,37 +241,6 @@ export function SetupWizard() {
                   onChange={e => update('orgName', e.target.value)}
                   required
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Deployment mode</Label>
-                {[
-                  { value: 'docker',   label: 'Shared team',  sub: 'Multiple users with role-based access control' },
-                  { value: 'personal', label: 'Personal use', sub: 'Single user — team and RBAC features disabled' },
-                ].map(opt => (
-                  <label
-                    key={opt.value}
-                    className={cn(
-                      'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors duration-150',
-                      form.deploymentMode === opt.value
-                        ? 'border-[var(--accent-amber-9)] bg-[var(--accent-amber-3)]'
-                        : 'border-border bg-surface-hover hover:bg-surface-selected',
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name="deploymentMode"
-                      value={opt.value}
-                      checked={form.deploymentMode === opt.value}
-                      onChange={() => update('deploymentMode', opt.value as 'docker' | 'personal')}
-                      className="mt-0.5 accent-[var(--accent-amber-9)]"
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{opt.label}</div>
-                      <div className="text-xs text-muted-foreground">{opt.sub}</div>
-                    </div>
-                  </label>
-                ))}
               </div>
 
               <Button type="submit" className="w-full">

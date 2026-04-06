@@ -2295,7 +2295,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [setup_token, org_name, deployment_mode, preset, name, email, password]
+              required: [setup_token, org_name, preset, name, email, password]
               additionalProperties: false
               properties:
                 setup_token:
@@ -2309,10 +2309,6 @@ paths:
                   minLength: 1
                   maxLength: 120
                   description: "Organization name — written to `orchestrator.yaml` `organization.name`."
-                deployment_mode:
-                  type: string
-                  enum: [docker, personal]
-                  description: "Deployment mode selected in the wizard (cosmetic; does not affect engine behaviour)."
                 preset:
                   type: string
                   enum: [small_business, enterprise, developer]
