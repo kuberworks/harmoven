@@ -3,10 +3,11 @@
 // app/setup/page.tsx
 // First-run setup wizard — 4 steps: instance config, admin account, LLM provider, verify.
 // Spec: FRONTEND-SDD-PROMPT.md Priority 1, UX.md §4.1.
-// Protected: only accessible if setup not yet complete (middleware checks SETUP_TOKEN or DB flag).
+// Protected: only accessible if setup not yet complete (middleware checks DB flag via /api/auth/setup-status).
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { authClient } from '@/lib/auth-client'
 import { CheckCircle2, Loader2, ExternalLink, ArrowLeft, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -80,7 +81,7 @@ const LLM_PROVIDERS: readonly { value: string; label: string; sublabel: string; 
   { value: 'anthropic', label: 'Anthropic (Claude)', sublabel: 'Recommended — best for most tasks', recommended: true },
   { value: 'openai',    label: 'OpenAI (GPT)',       sublabel: '' },
   { value: 'gemini',    label: 'Google Gemini',      sublabel: 'Free tier available' },
-  { value: 'ollama',    label: 'Ollama (local)',      sublabel: 'Free, private, runs on your machine' },
+  { value: 'ollama',    label: 'Ollama (local)',      sublabel: 'Free, private — set OLLAMA_BASE_URL if not on the same host' },
 ]
 
 const PROVIDER_KEY_LINK: Record<string, string> = {
@@ -153,18 +154,22 @@ export default function SetupPage() {
         toast({ variant: 'destructive', title: 'Setup failed', description: (body as { error?: string }).error ?? 'Could not create admin account' })
         return
       }
+      // Establish a session immediately — llm-verify (Step 4) requires an
+      // instance_admin session because userCount > 0 after this point.
+      const signIn = await authClient.signIn.email({ email: form.adminEmail, password: form.adminPassword })
+      if (signIn.error) {
+        // Non-fatal: user was created but sign-in failed. They can still
+        // complete setup but llm-verify may fail; toast a warning.
+        console.warn('[setup] Auto sign-in after admin creation failed:', signIn.error)
+        toast({ variant: 'default', title: 'Account created', description: 'Admin account created. LLM verification may require re-login if it fails.' })
+      }
       setStep(3)
     })
   }
 
   function handleStep3(e: React.FormEvent) {
     e.preventDefault()
-    if (form.llmProvider === 'ollama') {
-      // Ollama needs no API key — skip to confirm step
-      setStep(4)
-    } else {
-      setStep(4)
-    }
+    setStep(4)
   }
 
   function handleVerify(e: React.FormEvent) {
@@ -447,7 +452,7 @@ export default function SetupPage() {
                   )}
                   {(form.llmProvider as string) === 'ollama' && (
                     <p className="text-sm text-muted-foreground">
-                      Ollama runs locally — make sure it's running on <code className="font-mono text-[var(--text-code)]">localhost:11434</code>.
+                      The server will ping Ollama at <code className="font-mono text-[var(--text-code)]">OLLAMA_BASE_URL</code> (defaults to <code className="font-mono text-[var(--text-code)]">localhost:11434</code>). Make sure Ollama is reachable from the Harmoven server.
                     </p>
                   )}
                   <div className="flex gap-2 pt-2">

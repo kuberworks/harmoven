@@ -60,9 +60,13 @@ async function verifyGemini(apiKey: string): Promise<void> {
   })
 }
 
-/** Minimal test: ping Ollama's local API endpoint. */
+/** Minimal test: ping Ollama's API endpoint (respects OLLAMA_BASE_URL env var). */
 async function verifyOllama(): Promise<void> {
-  const res = await fetch('http://localhost:11434/api/tags', {
+  // Use the configured base URL — important for remote Ollama instances.
+  // Falls back to localhost:11434 which only works when Ollama runs on the same
+  // host as the Harmoven server (e.g. personal/desktop deployments).
+  const base = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/$/, '')
+  const res = await fetch(`${base}/api/tags`, {
     signal: AbortSignal.timeout(5000),
   })
   if (!res.ok) throw new Error(`Ollama returned ${res.status}`)
