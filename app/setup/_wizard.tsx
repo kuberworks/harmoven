@@ -509,12 +509,20 @@ const MAX_RETRIES = 5
 const RETRY_KEY   = 'hv_setup_retries'
 
 export function AutoRefresh() {
-  const [retries] = useState(() => {
-    if (typeof window === 'undefined') return 0
-    return parseInt(sessionStorage.getItem(RETRY_KEY) ?? '0', 10)
-  })
+  // Always initialise to 0 so SSR and the first client render produce identical
+  // HTML (return null). sessionStorage is read in useEffect (client-only) and
+  // triggers a state update only after hydration is complete.
+  const [retries, setRetries] = useState(0)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    const stored = parseInt(sessionStorage.getItem(RETRY_KEY) ?? '0', 10)
+    setRetries(stored)
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
     if (retries >= MAX_RETRIES) {
       sessionStorage.removeItem(RETRY_KEY)
       return
@@ -524,9 +532,10 @@ export function AutoRefresh() {
       window.location.reload()
     }, 1500)
     return () => clearTimeout(t)
-  }, [retries])
+  }, [mounted, retries])
 
-  if (retries < MAX_RETRIES) return null
+  // Before hydration or while retrying: render nothing (matches SSR output).
+  if (!mounted || retries < MAX_RETRIES) return null
 
   // Server didn't produce a token after 7.5 s — something is wrong.
   // Fall back to manual instructions.
