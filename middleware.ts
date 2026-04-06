@@ -1,4 +1,4 @@
-// middleware.ts — Next.js edge middleware
+// middleware.ts — Next.js Node.js runtime middleware
 // Session guard: redirects unauthenticated requests to /login.
 // First-run guard: redirects any unauthenticated request to /setup when no admin
 // account exists yet, and redirects /setup to /login once setup is complete.
@@ -19,9 +19,17 @@
 //   If 2FA is enabled on the account but not yet verified in this session,
 //   the middleware redirects to /auth/two-factor (Better Auth built-in page).
 //   This enforces orchestrator.yaml: mfa_required_for_admin: true.
+//
+// PERF: runs in Node.js runtime (not Edge) so it can call auth.api.getSession()
+// and query the DB directly — eliminates the HTTP loopback calls that
+// made every authenticated page request ~30–100 ms slower.
+
+export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { auth } from '@/lib/auth'
+import { db }   from '@/lib/db/client'
 
 /** Paths that do NOT require an authenticated session. */
 const PUBLIC_PATHS = [
@@ -65,55 +73,43 @@ function isApiRoute(pathname: string): boolean {
   return pathname.startsWith('/api/')
 }
 
-/** Shape of the Better Auth get-session response (minimal subset we need). */
-interface BetterAuthSession {
-  user?:    { role?: string; twoFactorEnabled?: boolean }
-  session?: { twoFactorVerified?: boolean }
-}
-
-/** In-memory cache for /api/auth/setup-status — refreshed every 60 s. */
+/** In-memory cache for setup-status — 5 s while pending, 60 s once complete. */
 let setupCache: { setup_required: boolean; until: number } | null = null
 
-/**
- * Fetch setup status with a 60 s in-memory TTL.
- * Returns true when no admin account exists yet (i.e. /setup should be shown).
- */
-async function fetchSetupRequired(base: string): Promise<boolean> {
+/** Check whether the first-run wizard has been completed (direct DB query, cached). */
+async function isSetupRequired(): Promise<boolean> {
   const now = Date.now()
   if (setupCache && now < setupCache.until) return setupCache.setup_required
   try {
-    const res = await fetch(`${base}/api/auth/setup-status`)
-    if (res.ok) {
-      const data = await res.json() as { setup_required?: boolean }
-      const setupRequired = data.setup_required ?? false
-      // Cache duration depends on state:
-      //   - setup complete (stable): 60 s
-      //   - setup required (transient): 5 s — short enough that the wizard
-      //     completion is reflected quickly, long enough to avoid a DB hit on
-      //     every page navigation during the setup flow.
-      setupCache = { setup_required: setupRequired, until: now + (setupRequired ? 5_000 : 60_000) }
-      return setupRequired
-    }
-  } catch { /* ignore — assume setup complete to fail safe */ }
+    const setting = await db.systemSetting.findUnique({ where: { key: 'setup.wizard_complete' } })
+    const setupRequired = setting?.value !== 'true'
+    // Cache duration depends on state:
+    //   - setup complete (stable): 60 s
+    //   - setup required (transient): 5 s — short enough that wizard completion
+    //     is reflected quickly, long enough to avoid a DB hit on every request.
+    setupCache = { setup_required: setupRequired, until: now + (setupRequired ? 5_000 : 60_000) }
+    return setupRequired
+  } catch { /* DB unavailable — assume setup complete to fail safe */ }
   return false
 }
 
-/** In-memory cache for /api/instance/policy — refreshed every 60 s. */
+/** In-memory cache for MFA policy — refreshed every 60 s. */
 let policyCache: { mfa_required_for_admin: boolean; until: number } | null = null
 
-/** Fetch instance policy with a 60 s in-memory TTL to avoid per-request DB overhead. */
-async function fetchPolicy(base: string): Promise<boolean> {
+/** Read the MFA enforcement policy from DB directly (cached 60 s). */
+async function isMfaRequiredForAdmin(): Promise<boolean> {
   const now = Date.now()
   if (policyCache && now < policyCache.until) return policyCache.mfa_required_for_admin
   try {
-    const res = await fetch(`${base}/api/instance/policy`)
-    if (res.ok) {
-      const data = await res.json() as { mfa_required_for_admin?: boolean }
-      policyCache = { mfa_required_for_admin: data.mfa_required_for_admin ?? true, until: now + 60_000 }
-      return policyCache.mfa_required_for_admin
+    const row = await db.systemSetting.findUnique({ where: { key: 'security.mfa_required_for_admin' } })
+    let mfaRequired = true // default: enforce
+    if (row) {
+      try { mfaRequired = JSON.parse(row.value) as boolean } catch { /* keep default */ }
     }
-  } catch { /* ignore — fall back to default */ }
-  return true  // default: enforce MFA
+    policyCache = { mfa_required_for_admin: mfaRequired, until: now + 60_000 }
+    return mfaRequired
+  } catch { /* DB unavailable — fail safe: enforce MFA */ }
+  return true
 }
 
 /**
@@ -127,15 +123,13 @@ const SESSION_COOKIE_NAME = 'better-auth.session_token'
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl
 
-  const authBase = (process.env.AUTH_URL ?? 'http://localhost:3000').replace(/\/$/, '')
-
   // ── First-run guard ──────────────────────────────────────────────────────────
   // If no admin account exists yet, every non-/setup request is redirected to /setup
   // so the wizard runs automatically on first launch.
   // Conversely, once setup is complete, visiting /setup redirects to /login.
   // API routes are exempted — the setup wizard itself calls /api/auth/* and /api/health.
   if (!isApiRoute(pathname)) {
-    const setupRequired = await fetchSetupRequired(authBase)
+    const setupRequired = await isSetupRequired()
     if (setupRequired && pathname !== '/setup' && !pathname.startsWith('/setup/')) {
       return NextResponse.redirect(new URL('/setup', request.url))
     }
@@ -175,34 +169,19 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(loginUrl)
   }
 
-  // Better Auth sets a session cookie; verify it by calling the internal session endpoint.
-  // We call /api/auth/get-session rather than importing the auth instance directly —
-  // middleware runs in the Next.js edge runtime and cannot use Node.js-specific adapters
-  // (PrismaClient / @prisma/adapter-pg require Node.js APIs).
-  //
-  // SECURITY: We build the session URL from the AUTH_URL env variable (a fixed server-
-  // controlled value), NOT from request.url. Using request.url would make this call
-  // vulnerable to SSRF via a forged Host header — an attacker could redirect the session
-  // check to an internal network endpoint. AUTH_URL is set at deploy time and never
-  // influenced by the incoming request.
-  const sessionUrl = `${authBase}/api/auth/get-session`
-
-  // Fetch session + policy in parallel — policy has a 60 s in-memory cache so the
-  // extra HTTP call is only made once per minute per process instance.
-  let sessionRes: Response
+  // Verify the session by calling auth.api.getSession() directly — Node.js runtime
+  // allows importing Prisma and the auth instance, eliminating the HTTP loopback
+  // that previously added ~30–100 ms to every authenticated request.
+  // Retrieve session + MFA policy in parallel (policy is cached 60 s).
+  let sessionData: Awaited<ReturnType<typeof auth.api.getSession>>
   let mfaRequiredByDb: boolean
   try {
-    ;[sessionRes, mfaRequiredByDb] = await Promise.all([
-      fetch(sessionUrl, {
-        headers: {
-          // Forward cookies so Better Auth can read the session token.
-          cookie: request.headers.get('cookie') ?? '',
-        },
-      }),
-      fetchPolicy(authBase),
+    ;[sessionData, mfaRequiredByDb] = await Promise.all([
+      auth.api.getSession({ headers: request.headers }),
+      isMfaRequiredForAdmin(),
     ])
   } catch {
-    // Network / cold-start failure — fail closed.
+    // DB / auth failure — fail closed.
     if (isApiRoute(pathname)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -211,28 +190,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return NextResponse.redirect(loginUrl)
   }
 
-  // A 429 from get-session means the auth rate limit was exhausted (common in dev when
-  // the middleware itself triggers counted calls). Return 503 — not 401 — so clients
-  // can distinguish "not authenticated" from "temporarily unavailable".
-  if (sessionRes.status === 429) {
-    return NextResponse.json(
-      { error: 'Service temporarily unavailable, retry shortly' },
-      { status: 503 },
-    )
-  }
+  if (sessionData !== null && typeof sessionData === 'object') {
+    const body = sessionData as { user?: { id?: string; role?: string; twoFactorEnabled?: boolean }; session?: { twoFactorVerified?: boolean } }
 
-  if (sessionRes.ok) {
-    const body = await sessionRes.json() as BetterAuthSession | null
-
-    // Better Auth returns null when no session exists.
-    if (body === null || typeof body !== 'object') {
-      if (isApiRoute(pathname)) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-      const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('callbackURL', pathname)
-      return NextResponse.redirect(loginUrl)
-    }
     // If the account has 2FA enabled but the current session has not yet completed the
     // 2FA challenge (twoFactorVerified !== true), redirect to the 2FA challenge page.
     // This prevents a session hijack from bypassing MFA by stealing the session cookie
@@ -264,7 +224,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
       if (enforceMfa && body.user?.twoFactorEnabled !== true) {
         console.error(
-          `[harmoven] SECURITY: instance_admin user id="${(body.user as { id?: string }).id ?? 'unknown'}" `
+          `[harmoven] SECURITY: instance_admin user id="${body.user?.id ?? 'unknown'}" `
           + `is accessing the system without 2FA configured — blocking access until 2FA is enabled.`,
         )
         if (!isMfaAllowed(pathname)) {
@@ -280,7 +240,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
         // SEC-L-01: log user id, not email — emails are PII and must not appear in logs.
         console.warn(
           `[harmoven] WARNING: MFA enforcement is DISABLED. `
-          + `instance_admin user id="${(body.user as { id?: string }).id ?? 'unknown'}" `
+          + `instance_admin user id="${body.user?.id ?? 'unknown'}" `
           + `accessed without confirmed 2FA. `
           + (envOverrideDisables ? '(env var override)' : '(DB setting)'),
         )
