@@ -28,7 +28,6 @@ const SetupAdminBody = z.object({
   setup_token:     z.string().min(1),
   // Step 1 fields
   org_name:        z.string().min(1).max(120),
-  deployment_mode: z.enum(['docker', 'personal']),
   preset:          z.enum(['small_business', 'enterprise', 'developer']),
   // Step 2 fields
   name:            z.string().min(1).max(120),
@@ -58,7 +57,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { setup_token, org_name, deployment_mode, preset, name, email, password } = parsed.data
+  const { setup_token, org_name, preset, name, email, password } = parsed.data
 
   // ── Setup token verification ────────────────────────────────────────────────
   // Timing-safe compare; token is consumed (single-use) on success.
@@ -135,8 +134,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.warn('[setup/admin] Failed to write org config to orchestrator.yaml (non-fatal):', err)
   }
-
-  void deployment_mode  // collected for UX only — not persisted (configurable in Admin settings)
 
   return NextResponse.json({ ok: true }, { status: 201 })
 }
