@@ -1,14 +1,14 @@
 'use client'
 
 // app/setup/page.tsx
-// First-run setup wizard — 4 steps: instance config, admin account, LLM provider, verify.
-// Spec: FRONTEND-SDD-PROMPT.md Priority 1, UX.md §4.1.
-// Protected: only accessible if setup not yet complete (middleware checks DB flag via /api/auth/setup-status).
+// First-run setup wizard — 3 steps: instance config, admin account, AI provider + verify.
+// The setup token is embedded in the URL (?token=…) printed in Docker logs.
+// Protected: middleware checks DB flag via /api/auth/setup-status.
 
-import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useTransition, Fragment, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import { CheckCircle2, Loader2, ExternalLink, ArrowLeft, ArrowRight } from 'lucide-react'
+import { CheckCircle2, Loader2, ExternalLink, ArrowLeft, ArrowRight, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,57 +18,81 @@ import { cn } from '@/lib/utils/cn'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Step = 1 | 2 | 3 | 4
+type Step = 1 | 2 | 3
 
-interface StepState {
-  // Setup token — from Docker logs, required before account creation
-  setupToken: string
-  // Step 1
+interface FormState {
   orgName: string
   deploymentMode: 'docker' | 'personal'
-  preset: string
-  // Step 2
   adminName: string
   adminEmail: string
   adminPassword: string
-  // Step 3
+  adminCreated: boolean
   llmProvider: 'anthropic' | 'openai' | 'gemini' | 'ollama'
-  // Step 4
   apiKey: string
   verified: boolean
 }
 
-// ── Step progress bar ─────────────────────────────────────────────────────────
+// ── Password strength ──────────────────────────────────────────────────────────
 
-const STEP_LABELS = ['Instance', 'Admin account', 'AI provider', 'Connect']
+function passwordStrength(pw: string): { bars: number; label: string } {
+  if (!pw) return { bars: 0, label: '' }
+  const score = [
+    pw.length >= 12,
+    pw.length >= 16,
+    /[A-Z]/.test(pw) && /[a-z]/.test(pw),
+    /[0-9]/.test(pw),
+    /[^A-Za-z0-9]/.test(pw),
+  ].filter(Boolean).length
+  const bars = score <= 1 ? 1 : score <= 2 ? 2 : score <= 3 ? 3 : 4
+  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'] as const
+  return { bars, label: labels[bars as 0 | 1 | 2 | 3 | 4] }
+}
+
+function strengthBarColor(bars: number): string {
+  if (bars === 1) return 'bg-red-500'
+  if (bars === 2) return 'bg-orange-400'
+  if (bars === 3) return 'bg-yellow-400'
+  return 'bg-green-500'
+}
+
+// ── Step progress bar ──────────────────────────────────────────────────────────
+
+const STEP_LABELS = ['Instance', 'Admin account', 'AI provider']
 
 function StepProgress({ current }: { current: Step }) {
   return (
-    <div className="mb-8 flex items-center gap-1">
+    <div className="mb-8 flex w-full items-start">
       {STEP_LABELS.map((label, idx) => {
         const stepNum = (idx + 1) as Step
-        const done = stepNum < current
+        const done   = stepNum < current
         const active = stepNum === current
         return (
-          <div key={label} className="flex flex-1 flex-col items-center gap-1">
-            <div
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-150',
-                done   && 'bg-[var(--color-status-completed)] text-white',
-                active && 'bg-[var(--accent-amber-9)] text-black',
-                !done && !active && 'bg-surface-hover text-muted-foreground'
-              )}
-            >
-              {done ? <CheckCircle2 className="h-4 w-4" /> : stepNum}
-            </div>
-            <span className={cn('text-[10px] font-medium', active ? 'text-foreground' : 'text-muted-foreground')}>
-              {label}
-            </span>
-            {/* Connector */}
-            {idx < STEP_LABELS.length - 1 && (
-              <div className="absolute" style={{ display: 'none' }} />
+          <Fragment key={label}>
+            {/* Connector — rendered before each step except the first */}
+            {idx > 0 && (
+              <div
+                className={cn(
+                  'mt-3.5 h-px flex-1 transition-colors duration-300',
+                  idx < current ? 'bg-[var(--color-status-completed)]' : 'bg-border',
+                )}
+              />
             )}
-          </div>
+            <div className="flex flex-col items-center gap-1 px-2">
+              <div
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-150',
+                  done   && 'bg-[var(--color-status-completed)] text-white',
+                  active && 'bg-[var(--accent-amber-9)] text-black',
+                  !done && !active && 'bg-surface-hover text-muted-foreground',
+                )}
+              >
+                {done ? <CheckCircle2 className="h-4 w-4" /> : stepNum}
+              </div>
+              <span className={cn('text-[10px] font-medium whitespace-nowrap', active ? 'text-foreground' : 'text-muted-foreground')}>
+                {label}
+              </span>
+            </div>
+          </Fragment>
         )
       })}
     </div>
@@ -81,7 +105,7 @@ const LLM_PROVIDERS: readonly { value: string; label: string; sublabel: string; 
   { value: 'anthropic', label: 'Anthropic (Claude)', sublabel: 'Recommended — best for most tasks', recommended: true },
   { value: 'openai',    label: 'OpenAI (GPT)',       sublabel: '' },
   { value: 'gemini',    label: 'Google Gemini',      sublabel: 'Free tier available' },
-  { value: 'ollama',    label: 'Ollama (local)',      sublabel: 'Free, private — set OLLAMA_BASE_URL if not on the same host' },
+  { value: 'ollama',    label: 'Ollama (local)',      sublabel: 'Free, private, runs on your machine' },
 ]
 
 const PROVIDER_KEY_LINK: Record<string, string> = {
@@ -91,46 +115,72 @@ const PROVIDER_KEY_LINK: Record<string, string> = {
   ollama:    '',
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── No-token fallback ─────────────────────────────────────────────────────────
 
-export default function SetupPage() {
+function NoTokenScreen() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Open the setup URL</CardTitle>
+        <CardDescription>
+          The setup URL is printed in your Docker logs and includes a one-time security token.
+          Copy and open the full URL — do not paste only the token.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-start gap-2 rounded-lg bg-surface-hover p-3 font-mono text-sm text-foreground">
+          <Terminal className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <span>docker compose logs app | grep &quot;Setup URL&quot;</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The URL looks like{' '}
+          <code className="font-mono text-[var(--text-code)]">http://your-host/setup?token=…</code>.
+          Open it directly in your browser.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Main wizard ───────────────────────────────────────────────────────────────
+
+function SetupWizard() {
   const router = useRouter()
   const { toast } = useToast()
+  const searchParams = useSearchParams()
+  const setupToken = searchParams.get('token') ?? ''
 
   const [step, setStep] = useState<Step>(1)
   const [isPending, startTransition] = useTransition()
 
-  const [form, setForm] = useState<StepState>({
-    setupToken: '',
+  const [form, setForm] = useState<FormState>({
     orgName: '',
     deploymentMode: 'docker',
-    preset: 'small_business',
     adminName: '',
     adminEmail: '',
     adminPassword: '',
+    adminCreated: false,
     llmProvider: 'anthropic',
     apiKey: '',
     verified: false,
   })
 
-  function update<K extends keyof StepState>(key: K, value: StepState[K]) {
+  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm(prev => ({ ...prev, [key]: value }))
   }
 
-  // ── Step handlers ────────────────────────────────────────────────────────
+  // ── Step handlers ─────────────────────────────────────────────────────────
 
   function handleStep1(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.setupToken.trim()) {
-      toast({ variant: 'destructive', title: 'Setup token required', description: 'Find the token in Docker logs: docker compose logs app | grep "SETUP TOKEN"' })
-      return
-    }
     if (!form.orgName.trim()) return
     setStep(2)
   }
 
   function handleStep2(e: React.FormEvent) {
     e.preventDefault()
+    // If admin was already created (e.g. Back was pressed then Next again), skip to step 3.
+    if (form.adminCreated) { setStep(3); return }
     if (form.adminPassword.length < 12) {
       toast({ variant: 'destructive', title: 'Password too short', description: 'Minimum 12 characters required.' })
       return
@@ -140,13 +190,13 @@ export default function SetupPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          setup_token: form.setupToken,
-          org_name: form.orgName,
+          setup_token:     setupToken,
+          org_name:        form.orgName,
           deployment_mode: form.deploymentMode,
-          preset: form.preset,
-          name: form.adminName,
-          email: form.adminEmail,
-          password: form.adminPassword,
+          preset:          'small_business',
+          name:            form.adminName,
+          email:           form.adminEmail,
+          password:        form.adminPassword,
         }),
       })
       if (!res.ok) {
@@ -154,22 +204,15 @@ export default function SetupPage() {
         toast({ variant: 'destructive', title: 'Setup failed', description: (body as { error?: string }).error ?? 'Could not create admin account' })
         return
       }
-      // Establish a session immediately — llm-verify (Step 4) requires an
-      // instance_admin session because userCount > 0 after this point.
+      // Establish a session immediately — llm-verify requires instance_admin because userCount > 0 after this point.
       const signIn = await authClient.signIn.email({ email: form.adminEmail, password: form.adminPassword })
       if (signIn.error) {
-        // Non-fatal: user was created but sign-in failed. They can still
-        // complete setup but llm-verify may fail; toast a warning.
         console.warn('[setup] Auto sign-in after admin creation failed:', signIn.error)
-        toast({ variant: 'default', title: 'Account created', description: 'Admin account created. LLM verification may require re-login if it fails.' })
+        toast({ variant: 'default', title: 'Account created', description: 'Sign-in failed — LLM verification may require re-login if it fails.' })
       }
+      update('adminCreated', true)
       setStep(3)
     })
-  }
-
-  function handleStep3(e: React.FormEvent) {
-    e.preventDefault()
-    setStep(4)
   }
 
   function handleVerify(e: React.FormEvent) {
@@ -178,182 +221,200 @@ export default function SetupPage() {
       const res = await fetch('/api/setup/llm-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: form.llmProvider, api_key: form.apiKey }),
+        body: JSON.stringify({
+          provider: form.llmProvider,
+          api_key: form.apiKey || undefined,
+        }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        toast({ variant: 'destructive', title: 'Connection failed', description: (body as { error?: string }).error ?? 'Could not verify API key' })
+        toast({ variant: 'destructive', title: 'Connection failed', description: (body as { error?: string }).error ?? 'Could not verify provider' })
         return
       }
       update('verified', true)
-      setTimeout(() => router.push('/dashboard'), 1200)
+      router.push('/dashboard')
     })
   }
 
+  const pw      = passwordStrength(form.adminPassword)
   const keyLink = PROVIDER_KEY_LINK[form.llmProvider] ?? ''
 
+  // No token in URL — tell the operator where to find the setup URL.
+  if (!setupToken) return <NoTokenScreen />
+
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-surface-base px-4 py-12">
-      {/* Background glow */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-1/3 top-1/4 h-[500px] w-[500px] rounded-full bg-[var(--accent-amber-3)] opacity-25 blur-[120px]" />
-      </div>
+    <>
+      <StepProgress current={step} />
 
-      {/* Wordmark */}
-      <div className="mb-10 text-center select-none animate-fade-in">
-        <div className="text-3xl font-bold tracking-tight">
-          Harmo<span className="text-[var(--accent-amber-9)]">ven</span>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">AI orchestration platform</p>
-      </div>
+      {/* ── Step 1: Instance config ────────────────────────────── */}
+      {step === 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Welcome to Harmoven</CardTitle>
+            <CardDescription>Configure your instance. Takes about 5 minutes.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleStep1} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="org-name">Organization name</Label>
+                <Input
+                  id="org-name"
+                  placeholder="Acme Corp"
+                  value={form.orgName}
+                  onChange={e => update('orgName', e.target.value)}
+                  required
+                />
+              </div>
 
-      <div className="relative z-10 w-full max-w-[480px] animate-fade-in">
-        <StepProgress current={step} />
+              <div className="space-y-2">
+                <Label>Deployment mode</Label>
+                {[
+                  { value: 'docker',   label: 'Shared team',  sub: 'Multiple users with role-based access control' },
+                  { value: 'personal', label: 'Personal use', sub: 'Single user — team and RBAC features disabled' },
+                ].map(opt => (
+                  <label
+                    key={opt.value}
+                    className={cn(
+                      'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors duration-150',
+                      form.deploymentMode === opt.value
+                        ? 'border-[var(--accent-amber-9)] bg-[var(--accent-amber-3)]'
+                        : 'border-border bg-surface-hover hover:bg-surface-selected',
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="deploymentMode"
+                      value={opt.value}
+                      checked={form.deploymentMode === opt.value}
+                      onChange={() => update('deploymentMode', opt.value as 'docker' | 'personal')}
+                      className="mt-0.5 accent-[var(--accent-amber-9)]"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-foreground">{opt.label}</div>
+                      <div className="text-xs text-muted-foreground">{opt.sub}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
 
-        {/* ── Step 1: Instance config ─── */}
-        {step === 1 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Welcome to Harmoven</CardTitle>
-              <CardDescription>Let's get your instance ready. Takes about 5 minutes.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleStep1} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="setup-token">Setup token</Label>
-                  <Input
-                    id="setup-token"
-                    type="password"
-                    placeholder="Paste the token from Docker logs"
-                    value={form.setupToken}
-                    onChange={e => update('setupToken', e.target.value)}
-                    autoComplete="off"
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Run <code className="font-mono">docker compose logs app | grep &quot;SETUP TOKEN&quot;</code> to retrieve it.
+              <Button type="submit" className="w-full">
+                Next <ArrowRight className="h-4 w-4" />
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Step 2: Admin account ──────────────────────────────── */}
+      {step === 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Create your admin account</CardTitle>
+            <CardDescription>This account has full instance control.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleStep2} className="space-y-3 animate-fade-in">
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-name">Full name</Label>
+                <Input
+                  id="admin-name"
+                  placeholder="Marie Dupont"
+                  value={form.adminName}
+                  onChange={e => update('adminName', e.target.value)}
+                  disabled={form.adminCreated}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-email">Email</Label>
+                <Input
+                  id="admin-email"
+                  type="email"
+                  placeholder="marie@acme.com"
+                  value={form.adminEmail}
+                  onChange={e => update('adminEmail', e.target.value)}
+                  disabled={form.adminCreated}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-password">Password</Label>
+                <Input
+                  id="admin-password"
+                  type="password"
+                  placeholder="Min. 12 characters"
+                  minLength={12}
+                  value={form.adminPassword}
+                  onChange={e => update('adminPassword', e.target.value)}
+                  disabled={form.adminCreated}
+                  required
+                />
+                {form.adminCreated ? (
+                  <p className="flex items-center gap-1 text-xs text-[var(--color-status-completed)]">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Account created
                   </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="org-name">Organization name</Label>
-                  <Input
-                    id="org-name"
-                    placeholder="Acme Corp"
-                    value={form.orgName}
-                    onChange={e => update('orgName', e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Deployment mode</Label>
-                  {[
-                    { value: 'docker',   label: 'Docker (shared team)', sub: 'Multiple users, role-based access' },
-                    { value: 'personal', label: 'Personal (single user)', sub: 'Just you, no team features' },
-                  ].map(opt => (
-                    <label
-                      key={opt.value}
-                      className={cn(
-                        'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors duration-150',
-                        form.deploymentMode === opt.value
-                          ? 'border-[var(--accent-amber-9)] bg-[var(--accent-amber-3)]'
-                          : 'border-border bg-surface-hover hover:bg-surface-selected'
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="deploymentMode"
-                        value={opt.value}
-                        checked={form.deploymentMode === opt.value}
-                        onChange={() => update('deploymentMode', opt.value as 'docker' | 'personal')}
-                        className="mt-0.5 accent-[var(--accent-amber-9)]"
-                      />
-                      <div>
-                        <div className="text-sm font-medium text-foreground">{opt.label}</div>
-                        <div className="text-xs text-muted-foreground">{opt.sub}</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-
-                <p className="text-xs text-muted-foreground">
-                  ℹ Presets can be changed later in Admin settings.
-                </p>
-
-                <Button type="submit" className="w-full">
-                  Next <ArrowRight className="h-4 w-4" />
+                ) : pw.bars > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4].map(i => (
+                        <div
+                          key={i}
+                          className={cn(
+                            'h-1 flex-1 rounded-full transition-colors duration-200',
+                            i <= pw.bars ? strengthBarColor(pw.bars) : 'bg-border',
+                          )}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{pw.label}</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setStep(1)}
+                  className="flex-1"
+                  disabled={form.adminCreated || isPending}
+                >
+                  <ArrowLeft className="h-4 w-4" /> Back
                 </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
+                <Button type="submit" className="flex-1" disabled={isPending}>
+                  {isPending
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : form.adminCreated
+                      ? <>Next <ArrowRight className="h-4 w-4" /></>
+                      : <>Create account <ArrowRight className="h-4 w-4" /></>}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
-        {/* ── Step 2: Admin account ─── */}
-        {step === 2 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Create your admin account</CardTitle>
-              <CardDescription>This account will have full instance control.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleStep2} className="space-y-3 animate-fade-in">
-                <div className="space-y-1.5">
-                  <Label htmlFor="admin-name">Full name</Label>
-                  <Input
-                    id="admin-name"
-                    placeholder="Marie Dupont"
-                    value={form.adminName}
-                    onChange={e => update('adminName', e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="admin-email">Email</Label>
-                  <Input
-                    id="admin-email"
-                    type="email"
-                    placeholder="marie@acme.com"
-                    value={form.adminEmail}
-                    onChange={e => update('adminEmail', e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="admin-password">Password</Label>
-                  <Input
-                    id="admin-password"
-                    type="password"
-                    placeholder="Min. 12 characters"
-                    minLength={12}
-                    value={form.adminPassword}
-                    onChange={e => update('adminPassword', e.target.value)}
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">Minimum 12 characters — this protects your entire instance.</p>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setStep(1)} className="flex-1">
-                    <ArrowLeft className="h-4 w-4" /> Back
-                  </Button>
-                  <Button type="submit" className="flex-1" disabled={isPending}>
-                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Create account <ArrowRight className="h-4 w-4" /></>}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Step 3: LLM provider ─── */}
-        {step === 3 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Connect an AI provider</CardTitle>
-              <CardDescription>Harmoven needs at least one AI provider to run tasks.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleStep3} className="space-y-3 animate-fade-in">
+      {/* ── Step 3: AI provider + verify ──────────────────────── */}
+      {step === 3 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {form.verified
+                ? <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-[var(--color-status-completed)]" /> Connected!</span>
+                : 'Connect an AI provider'}
+            </CardTitle>
+            <CardDescription>
+              {form.verified
+                ? 'Redirecting to your dashboard…'
+                : 'Harmoven needs at least one AI provider to orchestrate tasks.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {form.verified ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <form onSubmit={handleVerify} className="space-y-4 animate-fade-in">
                 <div className="space-y-2">
                   {LLM_PROVIDERS.map(p => (
                     <label
@@ -362,7 +423,7 @@ export default function SetupPage() {
                         'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors duration-150',
                         form.llmProvider === p.value
                           ? 'border-[var(--accent-amber-9)] bg-[var(--accent-amber-3)]'
-                          : 'border-border bg-surface-hover hover:bg-surface-selected'
+                          : 'border-border bg-surface-hover hover:bg-surface-selected',
                       )}
                     >
                       <input
@@ -370,7 +431,7 @@ export default function SetupPage() {
                         name="llmProvider"
                         value={p.value}
                         checked={form.llmProvider === p.value}
-                        onChange={() => update('llmProvider', p.value as StepState['llmProvider'])}
+                        onChange={() => update('llmProvider', p.value as FormState['llmProvider'])}
                         className="mt-0.5 accent-[var(--accent-amber-9)]"
                       />
                       <div className="flex-1">
@@ -387,89 +448,82 @@ export default function SetupPage() {
                     </label>
                   ))}
                 </div>
+
+                {form.llmProvider === 'ollama' ? (
+                  <div className="rounded-lg border border-border bg-surface-hover p-3 space-y-1">
+                    <p className="text-xs font-medium text-foreground">Connection details</p>
+                    <p className="text-xs text-muted-foreground">
+                      Harmoven connects to{' '}
+                      <code className="font-mono text-[var(--text-code)]">OLLAMA_BASE_URL</code>{' '}
+                      (defaults to{' '}
+                      <code className="font-mono text-[var(--text-code)]">http://localhost:11434</code>).
+                      Set this env var before starting Harmoven if Ollama runs on a different host.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {keyLink && (
+                      <a
+                        href={keyLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-[var(--accent-amber-9)] hover:underline"
+                      >
+                        Get your API key <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                    <Label htmlFor="api-key">API key</Label>
+                    <Input
+                      id="api-key"
+                      type="password"
+                      placeholder="sk-ant-…"
+                      value={form.apiKey}
+                      onChange={e => update('apiKey', e.target.value)}
+                      required
+                      autoComplete="off"
+                    />
+                  </div>
+                )}
+
                 <div className="flex gap-2 pt-2">
                   <Button type="button" variant="outline" onClick={() => setStep(2)} className="flex-1">
                     <ArrowLeft className="h-4 w-4" /> Back
                   </Button>
-                  <Button type="submit" className="flex-1">
-                    Continue <ArrowRight className="h-4 w-4" />
+                  <Button type="submit" className="flex-1" disabled={isPending}>
+                    {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify & finish'}
                   </Button>
                 </div>
               </form>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </>
+  )
+}
 
-        {/* ── Step 4: API key + verify ─── */}
-        {step === 4 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                {form.verified ? '✓ Connected!' : 'Paste your API key'}
-              </CardTitle>
-              <CardDescription>
-                {form.verified
-                  ? 'AI provider is configured. Redirecting to dashboard…'
-                  : `Enter your ${LLM_PROVIDERS.find(p => p.value === form.llmProvider)?.label ?? 'provider'} API key.`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {form.verified ? (
-                <div className="flex flex-col items-center gap-4 py-6 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-status-completed)]/20">
-                    <CheckCircle2 className="h-8 w-8 text-[var(--color-status-completed)]" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">Taking you to the dashboard…</p>
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <form onSubmit={handleVerify} className="space-y-3 animate-fade-in">
-                  {(form.llmProvider as string) !== 'ollama' && (
-                    <>
-                      {keyLink && (
-                        <a
-                          href={keyLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-[var(--accent-amber-9)] hover:underline"
-                        >
-                          Get your key <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
-                      <div className="space-y-1.5">
-                        <Label htmlFor="api-key">API key</Label>
-                        <Input
-                          id="api-key"
-                          type="password"
-                          placeholder="sk-ant-…"
-                          value={form.apiKey}
-                          onChange={e => update('apiKey', e.target.value)}
-                        required
-                          autoComplete="off"
-                        />
-                      </div>
-                    </>
-                  )}
-                  {(form.llmProvider as string) === 'ollama' && (
-                    <p className="text-sm text-muted-foreground">
-                      The server will ping Ollama at <code className="font-mono text-[var(--text-code)]">OLLAMA_BASE_URL</code> (defaults to <code className="font-mono text-[var(--text-code)]">localhost:11434</code>). Make sure Ollama is reachable from the Harmoven server.
-                    </p>
-                  )}
-                  <div className="flex gap-2 pt-2">
-                    <Button type="button" variant="outline" onClick={() => setStep(3)} className="flex-1">
-                      <ArrowLeft className="h-4 w-4" /> Back
-                    </Button>
-                    <Button type="submit" className="flex-1" disabled={isPending}>
-                      {isPending
-                        ? <Loader2 className="h-4 w-4 animate-spin" />
-                        : form.llmProvider === 'ollama' ? 'Verify connection' : 'Verify & finish'}
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </CardContent>
-          </Card>
-        )}
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function SetupPage() {
+  return (
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-surface-base px-4 py-12">
+      {/* Background glow */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-1/3 top-1/4 h-[500px] w-[500px] rounded-full bg-[var(--accent-amber-3)] opacity-25 blur-[120px]" />
+      </div>
+
+      {/* Wordmark */}
+      <div className="mb-10 select-none text-center animate-fade-in">
+        <div className="text-3xl font-bold tracking-tight">
+          Harmo<span className="text-[var(--accent-amber-9)]">ven</span>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">AI orchestration platform</p>
+      </div>
+
+      <div className="relative z-10 w-full max-w-[480px] animate-fade-in">
+        <Suspense fallback={<div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+          <SetupWizard />
+        </Suspense>
       </div>
     </div>
   )
