@@ -35,6 +35,8 @@ export interface LlmProfileConfig {
   base_url?: string
   /** Environment variable holding the API key for this provider. */
   api_key_env?: string
+  /** Encrypted API key stored in DB (AES-256-GCM via encryptLlmKey). Takes priority over api_key_env. */
+  api_key_enc?: string
 }
 
 // ─── Built-in catalog ──────────────────────────────────────────────────────────
@@ -293,6 +295,7 @@ export function dbRowToLlmProfileConfig(row: {
     task_type_affinity:       row.task_type_affinity ?? [],
     base_url:    typeof cfg['base_url']    === 'string' ? cfg['base_url']    : undefined,
     api_key_env: typeof cfg['api_key_env'] === 'string' ? cfg['api_key_env'] : undefined,
+    api_key_enc: typeof cfg['api_key_enc'] === 'string' ? cfg['api_key_enc'] : undefined,
   }
 }
 
