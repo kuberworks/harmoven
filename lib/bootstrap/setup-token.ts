@@ -96,6 +96,26 @@ export function generateSetupToken(): void {
 }
 
 /**
+ * Return the current token string without consuming it.
+ * Used exclusively by the /setup Server Component to auto-inject the token
+ * into the page URL via a server-side redirect — no HTTP API, no network hop.
+ *
+ * Returns null when the token is consumed or was never generated
+ * (setup complete, or server restarted after generation).
+ *
+ * The returned string matches what is printed in Docker logs and what
+ * verifyAndConsumeSetupToken() expects:
+ *   - env-var mode: raw token string (caller should encodeURIComponent it)
+ *   - random mode:  32-char lowercase hex string
+ */
+export function peekSetupToken(): string | null {
+  if (_consumed) return null
+  if (_envRaw !== null) return _envRaw
+  if (_token  !== null) return _token.toString('hex')
+  return null
+}
+
+/**
  * Check user count and generate a setup token if no admin exists yet.
  * Called from instrumentation.ts at server startup.
  */
