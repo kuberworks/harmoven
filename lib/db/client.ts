@@ -14,10 +14,28 @@ function createClient() {
   const connectionString = process.env.DATABASE_URL
   if (!connectionString) throw new Error('DATABASE_URL is not set')
   const adapter = new PrismaPg({ connectionString })
-  return new PrismaClient({
+  const isDev = process.env.NODE_ENV === 'development'
+  const client = new PrismaClient({
     adapter,
-    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    // Use event-based logging so we can filter specific error codes before printing.
+    log: [
+      { emit: 'event', level: 'error' },
+      ...(isDev ? [{ emit: 'event', level: 'warn' } as const] : []),
+    ],
   })
+  // P2002 (unique constraint) errors are handled by application-level retry logic
+  // (e.g. createHandoffWithRetry in executor.ts).  Suppress them here so a successful
+  // retry does not leave a spurious error line in the server logs.
+  client.$on('error', (e) => {
+    if ((e.message ?? '').includes('Unique constraint')) return
+    console.error('[prisma] error:', e.message, e.target)
+  })
+  if (isDev) {
+    client.$on('warn', (e) => {
+      console.warn('[prisma] warn:', e.message, e.target)
+    })
+  }
+  return client
 }
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
