@@ -110,6 +110,48 @@ export async function GET(
         return true
       }
 
+      // Subscribe to live events BEFORE querying the initial snapshot.
+      // This closes the race condition where the executor emits `completed`
+      // after we read the DB but before we subscribe — causing the event to be
+      // lost and the client to stay frozen on RUNNING status indefinitely.
+      //
+      // Events that arrive during the initial DB query are buffered and flushed
+      // immediately after `initial` is sent, so the client always sees them in
+      // a consistent order (initial, then live updates).
+      const pendingEvents: RunSSEEvent[] = []
+      let initialSent = false
+
+      const serializeCompletedRun = (sseEvent: RunSSEEvent): RunSSEEvent => {
+        if (sseEvent.type !== 'completed' || !sseEvent.run) return sseEvent
+        const r = sseEvent.run as Record<string, unknown>
+        return {
+          ...sseEvent,
+          run: {
+            ...r,
+            cost_actual_usd: Number(r['cost_actual_usd'] ?? 0),
+            budget_usd: r['budget_usd'] != null ? Number(r['budget_usd']) : null,
+            started_at:   r['started_at']   instanceof Date ? (r['started_at'] as Date).toISOString()   : (r['started_at']   ?? null),
+            completed_at: r['completed_at'] instanceof Date ? (r['completed_at'] as Date).toISOString() : (r['completed_at'] ?? null),
+            paused_at:    r['paused_at']    instanceof Date ? (r['paused_at'] as Date).toISOString()    : (r['paused_at']    ?? null),
+          },
+        } as RunSSEEvent
+      }
+
+      const unsubscribe = projectEventBus.subscribe(run.project_id, (e: ProjectEvent) => {
+        if (e.run_id !== runId) return
+        let sseEvent = e.event as RunSSEEvent
+        if (!('type' in sseEvent)) return
+        sseEvent = serializeCompletedRun(sseEvent)
+        if (!shouldSendEvent(sseEvent)) return
+        if (!initialSent) {
+          // Buffer until initial snapshot is sent so the client receives
+          // events in causal order (initial always arrives first).
+          pendingEvents.push(sseEvent)
+        } else {
+          send(sseEvent)
+        }
+      })
+
       // Initial state snapshot so client doesn't miss events that occurred
       // before the SSE connection was established
       try {
@@ -136,6 +178,11 @@ export async function GET(
         send({ type: 'initial', run: serialisedRun, nodes: serialisedNodes } as unknown as RunSSEEvent)
       } catch { /* non-fatal — client will reconstruct from live events */ }
 
+      // Flush buffered events (those received during the initial query)
+      initialSent = true
+      for (const e of pendingEvents) send(e)
+      pendingEvents.length = 0
+
       // Replay reconnect buffer if Last-Event-ID header is present
       const lastEventId = req.headers.get('last-event-id')
       if (lastEventId) {
@@ -152,31 +199,6 @@ export async function GET(
           }
         } catch { /* non-fatal */ }
       }
-
-      // Subscribe to live events
-      const unsubscribe = projectEventBus.subscribe(run.project_id, (e: ProjectEvent) => {
-        if (e.run_id !== runId) return
-        let sseEvent = e.event as RunSSEEvent
-        if (!('type' in sseEvent)) return
-        // Sanitize Decimal / DateTime fields that Prisma injects into run objects
-        // emitted by the executor (cost_actual_usd is Prisma Decimal — JSON.stringify
-        // serialises it as a string, which breaks .toFixed() calls on the client).
-        if (sseEvent.type === 'completed' && sseEvent.run) {
-          const r = sseEvent.run as Record<string, unknown>
-          sseEvent = {
-            ...sseEvent,
-            run: {
-              ...r,
-              cost_actual_usd: Number(r['cost_actual_usd'] ?? 0),
-              budget_usd: r['budget_usd'] != null ? Number(r['budget_usd']) : null,
-              started_at:   r['started_at']   instanceof Date ? (r['started_at'] as Date).toISOString()   : (r['started_at']   ?? null),
-              completed_at: r['completed_at'] instanceof Date ? (r['completed_at'] as Date).toISOString() : (r['completed_at'] ?? null),
-              paused_at:    r['paused_at']    instanceof Date ? (r['paused_at'] as Date).toISOString()    : (r['paused_at']    ?? null),
-            },
-          } as RunSSEEvent
-        }
-        if (shouldSendEvent(sseEvent)) send(sseEvent)
-      })
 
       // 30s heartbeat to keep connection alive through proxies (§34.4)
       heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_MS)
