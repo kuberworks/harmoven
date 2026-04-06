@@ -16,7 +16,8 @@
 //   - Post-setup: requires instance_admin session.
 //   - api_key is sanitised (max 256 chars) and never logged or returned.
 //   - Redacts both sk-* (OpenAI/Anthropic) and AIza* (Gemini) patterns from errors.
-//   - SSRF: providers called via official SDKs — no user-supplied base URLs.
+//   - ollama_url is validated with validateOllamaUrl() — blocks IMDS (169.254.x.x),
+//     loopback, 0.0.0.0; allows RFC1918/LAN (legitimate on-prem Ollama deployments).
 //   - Zod .strict() validation — no mass-assignment.
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -24,6 +25,8 @@ import { headers }                   from 'next/headers'
 import { z }                         from 'zod'
 import { db }                        from '@/lib/db/client'
 import { auth }                      from '@/lib/auth'
+import { validateOllamaUrl }         from '@/lib/security/ssrf-protection'
+import { ValidationError }           from '@/lib/utils/input-validation'
 
 // ─── Validation ────────────────────────────────────────────────────────────────
 
@@ -31,6 +34,9 @@ const VerifyBody = z.object({
   provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama']),
   // api_key is optional for Ollama (no key needed — local connection only)
   api_key: z.string().max(256).optional(),
+  // ollama_url overrides OLLAMA_BASE_URL env var for this verification call.
+  // Validated server-side with validateOllamaUrl() — not stored.
+  ollama_url: z.string().max(512).optional(),
 }).strict()
 
 // ─── Per-provider verification ────────────────────────────────────────────────
@@ -60,16 +66,20 @@ async function verifyGemini(apiKey: string): Promise<void> {
   })
 }
 
-/** Minimal test: ping Ollama's API endpoint (respects OLLAMA_BASE_URL env var). */
-async function verifyOllama(): Promise<void> {
-  // Use the configured base URL — important for remote Ollama instances.
-  // Falls back to localhost:11434 which only works when Ollama runs on the same
-  // host as the Harmoven server (e.g. personal/desktop deployments).
-  const base = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/$/, '')
+/**
+ * Minimal test: ping Ollama's /api/tags endpoint.
+ *
+ * URL resolution order:
+ *   1. `ollamaUrl` from the request body (user-supplied, validated)
+ *   2. `OLLAMA_BASE_URL` env var (operator-configured)
+ *   3. `http://localhost:11434` fallback (same-host Ollama)
+ */
+async function verifyOllama(ollamaUrl?: string): Promise<void> {
+  const base = (ollamaUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/$/, '')
   const res = await fetch(`${base}/api/tags`, {
     signal: AbortSignal.timeout(5000),
   })
-  if (!res.ok) throw new Error(`Ollama returned ${res.status}`)
+  if (!res.ok) throw new Error(`Ollama returned HTTP ${res.status} from ${base}`)
 }
 
 // ─── Env var hint per provider ────────────────────────────────────────────────
@@ -104,21 +114,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 })
   }
 
-  const { provider, api_key } = parsed.data
+  const { provider, api_key, ollama_url } = parsed.data
 
   // api_key is required for non-Ollama providers
   if (provider !== 'ollama' && !api_key?.trim()) {
     return NextResponse.json({ error: 'api_key is required for this provider' }, { status: 422 })
   }
 
+  // Validate the Ollama URL before any network call.
+  // validateOllamaUrl() is synchronous and throws ValidationError on bad input.
+  const resolvedOllamaUrl = ollama_url?.trim() || undefined
+  if (resolvedOllamaUrl) {
+    try {
+      validateOllamaUrl(resolvedOllamaUrl)
+    } catch (err) {
+      const msg = err instanceof ValidationError ? err.message : 'Invalid Ollama URL'
+      return NextResponse.json({ error: msg }, { status: 422 })
+    }
+  }
+
   // ── Verify provider connection ──────────────────────────────────────────────
   try {
     const key = api_key?.trim() ?? ''
     switch (provider) {
-      case 'anthropic': await verifyAnthropic(key); break
-      case 'openai':    await verifyOpenAI(key);    break
-      case 'gemini':    await verifyGemini(key);    break
-      case 'ollama':    await verifyOllama();        break
+      case 'anthropic': await verifyAnthropic(key);             break
+      case 'openai':    await verifyOpenAI(key);                break
+      case 'gemini':    await verifyGemini(key);                break
+      case 'ollama':    await verifyOllama(resolvedOllamaUrl);  break
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -132,11 +154,22 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // For Ollama, include the URL that was actually used so the user knows
+  // which value to set in OLLAMA_BASE_URL.
+  const effectiveOllamaUrl =
+    provider === 'ollama'
+      ? (resolvedOllamaUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434')
+      : undefined
+
   return NextResponse.json({
-    ok:           true,
+    ok:                true,
     provider,
-    env_var_hint: ENV_VAR_HINT[provider],
-    message:      `Connection verified. Set ${ENV_VAR_HINT[provider]} in your environment to persist this key.`,
+    env_var_hint:      ENV_VAR_HINT[provider],
+    effective_url:     effectiveOllamaUrl,
+    message:
+      provider === 'ollama'
+        ? `Connection verified. Set OLLAMA_BASE_URL=${effectiveOllamaUrl} in your .env to persist this.`
+        : `Connection verified. Set ${ENV_VAR_HINT[provider]} in your environment to persist this key.`,
   })
 }
 
