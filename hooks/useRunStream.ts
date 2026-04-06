@@ -38,7 +38,7 @@ type StreamEvent =
   | { type: 'initial'; run: RunState; nodes: NodeState[] }
   | { type: 'state_change'; entity_type: 'run' | 'node'; id: string; status: string }
   | { type: 'node_snapshot'; node_id: string; data: Partial<NodeState> & Record<string, unknown> }
-  | { type: 'nodes_refresh'; nodes: NodeState[] }
+  | { type: 'nodes_refresh'; nodes: NodeState[]; dag?: Dag }
   | { type: 'cost_update'; cost_usd: number; tokens: number; percent_of_budget: number }
   | { type: 'human_gate'; gate_id: string; reason: string; data: Record<string, unknown> }
   | { type: 'budget_warning'; percent_used: number; remaining_usd: number }
@@ -74,8 +74,9 @@ function reducer(state: StreamState, action: Action): StreamState {
         run = e.run
         nodes = e.nodes
       } else if (e.type === 'nodes_refresh') {
-        // PLANNER expanded the DAG — replace the full node list
+        // PLANNER expanded the DAG — replace the full node list and update the dag
         nodes = e.nodes
+        if (e.dag && run) run = { ...run, dag: e.dag }
       } else if (e.type === 'state_change') {
         if (e.entity_type === 'run' && run) {
           run = { ...run, status: e.status as RunStatus }

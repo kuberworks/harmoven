@@ -905,7 +905,8 @@ export class CustomExecutor implements IExecutionEngine {
               })
             }
 
-            // Emit full node list so SSE subscribers see newly created nodes immediately.
+            // Emit full node list + expanded DAG so SSE subscribers see newly created nodes
+            // and updated graph structure immediately.
             const allNodesAfterExpansion = await this.db.node.findMany({
               where: { run_id: runId },
             })
@@ -917,6 +918,7 @@ export class CustomExecutor implements IExecutionEngine {
                 started_at: n.started_at?.toISOString() ?? null,
                 completed_at: n.completed_at?.toISOString() ?? null,
               })),
+              dag: expandedDag,
             })
           }
         } catch (expandErr) {
