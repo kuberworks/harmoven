@@ -301,9 +301,23 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
     }
   }, [node.status, node.partial_output])
 
-  const elapsed = node.started_at && !node.completed_at
-    ? Math.round((Date.now() - new Date(node.started_at).getTime()) / 1000)
-    : null
+  // Elapsed time for in-progress nodes.
+  // Initialised to null so SSR and the hydration render both emit nothing —
+  // preventing the "server text didn't match client" hydration error that
+  // occurs when Date.now() is called inline during render.
+  const [elapsed, setElapsed] = useState<number | null>(null)
+  useEffect(() => {
+    if (!node.started_at || node.completed_at) {
+      setElapsed(null)
+      return
+    }
+    const startMs = new Date(node.started_at).getTime()
+    setElapsed(Math.round((Date.now() - startMs) / 1000))
+    const id = setInterval(() => {
+      setElapsed(Math.round((Date.now() - startMs) / 1000))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [node.started_at, node.completed_at])
 
   const restartable = canRestart && (node.status === 'FAILED' || node.status === 'INTERRUPTED')
 
