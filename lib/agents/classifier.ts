@@ -109,7 +109,7 @@ Rules:
 - If confidence >= 80: clarification_questions = []
 - If confidence < 80: include 2–3 targeted clarification questions
 - Output ONLY the JSON object. No markdown fence, no prose.
-- Max 500 tokens.`
+- Be concise — the full response must fit in 1024 tokens.`
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ export class IntentClassifier {
           { role: 'system', content: CLASSIFIER_SYSTEM_PROMPT },
           { role: 'user', content: input },
         ],
-        { model: 'fast', maxTokens: 500, signal },
+        { model: 'fast', maxTokens: 1024, signal },
       ),
       {
         signal,
