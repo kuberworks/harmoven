@@ -12,11 +12,11 @@ import { NextResponse } from 'next/server'
 import { db }           from '@/lib/db/client'
 
 export async function GET() {
-  const userCount = await db.user.count()
-
-  const hasAdmin = userCount > 0
-  // setup_complete: all mandatory steps are done (admin created).
-  const setupComplete = hasAdmin
+  // setup.wizard_complete is written by POST /api/setup/admin on first-run wizard
+  // completion. Checking this key (rather than user.count()) means bootstrap seed
+  // users created by `npm run db:seed` do NOT prematurely mark setup as complete.
+  const setting = await db.systemSetting.findUnique({ where: { key: 'setup.wizard_complete' } })
+  const setupComplete = setting?.value === 'true'
 
   // L-3 fix: has_llm_profile removed — it is not needed by the setup wizard
   // and leaks instance occupancy to unauthenticated callers.
@@ -24,6 +24,5 @@ export async function GET() {
   return NextResponse.json({
     setup_complete: setupComplete,
     setup_required: !setupComplete,
-    has_admin:      hasAdmin,
   })
 }
