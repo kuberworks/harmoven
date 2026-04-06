@@ -106,7 +106,7 @@ function StepProgress({ current }: { current: Step }) {
 
 const LLM_PROVIDERS: readonly { value: string; label: string; sublabel: string; recommended?: boolean }[] = [
   { value: 'anthropic', label: 'Anthropic (Claude)', sublabel: 'Recommended — best for most tasks', recommended: true },
-  { value: 'openai',    label: 'OpenAI (GPT)',       sublabel: '' },
+  { value: 'openai',    label: 'OpenAI (ChatGPT)',   sublabel: '' },
   { value: 'gemini',    label: 'Google Gemini',      sublabel: 'Free tier available' },
   { value: 'ollama',    label: 'Ollama (local)',      sublabel: 'Free, private, runs on your machine' },
 ]
