@@ -119,14 +119,23 @@ class ContextualLLMClient implements ILLMClient {
   constructor(
     private readonly inner: ILLMClient,
     private readonly ctx: ChatOptions['selectionContext'],
+    /** Fired once when the model string is first known (first LLM call response). */
+    private readonly onModelResolved?: (model: string) => void,
   ) {}
+
+  private _trackModel(model: string | undefined) {
+    if (!model) return
+    const isFirst = this.lastModel === null
+    this.lastModel = model
+    if (isFirst) this.onModelResolved?.(model)
+  }
 
   async chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult> {
     const result = await this.inner.chat(messages, { ...options, selectionContext: this.ctx })
     this.totalCostUsd   += result.costUsd
     this.totalTokensIn  += result.tokensIn
     this.totalTokensOut += result.tokensOut
-    if (result.model) this.lastModel = result.model
+    this._trackModel(result.model)
     return result
   }
 
@@ -139,7 +148,7 @@ class ContextualLLMClient implements ILLMClient {
     this.totalCostUsd   += result.costUsd
     this.totalTokensIn  += result.tokensIn
     this.totalTokensOut += result.tokensOut
-    if (result.model) this.lastModel = result.model
+    this._trackModel(result.model)
     return result
   }
 }
@@ -153,7 +162,7 @@ class ContextualLLMClient implements ILLMClient {
  * @param llm The ILLMClient to use (typically from createLLMClient()).
  */
 export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
-  return async (node: NodeRow, handoffIn: unknown, signal: AbortSignal, onChunk?: (chunk: string) => void): Promise<AgentOutput> => {
+  return async (node: NodeRow, handoffIn: unknown, signal: AbortSignal, onChunk?: (chunk: string) => void, onModelResolved?: (model: string) => void): Promise<AgentOutput> => {
     const meta = (typeof node.metadata === 'object' && node.metadata !== null
       ? node.metadata
       : {}) as Record<string, unknown>
@@ -174,7 +183,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
     }
 
     // Wrap llm to carry the per-node context — agents call llm.chat() normally.
-    const contextualLlm = new ContextualLLMClient(llm, selectionContext)
+    const contextualLlm = new ContextualLLMClient(llm, selectionContext, onModelResolved)
 
     // Amendment 86: Wrap with PromptSummaryCapture to snapshot execution context
     // after each agent completes (without storing full prompts).
