@@ -4,6 +4,7 @@
 // Agent node status card — shown in Level 2+ run detail view.
 // Displays: agent type, status badge, duration, cost (if showCost).
 
+import { useState, useEffect } from 'react'
 import { RunStatusBadge } from './RunStatusBadge'
 import { CostMeter } from './CostMeter'
 import { cn } from '@/lib/utils/cn'
@@ -30,12 +31,9 @@ interface NodeCardProps {
   selected?: boolean
 }
 
-function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
-  if (!startedAt) return null
-  const start = new Date(startedAt).getTime()
-  const end   = completedAt ? new Date(completedAt).getTime() : Date.now()
-  const sec   = Math.round((end - start) / 1000)
-  if (sec < 60)  return `${sec}s`
+function formatDuration(startMs: number, endMs: number): string {
+  const sec = Math.round((endMs - startMs) / 1000)
+  if (sec < 60) return `${sec}s`
   return `${Math.floor(sec / 60)}m ${sec % 60}s`
 }
 
@@ -50,9 +48,27 @@ const AGENT_LABEL: Record<string, string> = {
 }
 
 export function NodeCard({ node, showCost, showTimings = true, onClick, selected }: NodeCardProps) {
-  const label    = AGENT_LABEL[node.agent_type] ?? node.agent_type
-  const duration = showTimings ? formatDuration(node.started_at, node.completed_at) : null
+  const label     = AGENT_LABEL[node.agent_type] ?? node.agent_type
   const totalCost = node.cost_usd ?? 0
+
+  // duration is derived from Date.now() for running nodes — must be computed
+  // client-side only to avoid SSR/hydration mismatch.
+  const [duration, setDuration] = useState<string | null>(null)
+  useEffect(() => {
+    if (!showTimings || !node.started_at) {
+      setDuration(null)
+      return
+    }
+    const startMs = new Date(node.started_at).getTime()
+    if (node.completed_at) {
+      setDuration(formatDuration(startMs, new Date(node.completed_at).getTime()))
+      return
+    }
+    // Node is still running — tick every second.
+    setDuration(formatDuration(startMs, Date.now()))
+    const id = setInterval(() => setDuration(formatDuration(startMs, Date.now())), 1000)
+    return () => clearInterval(id)
+  }, [showTimings, node.started_at, node.completed_at])
 
   return (
     <button
