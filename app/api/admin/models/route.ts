@@ -15,6 +15,7 @@ import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
 import { assertNotPrivateHost }      from '@/lib/security/ssrf-protection'
+import { encryptLlmKey }             from '@/lib/utils/llm-key-crypto'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
@@ -71,6 +72,8 @@ const CreateModelBody = z.object({
   task_type_affinity:        z.array(z.string()).optional().default([]),
   enabled:                   z.boolean().optional().default(true),
   config:                    z.record(z.unknown()).optional(),
+  // Plaintext API key — encrypted to config.api_key_enc before storage, never persisted in clear
+  api_key:                   z.string().max(512).optional(),
 }).strict()
 
 export async function POST(req: NextRequest) {
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest) {
   const {
     id, provider, model_string, tier, jurisdiction, trust_tier,
     context_window, cost_per_1m_input_tokens, cost_per_1m_output_tokens,
-    task_type_affinity, enabled, config,
+    task_type_affinity, enabled, config, api_key,
   } = parsed.data
 
   // BUG-012: SSRF protection — validate custom base_url before persisting (spec Am.92).
@@ -111,6 +114,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Model ID already exists' }, { status: 409 })
   }
 
+  // Encrypt api_key if provided and merge into config
+  let finalConfig: Record<string, unknown> = config ? { ...config } : {}
+  if (api_key?.trim()) {
+    try {
+      finalConfig.api_key_enc = encryptLlmKey(api_key.trim())
+    } catch {
+      return NextResponse.json({ error: 'ENCRYPTION_KEY_NOT_CONFIGURED' }, { status: 500 })
+    }
+  }
+
   const model = await db.llmProfile.create({
     data: {
       id,
@@ -124,7 +137,7 @@ export async function POST(req: NextRequest) {
       cost_per_1m_output_tokens,
       task_type_affinity:        task_type_affinity ?? [],
       enabled:                   enabled ?? true,
-      ...(config !== undefined && { config: config as Prisma.InputJsonValue }),
+      config: finalConfig as Prisma.InputJsonValue,
     },
   })
 

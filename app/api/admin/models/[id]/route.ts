@@ -18,6 +18,7 @@ import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
 import { assertNotPrivateHost }      from '@/lib/security/ssrf-protection'
+import { encryptLlmKey }             from '@/lib/utils/llm-key-crypto'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
@@ -53,6 +54,8 @@ const PatchModelBody = z.object({
   enabled:                    z.boolean().optional(),
   task_type_affinity:         z.array(z.string()).optional(),
   config:                     z.record(z.unknown()).optional(),
+  // Plaintext API key — encrypted to config.api_key_enc; pass empty string to clear
+  api_key:                    z.string().max(512).optional(),
 }).strict()
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -92,12 +95,32 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     }
   }
 
-  const { config, ...rest } = parsed.data
+  // Merge api_key into config.api_key_enc / clear it
+  const { config, api_key, ...rest } = parsed.data
+  let mergedConfig: Record<string, unknown> | undefined
+  if (api_key !== undefined || config !== undefined) {
+    // Start from the current stored config
+    const existing_cfg = (typeof existing.config === 'object' && existing.config !== null
+      ? existing.config
+      : {}) as Record<string, unknown>
+    mergedConfig = { ...existing_cfg, ...(config ?? {}) }
+    if (api_key?.trim()) {
+      try {
+        mergedConfig.api_key_enc = encryptLlmKey(api_key.trim())
+      } catch {
+        return NextResponse.json({ error: 'ENCRYPTION_KEY_NOT_CONFIGURED' }, { status: 500 })
+      }
+    } else if (api_key === '') {
+      // Explicit empty string — remove the stored key
+      delete mergedConfig.api_key_enc
+    }
+  }
+
   const model = await db.llmProfile.update({
     where: { id },
     data:  {
       ...rest,
-      ...(config !== undefined && { config: config as Prisma.InputJsonValue }),
+      ...(mergedConfig !== undefined && { config: mergedConfig as Prisma.InputJsonValue }),
     },
   })
 

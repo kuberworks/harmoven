@@ -15,7 +15,7 @@ import { Input }   from '@/components/ui/input'
 import { Label }   from '@/components/ui/label'
 import { Badge }   from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { Cpu, Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Cpu, Plus, Pencil, Trash2, Loader2, KeyRound } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,12 +48,13 @@ interface FormState {
   enabled:                   boolean
   base_url:                  string   // config.base_url
   api_key_env:               string   // config.api_key_env
+  api_key:                   string   // plaintext — encrypted on save, never shown back
 }
 
 const EMPTY_FORM: FormState = {
   id: '', provider: '', model_string: '', tier: 'balanced', jurisdiction: 'eu',
   trust_tier: '1', context_window: '128000', cost_in: '0', cost_out: '0',
-  task_type_affinity: '', enabled: true, base_url: '', api_key_env: '',
+  task_type_affinity: '', enabled: true, base_url: '', api_key_env: '', api_key: '',
 }
 
 function profileToForm(m: LlmProfileRow): FormState {
@@ -72,6 +73,7 @@ function profileToForm(m: LlmProfileRow): FormState {
     enabled:            m.enabled,
     base_url:           typeof cfg.base_url === 'string' ? cfg.base_url : '',
     api_key_env:        typeof cfg.api_key_env === 'string' ? cfg.api_key_env : '',
+    api_key:            '',  // never pre-filled — write-only
   }
 }
 
@@ -114,7 +116,7 @@ function Select({
 // ─── Field wrapper ────────────────────────────────────────────────────────────
 
 function Field({ label, htmlFor, hint, children }: {
-  label: string; htmlFor?: string; hint?: string; children: React.ReactNode
+  label: React.ReactNode; htmlFor?: string; hint?: React.ReactNode; children: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -128,12 +130,13 @@ function Field({ label, htmlFor, hint, children }: {
 // ─── Model form dialog ────────────────────────────────────────────────────────
 
 function ModelDialog({
-  open, onClose, initial, isEdit, onSaved,
+  open, onClose, initial, isEdit, hasStoredKey, onSaved,
 }: {
   open: boolean
   onClose: () => void
   initial: FormState
   isEdit: boolean
+  hasStoredKey: boolean
   onSaved: (updated: LlmProfileRow) => void
 }) {
   const [form, setForm] = useState<FormState>(initial)
@@ -164,7 +167,7 @@ function ModelDialog({
       if (form.base_url.trim())    config.base_url    = form.base_url.trim()
       if (form.api_key_env.trim()) config.api_key_env = form.api_key_env.trim()
 
-      const body = {
+      const body: Record<string, unknown> = {
         id:                        isEdit ? undefined : form.id.trim(),
         provider:                  form.provider.trim(),
         model_string:              form.model_string.trim(),
@@ -177,6 +180,8 @@ function ModelDialog({
         task_type_affinity:        affinities,
         enabled:                   form.enabled,
         config,
+        // Pass api_key only when the user typed something (or '' to clear an existing key)
+        ...(form.api_key !== undefined && { api_key: form.api_key }),
       }
 
       let res: Response
@@ -375,6 +380,51 @@ function ModelDialog({
             </Field>
           </div>
 
+          {/* api_key — encrypted storage in DB */}
+          <div className="col-span-2">
+            <Field
+              label={
+                <span className="flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5" />
+                  API key — store encrypted
+                  {isEdit && hasStoredKey && (
+                    <span className="ml-1 rounded-full bg-[var(--accent-amber-3)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-amber-9)]">
+                      ● stored
+                    </span>
+                  )}
+                </span>
+              }
+              htmlFor="m-apikey"
+              hint={
+                isEdit && hasStoredKey
+                  ? 'A key is stored. Enter a new value to replace it, or leave blank to keep it. Clear with the × button.'
+                  : 'Stored encrypted with AES-256-GCM. Ignored if empty. Takes priority over the env variable above.'
+              }
+            >
+              <div className="flex gap-1.5">
+                <Input
+                  id="m-apikey"
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.api_key}
+                  onChange={(e) => set('api_key')(e.target.value)}
+                  placeholder={isEdit && hasStoredKey ? '(keep existing)' : 'sk-…'}
+                  className="flex-1"
+                />
+                {isEdit && hasStoredKey && (
+                  <button
+                    type="button"
+                    title="Clear stored key"
+                    className="shrink-0 rounded border border-destructive/40 px-2 text-xs text-destructive hover:bg-destructive/10"
+                    onClick={() => set('api_key')('')}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </Field>
+          </div>
+
           {/* Enabled toggle */}
           <div className="col-span-2 flex items-center gap-2 pt-1">
             <input
@@ -530,6 +580,7 @@ export function ModelsAdminClient({ initialModels }: ModelsAdminClientProps) {
   const [formOpen,     setFormOpen]     = useState(false)
   const [formInitial,  setFormInitial]  = useState<FormState>(EMPTY_FORM)
   const [isEditMode,   setIsEditMode]   = useState(false)
+  const [hasStoredKey, setHasStoredKey] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<LlmProfileRow | null>(null)
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -537,12 +588,14 @@ export function ModelsAdminClient({ initialModels }: ModelsAdminClientProps) {
   function openCreate() {
     setFormInitial(EMPTY_FORM)
     setIsEditMode(false)
+    setHasStoredKey(false)
     setFormOpen(true)
   }
 
   function openEdit(m: LlmProfileRow) {
     setFormInitial(profileToForm(m))
     setIsEditMode(true)
+    setHasStoredKey(typeof m.config?.api_key_enc === 'string')
     setFormOpen(true)
   }
 
@@ -648,6 +701,14 @@ export function ModelsAdminClient({ initialModels }: ModelsAdminClientProps) {
                           </span>
                         </>
                       )}
+                      {typeof m.config?.api_key_enc === 'string' && (
+                        <>
+                          <span>·</span>
+                          <span className="flex items-center gap-0.5 text-[var(--accent-amber-9)]">
+                            <KeyRound className="h-3 w-3" /> key stored
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -671,6 +732,7 @@ export function ModelsAdminClient({ initialModels }: ModelsAdminClientProps) {
         onClose={() => setFormOpen(false)}
         initial={formInitial}
         isEdit={isEditMode}
+        hasStoredKey={hasStoredKey}
         onSaved={handleSaved}
       />
 

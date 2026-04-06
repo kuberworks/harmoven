@@ -31,6 +31,7 @@ import { selectByTier, selectLlm } from './selector'
 import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
 import { validateLLMBaseUrl, assertLocalHost } from '@/lib/security/ssrf-protection'
+import { decryptLlmKey }                      from '@/lib/utils/llm-key-crypto'
 
 // ─── Orchestrator YAML types ───────────────────────────────────────────────────
 
@@ -192,8 +193,19 @@ async function buildOpenAIClient(profile: LlmProfileConfig): Promise<OpenAI> {
 
   const cached = _openaiCache.get(profile.id)
   if (cached && Date.now() < cached.expiresAt) return cached.client
-  const envKey = profile.api_key_env
-  const apiKey = envKey ? (process.env[envKey] ?? 'no-key') : 'no-key'
+
+  // Key resolution order:
+  //   1. config.api_key_enc  — encrypted key stored in DB (custom providers)
+  //   2. process.env[api_key_env] — env var (built-in providers)
+  //   3. 'no-key' fallback  — Ollama and open endpoints that require no auth
+  let apiKey = 'no-key'
+  if (profile.api_key_enc) {
+    const decrypted = decryptLlmKey(profile.api_key_enc)
+    if (decrypted) apiKey = decrypted
+  } else if (profile.api_key_env) {
+    apiKey = process.env[profile.api_key_env] ?? 'no-key'
+  }
+
   // For Ollama the key is irrelevant — the server accepts any value.
   const client = new OpenAI({
     apiKey,
