@@ -24,6 +24,21 @@ import { resumeSuspendedRunsFromCrash, resetStaleRunningRuns } from '@/lib/execu
 import { db as _prismaDb } from '@/lib/db/client'
 import { projectEventBus as _defaultEventBus } from '@/lib/events/project-event-bus.factory'
 
+// ─── In-process handoff mutex ─────────────────────────────────────────────────
+/**
+ * Serializes concurrent handoff inserts for the same run within this process.
+ *
+ * Node.js is single-threaded: Map.get + Map.set is synchronous and atomic —
+ * no two callbacks can interleave between them. Chaining each new insert onto
+ * the previous Promise for the same run_id guarantees T2 waits for T1 to
+ * commit before reading MAX(sequence_number), eliminating P2002 entirely.
+ *
+ * This works for the single-process executor deployment (Docker Compose /
+ * Electron). If the executor is ever scaled to multiple processes, this must
+ * be replaced with a DB-level serialisation mechanism.
+ */
+const _handoffLocks = new Map<string, Promise<void>>()
+
 // ─── ExecutorDb adapter — wraps PrismaClient and adds findOrphaned ────────────
 /**
  * Lazy ExecutorDb implementation for production.
@@ -40,31 +55,33 @@ class PrismaExecutorDb implements ExecutorDb {
       create:    (args)  => (_prismaDb.handoff.create    as Function)(args),
       aggregate: (args)  => (_prismaDb.handoff.aggregate as Function)(args),
       /**
-       * Atomic handoff insertion using a row-level lock on the Run row.
+       * Atomic handoff insertion via an in-process Promise chain mutex.
        *
-       * SELECT ... FOR UPDATE on the Run row serializes all concurrent handoff
-       * inserts for the same run: T2 blocks until T1 commits, then reads the
-       * updated MAX(sequence_number) — guaranteed no P2002.
-       *
-       * Unlike advisory locks, FOR UPDATE on a real row is always within the
-       * same transaction connection regardless of the driver adapter used.
+       * Each new insert is chained onto the tail of the existing Promise for
+       * this run_id. Because Node.js is single-threaded, the .get()/.set() pair
+       * is synchronous and atomic: no two callers can both read `prev` before
+       * either has called .set(). The chain guarantees T2 reads
+       * MAX(sequence_number) only after T1's insert has committed.
        */
       createAtomic: async (data) => {
-        await _prismaDb.$transaction(async (tx) => {
-          // Lock the Run row — only one transaction per run can hold this lock.
-          await tx.$executeRawUnsafe(
-            'SELECT id FROM "Run" WHERE id = $1 FOR UPDATE',
-            data.run_id,
-          )
-          const maxSeq = await (tx.handoff.aggregate as Function)({
+        const prev = _handoffLocks.get(data.run_id) ?? Promise.resolve()
+        const next: Promise<void> = prev.then(async () => {
+          const maxSeq = await (_prismaDb.handoff.aggregate as Function)({
             where: { run_id: data.run_id },
             _max: { sequence_number: true },
           }) as { _max: { sequence_number: number | null } }
           const sequenceNumber = (maxSeq._max.sequence_number ?? 0) + 1
-          await (tx.handoff.create as Function)({
+          await (_prismaDb.handoff.create as Function)({
             data: { ...data, sequence_number: sequenceNumber },
           })
+        }).finally(() => {
+          // Release lock entry only if no newer chain has replaced it.
+          if (_handoffLocks.get(data.run_id) === next) {
+            _handoffLocks.delete(data.run_id)
+          }
         })
+        _handoffLocks.set(data.run_id, next)
+        return next
       },
     }
   }
