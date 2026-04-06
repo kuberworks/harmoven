@@ -33,11 +33,13 @@ import { projectEventBus as _defaultEventBus } from '@/lib/events/project-event-
  * the previous Promise for the same run_id guarantees T2 waits for T1 to
  * commit before reading MAX(sequence_number), eliminating P2002 entirely.
  *
- * This works for the single-process executor deployment (Docker Compose /
- * Electron). If the executor is ever scaled to multiple processes, this must
- * be replaced with a DB-level serialisation mechanism.
+ * Stored on globalThis (same pattern as the engine singleton) so the Map
+ * survives Next.js HMR module re-evaluations and webpack chunk splits that
+ * could otherwise give each module instance its own empty Map.
  */
-const _handoffLocks = new Map<string, Promise<void>>()
+// globalThis declaration lives next to __harmoven_execution_engine below.
+globalThis.__harmoven_handoff_locks ??= new Map<string, Promise<void>>()
+const _handoffLocks = globalThis.__harmoven_handoff_locks
 
 // ─── ExecutorDb adapter — wraps PrismaClient and adds findOrphaned ────────────
 /**
@@ -314,6 +316,8 @@ export function createExecutionEngine(config: EngineConfig = {}): IExecutionEngi
 declare global {
   // eslint-disable-next-line no-var
   var __harmoven_execution_engine: IExecutionEngine | undefined
+  // eslint-disable-next-line no-var
+  var __harmoven_handoff_locks: Map<string, Promise<void>>
 }
 
 /**
