@@ -40,17 +40,20 @@ class PrismaExecutorDb implements ExecutorDb {
       create:    (args)  => (_prismaDb.handoff.create    as Function)(args),
       aggregate: (args)  => (_prismaDb.handoff.aggregate as Function)(args),
       /**
-       * Atomic handoff insertion using a PostgreSQL advisory lock.
-       * pg_advisory_xact_lock(hashtext(run_id)) serializes all concurrent handoff
-       * inserts for the same run within the same transaction — eliminating the
-       * sequence_number unique-constraint race condition without a schema change.
-       * The lock is automatically released when the transaction commits or rolls back.
+       * Atomic handoff insertion using a row-level lock on the Run row.
+       *
+       * SELECT ... FOR UPDATE on the Run row serializes all concurrent handoff
+       * inserts for the same run: T2 blocks until T1 commits, then reads the
+       * updated MAX(sequence_number) — guaranteed no P2002.
+       *
+       * Unlike advisory locks, FOR UPDATE on a real row is always within the
+       * same transaction connection regardless of the driver adapter used.
        */
       createAtomic: async (data) => {
         await _prismaDb.$transaction(async (tx) => {
-          // Serialize all handoff inserts for this run_id using an advisory lock.
+          // Lock the Run row — only one transaction per run can hold this lock.
           await tx.$executeRawUnsafe(
-            'SELECT pg_advisory_xact_lock(hashtext($1))',
+            'SELECT id FROM "Run" WHERE id = $1 FOR UPDATE',
             data.run_id,
           )
           const maxSeq = await (tx.handoff.aggregate as Function)({
