@@ -6,7 +6,7 @@
 // The Server Component guarantees the token is present before rendering this component,
 // so the `if (!setupToken)` guard is intentionally omitted here.
 
-import { useState, useTransition, Fragment } from 'react'
+import { useState, useTransition, Fragment, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { CheckCircle2, Loader2, ExternalLink, ArrowLeft, ArrowRight } from 'lucide-react'
@@ -484,4 +484,17 @@ export function SetupWizard() {
       )}
     </>
   )
+}
+
+// ── Auto-refresh helper ───────────────────────────────────────────────────────
+// Used by the Server Component fallback: re-runs the server render after
+// `delayMs` so peekSetupToken() is retried once instrumentation.ts has finished.
+
+export function AutoRefresh({ delayMs = 1500 }: { delayMs?: number }) {
+  const router = useRouter()
+  useEffect(() => {
+    const t = setTimeout(() => router.refresh(), delayMs)
+    return () => clearTimeout(t)
+  }, [router, delayMs])
+  return null
 }
