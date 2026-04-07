@@ -514,9 +514,19 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick =
       {/* Generated files download list (PYTHON_EXECUTOR only) */}
       {artifacts && artifacts.length > 0 && (
         <div className="border-t border-surface-border px-4 py-3 space-y-2">
-          <p className="text-xs text-muted-foreground font-medium">
-            {t('run.node.artifacts.title')}
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground font-medium">
+              {t('run.node.artifacts.title')}
+            </p>
+            <a
+              href={`/api/runs/${runId}/artifacts/zip?node_id=${node.node_id}`}
+              download
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Download className="h-3 w-3" />
+              {t('run.node.artifacts.downloadZip')}
+            </a>
+          </div>
           {artifacts.map(a => (
             <a
               key={a.id}
