@@ -824,15 +824,19 @@ export class CustomExecutor implements IExecutionEngine {
         payload:        output.handoffOut,
       })
 
-      // Update node with output + cost + resolved LLM model
+      // Update node with output + cost + resolved LLM model.
+      // Clear partial_output so pages loaded after run completion never show
+      // the stale streaming buffer instead of the final handoff_out content.
       await this.db.node.update({
         where: { id: node.id },
         data: {
-          handoff_out:    output.handoffOut,
-          cost_usd:       output.costUsd,
-          tokens_in:      output.tokensIn,
-          tokens_out:     output.tokensOut,
-          completed_at:   new Date(),
+          handoff_out:         output.handoffOut,
+          cost_usd:            output.costUsd,
+          tokens_in:           output.tokensIn,
+          tokens_out:          output.tokensOut,
+          completed_at:        new Date(),
+          partial_output:      null,
+          partial_updated_at:  null,
           // Write the resolved model string (e.g. "claude-opus-4-5-20251001") so the
           // run detail UI can display which model executed this node.
           ...(output.llm_model ? {
