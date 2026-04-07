@@ -25,7 +25,7 @@ import type { ClassifierResult, ProfileId } from '@/lib/agents/classifier'
 import { Planner } from '@/lib/agents/planner'
 import { Writer } from '@/lib/agents/writer'
 import type { WriterNodeInput } from '@/lib/agents/writer'
-import { Reviewer } from '@/lib/agents/reviewer'
+import { Reviewer, type ReviewerTaskContext } from '@/lib/agents/reviewer'
 import type { WriterOutput } from '@/lib/agents/writer'
 import { runSmokeTest } from '@/lib/agents/scaffolding/smoke-test.agent'
 import { repairForSubpath } from '@/lib/agents/scaffolding/repair.agent'
@@ -341,8 +341,27 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           ? (meta['output_language'] as string)
           : undefined
 
+        // Build task context: look up the description fields from every node's metadata.
+        // The Planner writes `description` into each node's metadata — passing it to the
+        // reviewer lets the LLM understand each writer's assigned scope (crucial when
+        // writers are building complementary parts of the same artefact, e.g. worksheets).
+        const runNodes = await db.node.findMany({
+          where: { run_id: node.run_id },
+          select: { node_id: true, metadata: true },
+        })
+        const taskContext: ReviewerTaskContext = {
+          writerDescriptions: Object.fromEntries(
+            runNodes
+              .filter(n => n.metadata && typeof (n.metadata as Record<string, unknown>)['description'] === 'string')
+              .map(n => [n.node_id, (n.metadata as Record<string, unknown>)['description'] as string]),
+          ),
+          reviewerDescription: typeof meta['description'] === 'string'
+            ? (meta['description'] as string)
+            : undefined,
+        }
+
         const result = await new Reviewer(captureClient).review(
-          writerOutputs, profile, node.run_id, signal, outputLanguage,
+          writerOutputs, profile, node.run_id, signal, outputLanguage, taskContext,
         )
         return {
           handoffOut: result,
