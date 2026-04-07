@@ -170,5 +170,6 @@ export class InMemoryRunStore implements ExecutorDb {
 
   runDependency = {
     create: async (_args: unknown) => ({}),
+    findMany: async (_args: unknown) => [] as Array<{ parent_run: { id: string; status: string } }>,
   }
 }
