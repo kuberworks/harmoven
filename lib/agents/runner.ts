@@ -10,7 +10,8 @@
 //   SMOKE_TEST:       { worktree, routes?, timeout_s? }
 //   REPAIR:           { worktree, subpath } — used standalone (smoke-test integrates repair internally)
 //   CRITICAL_REVIEW:  { domain_profile, run_config_severity?, project_severity?, preset? }
-//   PYTHON_EXECUTOR:  { timeout_ms? } — handoffIn.output.content (WriterOutput) is the code
+//   PYTHON_EXECUTOR:  { timeout_ms?, packages? } — handoffIn.output.content (WriterOutput) is the code
+//                      packages: PyPI package names to install via micropip (e.g. ['openpyxl', 'numpy'])
 //
 // Selection context (optional, also from node metadata):
 //   { confidentiality?, jurisdiction_tags?, preferred_llm?, estimated_tokens? }
@@ -431,7 +432,11 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           ? (meta['timeout_ms'] as number)
           : undefined
 
-        const result = await executePython({ code, timeout_ms: timeoutMs }, signal)
+        const packages = Array.isArray(meta['packages'])
+          ? (meta['packages'] as unknown[]).filter((p): p is string => typeof p === 'string')
+          : undefined
+
+        const result = await executePython({ code, timeout_ms: timeoutMs, packages }, signal)
 
         return {
           handoffOut: {
