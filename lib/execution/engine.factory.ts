@@ -288,7 +288,15 @@ declare global {
  * @throws if called in a test context — tests must use createExecutionEngine() with mocks.
  */
 export async function getExecutionEngine(): Promise<IExecutionEngine> {
-  if (!globalThis.__harmoven_execution_engine) {
+  // If the singleton is missing a method defined in IExecutionEngine, the cached
+  // instance is stale (e.g. created before a new method was added via HMR in dev).
+  // Recreate it so callers never receive a partially-functional engine.
+  const stale = globalThis.__harmoven_execution_engine
+    && !('replayNode' in globalThis.__harmoven_execution_engine)
+  if (!globalThis.__harmoven_execution_engine || stale) {
+    if (stale) {
+      console.warn('[harmoven] execution engine singleton is stale (missing replayNode) — recreating')
+    }
     // createLLMClient() is async — it reads DB and seeds built-in profiles.
     // Must be awaited before constructing the engine so the agentRunner has a
     // fully-loaded ILLMClient backed by live DB profiles.
