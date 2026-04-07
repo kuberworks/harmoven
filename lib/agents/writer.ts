@@ -16,6 +16,9 @@ import type { ProfileId } from '@/lib/agents/classifier'
 import { withRetry } from '@/lib/utils/retry'
 import { AgentCostError } from '@/lib/agents/agent-cost-error'
 import { createHash } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import yaml from 'js-yaml'
 
 /** Max chars of upstream input content forwarded to the LLM (Section 24). */
 const MAX_UPSTREAM_INPUT_CHARS = 500_000
@@ -69,20 +72,48 @@ const TIER: Record<Complexity, string> = {
 
 /**
  * Max output tokens per complexity tier.
- * Code/data profiles produce full file content with JSON-encoding overhead
- * (newlines → \n, quotes → \") that inflates token count ~30-40% vs raw text.
- * Values are set close to current provider maximums to avoid mid-output truncation.
+ * Defaults are set close to the maximum modern providers accept (most cap at 64k).
+ * Override via orchestrator.yaml:
+ *   writer:
+ *     max_tokens_low:    8192
+ *     max_tokens_medium: 32768
+ *     max_tokens_high:   65536
  */
-const MAX_TOKENS: Record<Complexity, number> = {
+const DEFAULT_MAX_TOKENS: Record<Complexity, number> = {
   low:    8_192,
-  medium: 16_384,
-  high:   32_768,
+  medium: 32_768,
+  high:   65_536,
+}
+
+interface WriterOrchestratorConfig {
+  max_tokens_low?:    number
+  max_tokens_medium?: number
+  max_tokens_high?:   number
+}
+
+function loadWriterConfig(): WriterOrchestratorConfig {
+  try {
+    const yamlPath = path.resolve(process.cwd(), 'orchestrator.yaml')
+    const raw = fs.readFileSync(yamlPath, 'utf8')
+    const config = yaml.load(raw) as Record<string, unknown> | null
+    return (config?.['writer'] as WriterOrchestratorConfig | undefined) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+// Loaded once at module init (process lifetime in prod; per-test in Jest)
+const _writerConfig = loadWriterConfig()
+
+const MAX_TOKENS: Record<Complexity, number> = {
+  low:    _writerConfig.max_tokens_low    ?? DEFAULT_MAX_TOKENS.low,
+  medium: _writerConfig.max_tokens_medium ?? DEFAULT_MAX_TOKENS.medium,
+  high:   _writerConfig.max_tokens_high   ?? DEFAULT_MAX_TOKENS.high,
 }
 
 /**
  * Profiles that produce code/data output need extra headroom because the LLM
- * JSON-encodes special characters, inflating token usage. For these profiles the
- * base MAX_TOKENS is multiplied by this factor (capped at provider max 32K).
+ * JSON-encodes special characters, inflating token usage by ~30-40%.
  */
 const CODE_PROFILES = new Set<ProfileId>([
   'app_scaffolding', 'data_reporting', 'finance_modeling',
@@ -90,7 +121,9 @@ const CODE_PROFILES = new Set<ProfileId>([
 
 function maxTokensFor(complexity: Complexity, profile: ProfileId): number {
   const base = MAX_TOKENS[complexity]
-  return CODE_PROFILES.has(profile) ? Math.min(base * 2, 65_536) : base
+  // Code profiles get 2× headroom (capped at 131 072 — above current provider maximums,
+  // so the provider's own hard limit applies before ours).
+  return CODE_PROFILES.has(profile) ? Math.min(base * 2, 131_072) : base
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
