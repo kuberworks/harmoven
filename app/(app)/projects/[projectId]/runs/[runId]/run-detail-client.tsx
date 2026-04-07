@@ -391,7 +391,7 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
             )}
           </div>
 
-          {node.error && (
+          {node.error && (node.status === 'FAILED' || node.status === 'INTERRUPTED') && (
             <p className="text-xs text-red-400 mt-1 line-clamp-3 font-mono">{node.error}</p>
           )}
           {outputSummary && !expanded && (
@@ -694,9 +694,17 @@ function ResultTab({
 // ─── Activity feed entry ─────────────────────────────────────────────────────
 
 const ACTIVITY_ICONS: Record<string, [emoji: string, label: string]> = {
-  error:      ['🔴', 'Error'],
-  completed:  ['✅', 'Completed'],
-  human_gate: ['⏸', 'Paused'],
+  error:         ['🔴', 'Error'],
+  completed:     ['✅', 'Completed'],
+  human_gate:    ['⏸', 'Paused'],
+  node_snapshot: ['⚙', 'Agent update'],
+}
+
+const AGENT_TYPE_LABEL: Record<string, string> = {
+  CLASSIFIER: 'Classifier',
+  PLANNER:    'Planner',
+  WRITER:     'Writer',
+  REVIEWER:   'Reviewer',
 }
 
 function ActivityEntry({ type, label }: { type: string; label: string }) {
@@ -966,7 +974,23 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               <Card>
                 <CardContent className="p-4 space-y-2 max-h-80 overflow-y-auto">
                   {/* Live SSE events (newest first) */}
-                  {stream.events.slice().reverse().map((ev, i) => {
+                  {stream.events.slice().reverse().flatMap((ev, i) => {
+                    if (ev.type === 'node_snapshot') {
+                      // Skip pure streaming noise (partial_output only)
+                      if (Object.keys(ev.data).length === 1 && 'partial_output' in ev.data) return []
+                      const nd = nodes.find(n => n.node_id === ev.node_id)
+                      const name = nd
+                        ? `${AGENT_TYPE_LABEL[nd.agent_type] ?? nd.agent_type} (${ev.node_id})`
+                        : ev.node_id
+                      const d = ev.data
+                      const snapshotLabel =
+                        'llm_profile_id' in d && d.llm_profile_id ? `${name} — model: ${d.llm_profile_id as string}`
+                        : 'started_at'   in d && d.started_at     ? `${name} — started`
+                        : d.status === 'INTERRUPTED'               ? `${name} — interrupted`
+                        : 'cost_usd' in d || 'tokens_in' in d     ? `${name} — output ready`
+                        : `${name} — updated`
+                      return [<ActivityEntry key={`live-${ev.type}-${i}`} type={ev.type} label={snapshotLabel} />]
+                    }
                     const label =
                       ev.type === 'state_change'
                         ? `${ev.entity_type} ${ev.id?.slice(0, 6)} → ${ev.status}`
@@ -979,7 +1003,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                         : ev.type === 'completed'
                         ? 'Run completed'
                         : ev.type
-                    return <ActivityEntry key={`live-${ev.type}-${i}`} type={ev.type} label={label} />
+                    return [<ActivityEntry key={`live-${ev.type}-${i}`} type={ev.type} label={label} />]
                   })}
 
                   {/* Historical AuditLog entries (newest first) */}
