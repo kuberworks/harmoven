@@ -44,6 +44,11 @@ interface Props {
     assumptions: string[]
     nodes: Array<{ node_id: string; agent: string; description: string; complexity: string }>
   } | null
+  reviewerEscalation: {
+    findings: Array<{ issue?: string; recommendation?: string; severity?: string }>
+    confidence: number | null
+    node_id: string | null
+  } | null
   nodes: NodeCost[]
   criticalReview: {
     id: string
@@ -71,6 +76,7 @@ export function GateClient({
   writerSummary,
   writerType,
   plannerPlan,
+  reviewerEscalation,
   nodes,
   criticalReview,
   evalResult,
@@ -96,11 +102,12 @@ export function GateClient({
 
   // Human-readable gate reason labels
   const gateReasonLabel: Record<string, string> = {
-    planner_exhausted:    'Planner failed after 3 attempts — operator review required',
-    low_confidence_plan:  'Planner confidence below threshold — review the proposed plan before it executes',
-    low_confidence:       'Low confidence — human review requested',
-    reviewer_findings:    'Reviewer found issues requiring human decision',
-    budget_warning:       'Budget threshold exceeded',
+    planner_exhausted:      'Planner failed after 3 attempts — operator review required',
+    low_confidence_plan:    'Planner confidence below threshold — review the proposed plan before it executes',
+    low_confidence:         'Low confidence — human review requested',
+    reviewer_escalation:    'Reviewer escalated — output requires human decision',
+    reviewer_findings:      'Reviewer found issues requiring human decision',
+    budget_warning:         'Budget threshold exceeded',
   }
   const gateReasonDisplay = gateReason ? (gateReasonLabel[gateReason] ?? gateReason) : null
 
@@ -112,15 +119,13 @@ export function GateClient({
     ? 'e.g. Limit to 5 parallel sections maximum. Focus only on the main topic — no appendices…'
     : 'e.g. The content is too long. Please shorten to 3 paragraphs and focus on the key points…'
 
-  const defaultTab = writerContent
+  const defaultTab = writerContent || plannerPlan || reviewerEscalation
     ? 'preview'
-    : plannerPlan
-      ? 'preview'
-      : criticalReview
-        ? 'critical'
-        : evalResult
-          ? 'eval'
-          : 'preview'
+    : criticalReview
+      ? 'critical'
+      : evalResult
+        ? 'eval'
+        : 'preview'
 
   const totalCost = nodes.reduce((s, n) => s + n.cost_usd, 0)
 
@@ -311,22 +316,60 @@ export function GateClient({
         {/* Preview tab — writer output OR planner plan for low_confidence_plan */}
         <TabsContent value="preview" className="mt-0 pt-4">
           {writerContent ? (
-            <div className="rounded-lg border border-surface-border bg-surface-raised p-5 max-w-3xl">
-              <div className="flex items-center gap-2 mb-4">
-                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span className="text-sm font-semibold text-foreground">Content ready for review</span>
-                {writerType && (
-                  <span className="text-xs text-muted-foreground/60 font-mono ml-auto">{writerType}</span>
+            <div className="space-y-4 max-w-3xl">
+              {/* Reviewer escalation findings banner — shown above writer output */}
+              {reviewerEscalation && reviewerEscalation.findings.length > 0 && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+                    <span className="text-sm font-semibold text-red-300">
+                      Reviewer escalated — {reviewerEscalation.findings.length} issue{reviewerEscalation.findings.length > 1 ? 's' : ''} found
+                    </span>
+                    {reviewerEscalation.confidence !== null && (
+                      <span className="ml-auto text-xs text-red-400/70 font-mono">confidence {reviewerEscalation.confidence}%</span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {reviewerEscalation.findings.map((f, i) => (
+                      <div key={i} className="rounded-md border border-red-500/20 bg-surface-1 p-3">
+                        <div className="flex items-start gap-2">
+                          {f.severity && (
+                            <span className={
+                              'shrink-0 text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 mt-0.5 ' +
+                              (f.severity === 'blocking' ? 'bg-red-500/20 text-red-400' :
+                               f.severity === 'major'    ? 'bg-orange-500/20 text-orange-400' :
+                               'bg-yellow-500/20 text-yellow-400')
+                            }>{f.severity}</span>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            {f.issue && <p className="text-sm text-foreground leading-relaxed">{f.issue}</p>}
+                            {f.recommendation && (
+                              <p className="text-xs text-muted-foreground mt-1 italic">→ {f.recommendation}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="rounded-lg border border-surface-border bg-surface-raised p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                  <span className="text-sm font-semibold text-foreground">Content ready for review</span>
+                  {writerType && (
+                    <span className="text-xs text-muted-foreground/60 font-mono ml-auto">{writerType}</span>
+                  )}
+                </div>
+                <div className="max-h-72 overflow-y-auto p-4 bg-surface-1 rounded-md border border-surface-border/50">
+                  <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">
+                    {writerContent}
+                  </pre>
+                </div>
+                {writerSummary && (
+                  <p className="text-xs text-muted-foreground mt-3 italic">{writerSummary}</p>
                 )}
               </div>
-              <div className="max-h-72 overflow-y-auto p-4 bg-surface-1 rounded-md border border-surface-border/50">
-                <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">
-                  {writerContent}
-                </pre>
-              </div>
-              {writerSummary && (
-                <p className="text-xs text-muted-foreground mt-3 italic">{writerSummary}</p>
-              )}
             </div>
           ) : plannerPlan ? (
             <div className="space-y-4 max-w-3xl">
