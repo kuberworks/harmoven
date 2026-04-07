@@ -257,7 +257,15 @@ async function streamOpenAI(
 ): Promise<ChatResult> {
   const client = await buildOpenAIClient(profile)
 
-  const stream = await client.chat.completions.stream(
+  // Use raw create({ stream: true }) iteration instead of the higher-level
+  // client.chat.completions.stream() helper.
+  //
+  // The stream() helper calls finalizeChatCompletion() at the end, which
+  // throws OpenAIError('missing finish_reason for choice 0') when an
+  // OpenAI-compatible provider (CometAPI, Ollama, Mistral, custom) omits
+  // finish_reason on the final SSE chunk — a common non-strict behaviour.
+  // Raw iteration bypasses finalizeChatCompletion() entirely.
+  const stream = await client.chat.completions.create(
     {
       model:      profile.model_string,
       max_tokens: options.maxTokens ?? 4096,
@@ -269,17 +277,23 @@ async function streamOpenAI(
 
   let fullText  = ''
   let modelName = profile.model_string
+  let tokensIn  = 0
+  let tokensOut = 0
   for await (const chunk of stream) {
     const text = chunk.choices[0]?.delta?.content ?? ''
     if (text) { onChunk(text); fullText += text }
     if (chunk.model) modelName = chunk.model
+    // Some providers send usage in the final chunk
+    if (chunk.usage) {
+      tokensIn  = chunk.usage.prompt_tokens     ?? 0
+      tokensOut = chunk.usage.completion_tokens ?? 0
+    }
   }
 
-  const final = await stream.finalChatCompletion()
   return {
     content:   fullText,
-    tokensIn:  final.usage?.prompt_tokens     ?? 0,
-    tokensOut: final.usage?.completion_tokens ?? 0,
+    tokensIn,
+    tokensOut,
     costUsd:   0,
     model:     modelName,
   }
