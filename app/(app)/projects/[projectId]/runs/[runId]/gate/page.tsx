@@ -97,6 +97,17 @@ export default async function GatePage({ params }: Props) {
       }
     : null
 
+  // Extract reviewer escalation findings for reviewer_escalation gates
+  // Gate data shape: { node_id, verdict: 'ESCALATE_HUMAN', findings: [{issue, recommendation, severity}], confidence }
+  const gateData = openGate?.data as Record<string, unknown> | null ?? null
+  const reviewerEscalation = openGate?.reason === 'reviewer_escalation' && gateData
+    ? {
+        findings:   (gateData['findings'] as Array<{ issue?: string; recommendation?: string; severity?: string }> | undefined) ?? [],
+        confidence: (gateData['confidence'] as number | null | undefined) ?? null,
+        node_id:    (gateData['node_id']   as string | undefined) ?? null,
+      }
+    : null
+
   // ── Server-side data filtering by permission ──────────────────────────────
   // PermissionGuard in gate-client is UI-only. Sensitive data must be
   // withheld at this layer so it never reaches the rendered HTML payload.
@@ -182,6 +193,7 @@ export default async function GatePage({ params }: Props) {
         writerSummary={(writerOutput?.['summary'] ?? null) as string | null}
         writerType={(writerOutput?.['type'] ?? null) as string | null}
         plannerPlan={plannerPlan}
+        reviewerEscalation={reviewerEscalation}
         nodes={nodes}
         criticalReview={criticalReview}
         evalResult={evalResult}
