@@ -64,7 +64,7 @@ export default async function AnalyticsUsersPage({
   // Fetch from internal analytics API (session cookie forwarded via headers)
   let users: UserBreakdown[] = []
   try {
-    const baseUrl = process.env.NEXTAUTH_URL ?? process.env.APP_URL ?? 'http://localhost:3000'
+    const baseUrl = process.env.AUTH_URL ?? 'http://localhost:3000'
     const res = await fetch(`${baseUrl}/api/analytics?${qs.toString()}`, {
       headers: await headers(),
       next:    { revalidate: 300 },

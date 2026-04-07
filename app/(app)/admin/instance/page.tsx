@@ -35,7 +35,7 @@ export default async function AdminInstancePage() {
   if (instanceRole !== 'instance_admin') redirect('/dashboard')
 
   const hdrs   = await headers()
-  const base   = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const base   = process.env.AUTH_URL ?? 'http://localhost:3000'
 
   const [security, health, orchestratorRaw, rgpd] = await Promise.all([
     fetchJson<{

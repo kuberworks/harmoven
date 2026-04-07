@@ -41,6 +41,18 @@ const HKDF_INFO = Buffer.from('harmoven-aes256gcm-credential-encryption', 'utf8'
  * @throws Error if ENCRYPTION_KEY is not set
  */
 export function deriveCredentialKey(raw: string): Buffer {
+  // SEC-M1: Refuse to run with the well-known test key in production.
+  // A developer who copies .env.test to production would otherwise silently
+  // encrypt all credentials with a publicly known key.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    raw === 'test-encryption-key-do-not-use-in-prod'
+  ) {
+    throw new Error(
+      'ENCRYPTION_KEY is set to the .env.test placeholder value. ' +
+      'Generate a real key: openssl rand -base64 32'
+    )
+  }
   return Buffer.from(hkdfSync('sha256', Buffer.from(raw, 'utf8'), HKDF_SALT, HKDF_INFO, 32))
 }
 

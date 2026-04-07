@@ -16,7 +16,8 @@ dist/
 .env.production.local
 
 # Prisma generated
-prisma/migrations/*.sql
+# (migrations/*.sql are intentionally tracked — removing them from git breaks
+# schema history auditability. Only the generated client is excluded below.)
 
 # Keep these tracked:
 # .env.example  ← document required vars, no real values

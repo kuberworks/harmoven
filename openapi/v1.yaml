@@ -7239,8 +7239,10 @@ paths:
         Validates signature and fires an auto-run for the project.
 
         **Validation (all required):**
-        - `X-Hub-Signature-256`: `sha256=<HMAC-SHA256 of raw body>`
-        - `X-Webhook-Timestamp`: Unix timestamp — must be within 5 minutes of server time
+        - `X-Hub-Signature-256`: `sha256=<HMAC-SHA256 of "${timestamp}.${rawBody}">`
+        - `X-Webhook-Timestamp`: Unix timestamp (seconds) — must be within 5 minutes of server
+          time. **The timestamp is included in the signed message** so that a captured
+          `(body, signature)` pair cannot be replayed with a fresh timestamp header.
         - `X-Webhook-Delivery`: Idempotency UUID — rejects duplicates (stored in `WebhookDelivery`)
 
         **Rate limit:** 60 requests per minute per IP per trigger endpoint — enforced before HMAC validation and DB queries. Excess returns `429` with `Retry-After`.
@@ -7285,7 +7287,7 @@ paths:
                     type: string
                     description: "Human-readable description of the event, error, or update."
         '400':
-          description: "HMAC-SHA256 signature in `X-Hub-Signature-256` does not match the raw request body, or the `X-Webhook-Timestamp` is more than 5 minutes from the server's current UTC time. Re-sign the request before retrying."
+          description: "HMAC-SHA256 signature in `X-Hub-Signature-256` does not match `${X-Webhook-Timestamp}.${rawBody}`, or the `X-Webhook-Timestamp` is more than 5 minutes from the server's current UTC time, or `X-Webhook-Timestamp` is missing. Re-sign the request (using the new signed-message format) before retrying."
           content:
             application/json:
               schema:

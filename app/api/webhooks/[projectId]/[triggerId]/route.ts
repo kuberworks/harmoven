@@ -31,10 +31,21 @@ const DAILY_COST_CAP_USD = 10               // $ per day (instance-wide)
 /**
  * HMAC-SHA256 signature check.
  * Header format: "sha256=<64 hex chars>"
+ *
+ * The signed message is "${timestamp}.${body}" — timestamps are included so
+ * that a captured (body + signature) pair cannot be replayed with a fresh
+ * X-Webhook-Timestamp header alone. An attacker would need both the secret
+ * and the original timestamp to forge a valid signature.
  */
-function verifySignature(body: string, secret: string, signatureHeader: string | null): boolean {
+function verifySignature(
+  body: string,
+  timestamp: string,
+  secret: string,
+  signatureHeader: string | null,
+): boolean {
   if (!signatureHeader || !signatureHeader.startsWith('sha256=')) return false
-  const expected = createHmac('sha256', secret).update(body).digest('hex')
+  const message  = `${timestamp}.${body}`
+  const expected = createHmac('sha256', secret).update(message).digest('hex')
   const actual   = signatureHeader.slice('sha256='.length)
   if (expected.length !== actual.length) return false
   // timingSafeEqual prevents timing oracle: compare as equal-length Buffers
@@ -85,23 +96,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // ── 3. Validate HMAC-SHA256 ──────────────────────────────────────────────────
-  const config = trigger.config as Record<string, unknown>
-  const webhookSecret = typeof config['webhook_secret'] === 'string' ? config['webhook_secret'] : ''
-  if (!webhookSecret) {
-    // Trigger has no secret configured — reject for safety
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-
-  const signatureHeader = req.headers.get('x-hub-signature-256')
-  if (!verifySignature(rawBody, webhookSecret, signatureHeader)) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
-  }
-
-  // ── 4. Timestamp freshness — REQUIRED (CVE-HARM-002: replay attack prevention) ────
-  // The timestamp header is mandatory: without it an attacker who intercepts a valid
-  // HMAC-signed payload can replay it indefinitely.
-  // Senders must include X-Webhook-Timestamp: <unix seconds>; reject if absent.
+  // ── 3. Validate timestamp + HMAC-SHA256 ────────────────────────────────────────
+  // Timestamp is extracted BEFORE the HMAC check so it can be included in the
+  // signed message ("${timestamp}.${body}").  This prevents replay attacks:
+  // an attacker who intercepts a valid (body, signature) pair cannot reuse it
+  // with a fresh timestamp because the signature covers the original timestamp.
   const timestampHeader = req.headers.get('x-webhook-timestamp')
   if (!timestampHeader) {
     return NextResponse.json({ error: 'X-Webhook-Timestamp header is required' }, { status: 400 })
@@ -111,6 +110,20 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (isNaN(ts) || Math.abs(now - ts) > TIMESTAMP_WINDOW) {
     return NextResponse.json({ error: 'Timestamp out of range — must be within ±5 minutes of server time' }, { status: 400 })
   }
+
+  const config = trigger.config as Record<string, unknown>
+  const webhookSecret = typeof config['webhook_secret'] === 'string' ? config['webhook_secret'] : ''
+  if (!webhookSecret) {
+    // Trigger has no secret configured — reject for safety
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const signatureHeader = req.headers.get('x-hub-signature-256')
+  if (!verifySignature(rawBody, timestampHeader, webhookSecret, signatureHeader)) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
+  }
+
+  // ── 4. (reserved — was timestamp check, now merged into step 3 above) ───────────
 
   // ── 5. Idempotency — reject duplicate deliveries ─────────────────────────────
   const deliveryId = req.headers.get('x-webhook-delivery')
