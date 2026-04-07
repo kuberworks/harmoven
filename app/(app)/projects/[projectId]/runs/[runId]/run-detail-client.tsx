@@ -409,9 +409,11 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
   const stdout        = (handoff?.['stdout'] as string | undefined) ?? null
   const hasOutput     = !!outputContent || !!node.partial_output || !!stdout
 
-  const durationSec = node.started_at && node.completed_at
-    ? Math.round((new Date(node.completed_at).getTime() - new Date(node.started_at).getTime()) / 1000)
+  const durationMs = node.started_at && node.completed_at
+    ? new Date(node.completed_at).getTime() - new Date(node.started_at).getTime()
     : null
+  const durationSec = durationMs !== null ? Math.round(durationMs / 1000) : null
+  const durationLabel = durationMs === null ? null : durationMs < 1000 ? '<1s' : `${durationSec}s`
 
   return (
     <div className="rounded-lg border border-surface-border bg-surface-raised text-sm overflow-hidden">
@@ -447,8 +449,8 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
             {elapsed !== null && (
               <span className="text-xs text-muted-foreground">{elapsed}s elapsed</span>
             )}
-            {durationSec !== null && (
-              <span className="text-xs text-muted-foreground">{durationSec}s</span>
+            {durationLabel !== null && (
+              <span className="text-xs text-muted-foreground">{durationLabel}</span>
             )}
             {node.tokens_in > 0 && uiLevel !== 'GUIDED' && (
               <span className="text-xs text-muted-foreground font-mono">

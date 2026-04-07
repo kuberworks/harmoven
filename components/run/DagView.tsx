@@ -190,14 +190,16 @@ function DetailPanel({
   const downstreams = edges.filter(e => e.from === dagNode.id).map(e => allNodes.find(n => n.id === e.to)).filter(Boolean) as DagNode[]
 
   // Duration
-  const durationSec = state?.started_at && state?.completed_at
-    ? Math.round((new Date(state.completed_at).getTime() - new Date(state.started_at).getTime()) / 1000)
+  const durationMs = state?.started_at && state?.completed_at
+    ? new Date(state.completed_at).getTime() - new Date(state.started_at).getTime()
     : null
-  const duration = durationSec !== null
-    ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`
-    : state?.started_at && !state?.completed_at
-    ? 'running…'
-    : '—'
+  const duration = durationMs === null
+    ? (state?.started_at && !state?.completed_at ? 'running…' : '—')
+    : durationMs < 1000
+    ? '<1s'
+    : durationMs < 60_000
+    ? `${Math.round(durationMs / 1000)}s`
+    : `${Math.floor(durationMs / 60_000)}m ${Math.round((durationMs % 60_000) / 1000)}s`
 
   // Output content from handoff_out
   const handoff = (state?.handoff_out as Record<string, unknown> | null) ?? null
