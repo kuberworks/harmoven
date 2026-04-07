@@ -44,7 +44,7 @@ export type ClassifierHandoff = z.infer<typeof ClassifierHandoffSchema>
 
 const PlannerNodeSchema = z.object({
   node_id:              z.string(),
-  agent:                z.enum(['WRITER', 'REVIEWER', 'QA', 'DEVOPS']),
+  agent:                z.enum(['WRITER', 'REVIEWER', 'QA', 'DEVOPS', 'PYTHON_EXECUTOR']),
   description:          z.string(),
   dependencies:         z.array(z.string()),
   llm_strategy:         z.enum(['dynamic', 'fast', 'balanced', 'powerful']),
@@ -136,3 +136,16 @@ export const ReviewerHandoffSchema = z.object({
 })
 
 export type ReviewerHandoff = z.infer<typeof ReviewerHandoffSchema>
+
+// ─── Python Executor output ──────────────────────────────────────────────────
+
+export const PythonExecutorHandoffSchema = z.object({
+  stdout:      z.string(),
+  stderr:      z.string(),
+  exit_code:   z.union([z.literal(0), z.literal(1)]),
+  duration_ms: z.number().nonnegative(),
+  truncated:   z.boolean(),
+  error:       z.string().nullable(),
+})
+
+export type PythonExecutorHandoff = z.infer<typeof PythonExecutorHandoffSchema>

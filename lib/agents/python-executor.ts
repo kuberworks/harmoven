@@ -1,0 +1,176 @@
+// lib/agents/python-executor.ts
+// PythonExecutor — executes Python code inside a Pyodide (WASM) sandbox.
+//
+// Security model:
+//   - Pyodide runs CPython compiled to WebAssembly; no real subprocess access.
+//   - __builtins__.__import__ is replaced with a safe version that blocks a
+//     list of dangerous modules (os, socket, urllib, ctypes, multiprocessing, …).
+//   - Execution runs in a dedicated worker_threads Worker so the main thread can
+//     call worker.terminate() on timeout — hard-killing the WASM execution.
+//   - resourceLimits.maxOldGenerationSizeMb caps the Worker's heap at 256 MB.
+//   - stdout + stderr are captured via Pyodide's setStdout/setStderr hooks and
+//     truncated to MAX_OUTPUT_CHARS (50 000 chars) to prevent log flooding.
+//
+// This is NOT a Firecracker/gVisor-level sandbox. For trusted single-tenant
+// deployments (self-hosted Harmoven) this is the recommended approach.
+// For strict multi-tenant, add a Docker container per execution layer on top.
+
+import { Worker } from 'worker_threads'
+import { resolve } from 'path'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const DEFAULT_TIMEOUT_MS = 30_000
+const MAX_TIMEOUT_MS     = 120_000
+const MEMORY_LIMIT_MB    = 256
+const MAX_OUTPUT_CHARS   = 50_000
+const MAX_CODE_BYTES     = 100_000  // 100 KB code size limit
+
+// Resolve paths once at module load time (not per-invocation).
+// Both paths are in node_modules so they're stable across restarts.
+const PYODIDE_PATH  = require.resolve('pyodide')
+const WORKER_PATH   = resolve(__dirname, 'python-executor.worker.cjs')
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface PythonExecutorInput {
+  /** Python source code to execute (max 100 KB). */
+  code: string
+  /**
+   * Maximum wall-clock execution time in milliseconds.
+   * Capped at MAX_TIMEOUT_MS (120 s). Defaults to DEFAULT_TIMEOUT_MS (30 s).
+   */
+  timeout_ms?: number
+}
+
+export interface PythonExecutorOutput {
+  /** Content written to stdout during execution. */
+  stdout: string
+  /** Content written to stderr during execution. */
+  stderr: string
+  /** 0 = success, 1 = Python exception or blocked import. */
+  exit_code: 0 | 1
+  /** Wall-clock time from Worker spawn to completion (includes Pyodide startup ~2-3 s). */
+  duration_ms: number
+  /** True when stdout + stderr was truncated to MAX_OUTPUT_CHARS. */
+  truncated: boolean
+  /** The Python exception message if exit_code = 1, else null. */
+  error: string | null
+}
+
+// Internal message type from worker
+interface WorkerResult {
+  ok: boolean
+  stdout: string
+  stderr: string
+  error: string | null
+}
+
+// ─── Extract clean error message from Pyodide's verbose traceback ────────────
+
+/**
+ * Pyodide wraps Python exceptions in multi-line tracebacks.
+ * Extract the most useful single-line summary for logging / node error field.
+ */
+function extractPyError(raw: string | null): string | null {
+  if (!raw) return null
+  // Find the last "ExceptionType: message" line
+  const lines = raw.split('\n').filter(l => l.trim())
+  // Skip "Error in sys.excepthook:" and surrounding noise
+  const useful = lines.filter(l =>
+    !l.startsWith('Error in sys.excepthook') &&
+    !l.startsWith('Traceback') &&
+    !l.trim().startsWith('File ') &&
+    !l.trim().startsWith('During handling')
+  )
+  return useful.at(-1)?.trim() ?? raw.slice(0, 200)
+}
+
+// ─── Main executor ────────────────────────────────────────────────────────────
+
+export async function executePython(
+  input: PythonExecutorInput,
+  signal?: AbortSignal,
+): Promise<PythonExecutorOutput> {
+  // Input validation
+  if (typeof input.code !== 'string') {
+    throw new TypeError('code must be a string')
+  }
+  if (Buffer.byteLength(input.code, 'utf8') > MAX_CODE_BYTES) {
+    throw new RangeError(`code exceeds ${MAX_CODE_BYTES / 1000} KB limit`)
+  }
+
+  const timeoutMs = Math.min(
+    input.timeout_ms ?? DEFAULT_TIMEOUT_MS,
+    MAX_TIMEOUT_MS,
+  )
+
+  const startMs = Date.now()
+
+  return new Promise<PythonExecutorOutput>((resolve, reject) => {
+    let settled = false
+
+    const worker = new Worker(WORKER_PATH, {
+      workerData: { code: input.code, pyodidePath: PYODIDE_PATH },
+      resourceLimits: {
+        maxOldGenerationSizeMb: MEMORY_LIMIT_MB,
+        maxYoungGenerationSizeMb: 32,
+      },
+    })
+
+    const teardown = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      // Terminate the worker — kills the WASM thread immediately.
+      void worker.terminate()
+      fn()
+    }
+
+    // Wall-clock timeout
+    const timer = setTimeout(() => {
+      teardown(() =>
+        reject(new Error(`Python execution timed out after ${timeoutMs} ms`)),
+      )
+    }, timeoutMs)
+
+    // Propagate AbortSignal (e.g. run cancelled by user)
+    const onAbort = () => {
+      clearTimeout(timer)
+      teardown(() => reject(new DOMException('Aborted', 'AbortError')))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    worker.once('message', (msg: WorkerResult) => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+
+      let stdout  = msg.stdout  ?? ''
+      let stderr  = msg.stderr  ?? ''
+      let truncated = false
+
+      // Truncate combined output to prevent log flooding
+      if (stdout.length + stderr.length > MAX_OUTPUT_CHARS) {
+        stdout    = stdout.slice(0, MAX_OUTPUT_CHARS)
+        stderr    = stderr.slice(0, Math.max(0, MAX_OUTPUT_CHARS - stdout.length))
+        truncated = true
+      }
+
+      teardown(() =>
+        resolve({
+          stdout,
+          stderr,
+          exit_code: msg.ok ? 0 : 1,
+          duration_ms: Date.now() - startMs,
+          truncated,
+          error: msg.ok ? null : extractPyError(msg.error),
+        }),
+      )
+    })
+
+    worker.once('error', (err) => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      teardown(() => reject(err))
+    })
+  })
+}
