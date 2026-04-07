@@ -294,11 +294,16 @@ export async function POST(req: NextRequest) {
       select: { id: true, status: true, project_id: true },
     })
     // Validate: all must exist, be COMPLETED, and belong to the same project.
+    // Use a single generic error for "not found" and "wrong project" to prevent
+    // IDOR: distinct messages would reveal whether a foreign-project run ID exists.
     for (const pid of body.parent_run_ids) {
       const parent = parentRuns.find(p => p.id === pid)
-      if (!parent) return NextResponse.json({ error: `Parent run ${pid} not found` }, { status: 422 })
-      if (parent.project_id !== projectId) return NextResponse.json({ error: `Parent run ${pid} belongs to a different project` }, { status: 422 })
-      if (parent.status !== 'COMPLETED') return NextResponse.json({ error: `Parent run ${pid} is not COMPLETED (status: ${parent.status})` }, { status: 422 })
+      if (!parent || parent.project_id !== projectId) {
+        return NextResponse.json({ error: `Parent run ${pid} not found` }, { status: 422 })
+      }
+      if (parent.status !== 'COMPLETED') {
+        return NextResponse.json({ error: `Parent run ${pid} is not COMPLETED (status: ${parent.status})` }, { status: 422 })
+      }
     }
     await db.runDependency.createMany({
       data: body.parent_run_ids.map(pid => ({

@@ -189,10 +189,18 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // Redact OpenAI/Anthropic keys (sk-...) and Gemini keys (AIza...) from SDK errors
+    // Redact known API key formats from SDK error messages to prevent key leakage in logs/responses.
+    // Covers: OpenAI/Anthropic (sk-*), Gemini (AIza*), xAI (xai-*),
+    // Groq (gsk_*), Together (together-*), Mistral (any long alphanum after "mistral"),
+    // Replicate (r8_*), Cohere (Co1z*), generic Bearer tokens.
     const safe = msg
-      .replace(/sk-[a-zA-Z0-9_-]{20,}/g, '[REDACTED]')
+      .replace(/sk-(?:ant-|proj-|or-v1-)?[a-zA-Z0-9_-]{20,}/g, '[REDACTED]')
       .replace(/AIza[A-Za-z0-9_-]{30,}/g, '[REDACTED]')
+      .replace(/xai-[a-zA-Z0-9_-]{20,}/g, '[REDACTED]')
+      .replace(/gsk_[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+      .replace(/r8_[a-zA-Z0-9]{32,}/g, '[REDACTED]')
+      .replace(/Co1z[A-Za-z0-9]{30,}/g, '[REDACTED]')
+      .replace(/Bearer\s+[a-zA-Z0-9_\-.]{20,}/g, 'Bearer [REDACTED]')
     return NextResponse.json(
       { error: `Provider connection failed: ${safe}` },
       { status: 400 },
