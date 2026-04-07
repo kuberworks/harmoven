@@ -50,10 +50,57 @@ export interface AgentOutput {
  * Minimal database interface the executor needs.
  * Satisfied by PrismaClient in production; by InMemoryRunStore in tests.
  */
+
+/** Minimal shape for creating a new run (used by spawn follow-up). */
+export interface SpawnRunData {
+  id: string
+  project_id: string
+  created_by: string
+  status: string
+  domain_profile: string
+  task_input: unknown
+  dag: unknown
+  run_config: unknown
+  transparency_mode: boolean
+  confidentiality: string
+  budget_usd: unknown
+  budget_tokens: unknown
+  user_injections: unknown[]
+  metadata: unknown
+  task_input_chars: number
+  data_expires_at: Date
+}
+
+/** Minimal shape for creating a node row (used by spawn follow-up). */
+export interface SpawnNodeData {
+  id: string
+  run_id: string
+  node_id: string
+  agent_type: string
+  status: string
+  started_at: null
+  completed_at: null
+  interrupted_at: null
+  interrupted_by: null
+  last_heartbeat: null
+  retries: number
+  handoff_in: null
+  handoff_out: null
+  partial_output: null
+  partial_updated_at: null
+  cost_usd: number
+  tokens_in: number
+  tokens_out: number
+  error: null
+  metadata: unknown
+}
+
 export interface ExecutorDb {
   run: {
     findUniqueOrThrow(args: { where: { id: string } }): Promise<RunRow>
     update(args: { where: { id: string }; data: Partial<RunRow> }): Promise<RunRow>
+    /** Create a new run row. Used when spawning follow-up runs from a REVIEWER verdict. */
+    create(args: { data: SpawnRunData }): Promise<{ id: string }>
   }
   node: {
     findMany(args: { where: { run_id: string } }): Promise<NodeRow[]>
@@ -62,6 +109,7 @@ export interface ExecutorDb {
     create(args: { data: Omit<NodeRow, 'id'> }): Promise<NodeRow>
     update(args: { where: { id: string }; data: Partial<NodeRow> }): Promise<NodeRow>
     updateMany(args: { where: { id?: string | { in: string[] }; run_id?: string; node_id?: string | { in: string[] }; status?: string | { in: string[] } }; data: Partial<NodeRow> }): Promise<{ count: number }>
+    createMany(args: { data: Array<SpawnNodeData> }): Promise<{ count: number }>
   }
   handoff: {
     create(args: { data: unknown }): Promise<unknown>
@@ -82,17 +130,24 @@ export interface ExecutorDb {
   auditLog: {
     create(args: { data: unknown }): Promise<unknown>
   }
+  runDependency: {
+    /** Create a parent → child run dependency row. */
+    create(args: { data: { child_run_id: string; parent_run_id: string } }): Promise<unknown>
+  }
 }
 
 /** Minimal run row shape used by the executor (subset of Prisma Run model). */
 export interface RunRow {
   id: string
   project_id: string
+  created_by: string
   status: string
   dag: unknown     // Dag JSON
   run_config: unknown
   task_input: unknown
   domain_profile: string
+  transparency_mode: boolean
+  confidentiality: string
   started_at: Date | null
   completed_at: Date | null
   paused_at: Date | null

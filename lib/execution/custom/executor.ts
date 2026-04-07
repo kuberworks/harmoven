@@ -1110,6 +1110,99 @@ export class CustomExecutor implements IExecutionEngine {
         }
       }
 
+      // ── REVIEWER SPAWN_FOLLOWUP ──────────────────────────────────────────────
+      // When the REVIEWER decides additional work is needed that the current run
+      // cannot cover (verdict SPAWN_FOLLOWUP), automatically create child runs
+      // in the same project and launch them.  The current run still completes
+      // normally — the spawned runs are independent and linked via RunDependency.
+      if (node.agent_type === 'REVIEWER' && output.handoffOut != null) {
+        const reviewerHandoff = output.handoffOut as Record<string, unknown>
+        if (
+          reviewerHandoff['verdict'] === 'SPAWN_FOLLOWUP' &&
+          Array.isArray(reviewerHandoff['followup_tasks']) &&
+          (reviewerHandoff['followup_tasks'] as unknown[]).length > 0
+        ) {
+          try {
+            const parentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+            const spawnedRuns: Array<{ run_id: string; label: string }> = []
+            const followupTasks = reviewerHandoff['followup_tasks'] as Array<{ label: string; task: string }>
+
+            for (const ft of followupTasks.slice(0, 3)) {
+              if (typeof ft.label !== 'string' || typeof ft.task !== 'string') continue
+              const childId = uuidv7()
+              const classifierNodeId = 'n1'
+              const plannerNodeId    = 'n2'
+              const initialDag = {
+                nodes: [
+                  { id: classifierNodeId, agent_type: 'CLASSIFIER' },
+                  { id: plannerNodeId,    agent_type: 'PLANNER'    },
+                ],
+                edges: [{ from: classifierNodeId, to: plannerNodeId }],
+              }
+              const dataExpiresAt = new Date()
+              dataExpiresAt.setDate(dataExpiresAt.getDate() + parseInt(process.env.DATA_RETENTION_DAYS ?? '90', 10))
+
+              await this.db.run.create({
+                data: {
+                  id:               childId,
+                  project_id:       parentRun.project_id,
+                  created_by:       parentRun.created_by,
+                  status:           'PENDING',
+                  domain_profile:   parentRun.domain_profile,
+                  task_input:       ft.task,
+                  dag:              initialDag,
+                  run_config:       { providers: [] },
+                  transparency_mode: parentRun.transparency_mode,
+                  confidentiality:  parentRun.confidentiality,
+                  budget_usd:       null,
+                  budget_tokens:    null,
+                  user_injections:  [],
+                  metadata:         { spawned_by_run_id: runId, spawned_label: ft.label },
+                  task_input_chars: ft.task.length,
+                  data_expires_at:  dataExpiresAt,
+                },
+              })
+              const nodeBase = {
+                started_at: null, completed_at: null, interrupted_at: null, interrupted_by: null,
+                last_heartbeat: null, retries: 0, partial_output: null, partial_updated_at: null,
+                cost_usd: 0, tokens_in: 0, tokens_out: 0, error: null, handoff_in: null, handoff_out: null,
+              }
+              await this.db.node.createMany({
+                data: [
+                  {
+                    ...nodeBase,
+                    id: uuidv7(), run_id: childId, node_id: classifierNodeId,
+                    agent_type: 'CLASSIFIER', status: 'PENDING',
+                    metadata: { task_input: ft.task },
+                  },
+                  {
+                    ...nodeBase,
+                    id: uuidv7(), run_id: childId, node_id: plannerNodeId,
+                    agent_type: 'PLANNER', status: 'PENDING',
+                    metadata: { task_input: ft.task, domain_profile: parentRun.domain_profile },
+                  },
+                ],
+              })
+              await this.db.runDependency.create({
+                data: { child_run_id: childId, parent_run_id: runId },
+              })
+              spawnedRuns.push({ run_id: childId, label: ft.label })
+              void this.executeRun(childId)
+            }
+
+            if (spawnedRuns.length > 0) {
+              this._emit(runId, {
+                type:    'spawned_followup_runs',
+                node_id: node.node_id ?? node.id,
+                runs:    spawnedRuns,
+              })
+            }
+          } catch (spawnErr) {
+            console.error(`[executor] Failed to spawn follow-up runs for run ${runId}:`, spawnErr)
+            // Non-fatal — the current run still completes normally.
+          }
+        }
+      }
 
       // Accumulate cost to run (§34.3 updateCosts)
       if (output.costUsd > 0 || output.tokensIn > 0 || output.tokensOut > 0) {

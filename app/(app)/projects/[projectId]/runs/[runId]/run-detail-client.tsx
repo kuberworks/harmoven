@@ -349,7 +349,7 @@ const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
 
 // ─── Node card ──────────────────────────────────────────────────────────────
 
-function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick = 0 }: { node: InitialNode | NodeState; runId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number }) {
+function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, artifactsTick = 0, followupRuns = [] }: { node: InitialNode | NodeState; runId: string; projectId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number; followupRuns?: Array<{ run_id: string; label: string }> }) {
   const t = useT()
   const [expanded, setExpanded] = useState(false)
   const streamEndRef = useRef<HTMLPreElement>(null)
@@ -509,6 +509,25 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick =
             {extractStreamingContent(node.partial_output)}
             <span className="inline-block w-1.5 h-3 bg-foreground/60 animate-pulse ml-0.5 align-middle" />
           </pre>
+        </div>
+      )}
+
+      {/* Follow-up pipelines spawned by this REVIEWER node (SPAWN_FOLLOWUP verdict) */}
+      {node.agent_type === 'REVIEWER' && followupRuns.length > 0 && (
+        <div className="border-t border-surface-border px-4 py-3 space-y-2">
+          <p className="text-xs text-muted-foreground font-medium">
+            {t('run.node.reviewer.followupRuns.title')}
+          </p>
+          {followupRuns.map(r => (
+            <Link
+              key={r.run_id}
+              href={`/projects/${projectId}/runs/${r.run_id}`}
+              className="flex items-center gap-2 text-xs text-primary hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{r.label}</span>
+            </Link>
+          ))}
         </div>
       )}
 
@@ -1073,7 +1092,23 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                     </CardContent>
                   </Card>
                 ) : (
-                  nodes.map((node) => <NodeCard key={node.id} node={node} runId={run.id} canRestart={permissions.has('runs:replay')} onRestart={reconnect} uiLevel={uiLevel} artifactsTick={stream.events.filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length} />)
+                  nodes.map((node) => (
+                    <NodeCard
+                      key={node.id}
+                      node={node}
+                      runId={run.id}
+                      projectId={projectId}
+                      canRestart={permissions.has('runs:replay')}
+                      onRestart={reconnect}
+                      uiLevel={uiLevel}
+                      artifactsTick={stream.events.filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length}
+                      followupRuns={(
+                        stream.events
+                          .filter(e => e.type === 'spawned_followup_runs' && e.node_id === node.node_id)
+                          .flatMap(e => e.type === 'spawned_followup_runs' ? e.runs : [])
+                      )}
+                    />
+                  ))
                 )}
               </div>
             </TabsContent>
