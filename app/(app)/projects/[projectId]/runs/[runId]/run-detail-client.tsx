@@ -409,7 +409,7 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
               {outputType && <span className="text-xs text-muted-foreground/50 font-mono">{outputType}</span>}
             </div>
           )}
-          <pre className="p-4 text-xs text-foreground/90 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto leading-relaxed">
+          <pre className="p-4 text-xs text-foreground/90 font-mono whitespace-pre-wrap break-words leading-relaxed">
             {outputContent ?? (node.partial_output ? extractStreamingContent(node.partial_output) : null)}
           </pre>
         </div>
@@ -598,7 +598,22 @@ function ResultTab({
   const terminalIds = new Set(dag.nodes.filter((n) => !sourceIds.has(n.id)).map((n) => n.id))
 
   // Collect outputs from completed terminal nodes, preserving DAG order
-  const terminalOutputs = dag.nodes
+
+  type OutputEntry = { node_id: string; agent_type: string; content: string; isMarkdown?: boolean }
+
+  // Priority 1: reviewer produced formatted_content (reformatted plain-text → Markdown)
+  const reviewerFormatted: OutputEntry[] = dag.nodes.flatMap((dn) => {
+    if (dn.agent_type !== 'REVIEWER') return []
+    const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
+    if (!node) return []
+    const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
+    const fc = (handoff?.['formatted_content'] as string | null) ?? null
+    if (!fc) return []
+    return [{ node_id: dn.id, agent_type: dn.agent_type, content: fc, isMarkdown: true }]
+  })
+
+  // Priority 2: terminal nodes (no outgoing edges)
+  const terminalOutputs: OutputEntry[] = dag.nodes
     .filter((dn) => terminalIds.has(dn.id))
     .flatMap((dn) => {
       const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
@@ -610,10 +625,9 @@ function ResultTab({
       return [{ node_id: dn.id, agent_type: dn.agent_type, content }]
     })
 
-  // Fallback: all completed nodes with output text, in DAG order.
-  // Used when the terminal node(s) have no content (e.g. REVIEWER is terminal).
-  // For multi-section documents this collects all WRITER outputs in order.
-  const fallbackOutputs = (): Array<{ node_id: string; agent_type: string; content: string }> => {
+  // Priority 3 (fallback): all completed nodes with output text, in DAG order.
+  // Used when terminal node(s) have no content (e.g. REVIEWER is terminal but lacks output.content).
+  const fallbackOutputs = (): OutputEntry[] => {
     return dag.nodes.flatMap((dn) => {
       const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
       if (!node) return []
@@ -625,7 +639,10 @@ function ResultTab({
     })
   }
 
-  const outputs = terminalOutputs.length > 0 ? terminalOutputs : fallbackOutputs()
+  const outputs: OutputEntry[] =
+    reviewerFormatted.length > 0 ? reviewerFormatted
+    : terminalOutputs.length  > 0 ? terminalOutputs
+    : fallbackOutputs()
 
   if (outputs.length === 0) {
     return (
@@ -666,7 +683,7 @@ function ResultTab({
                   <Printer className="h-4 w-4" />
                 </button>
               )}
-              {looksLikeMarkdown(o.content) ? (
+              {(o.isMarkdown || looksLikeMarkdown(o.content)) ? (
                 <div
                   data-output-content
                   className={`prose prose-sm dark:prose-invert max-w-none text-foreground${i === 0 ? ' pr-14' : ''}`}

@@ -33,6 +33,8 @@ export interface ReviewerOutput {
   findings: ReviewFinding[]
   overall_confidence: number
   overall_confidence_rationale: string
+  /** Reviewer-reformatted Markdown consolidation. Set only when writer output(s) lack Markdown structure. */
+  formatted_content?: string
   meta: {
     llm_used: string
     tokens_input: number
@@ -75,7 +77,8 @@ and any profile-specific rules, then respond ONLY with valid JSON matching this 
     }
   ],
   "overall_confidence": <integer 0-100>,
-  "overall_confidence_rationale": "<brief explanation>"
+  "overall_confidence_rationale": "<brief explanation>",
+  "formatted_content": "<optional — see Formatting instruction below>"
 }
 
 Universal checklist:
@@ -96,6 +99,11 @@ Verdict rules:
 - APPROVE: no errors, warnings are acceptable
 - REQUEST_REVISION: at least one error finding
 - ESCALATE_HUMAN: fundamental ambiguity or budget/scope blocker
+
+Formatting instruction:
+- Examine whether the writer outputs use proper Markdown structure (headings ##/###, bullet lists, bold, code blocks).
+- If at least one writer output is plain text without Markdown formatting (e.g. raw scores, tabular data without | syntax, step-by-step lists without - prefix, algorithm names without code blocks), produce "formatted_content": a single consolidated, properly Markdown-formatted document combining all writer outputs in logical order. Apply appropriate headings, lists, and formatting. Technical terms (minmax, softmax, etc.) should be wrapped in backticks.
+- If all writer outputs are already well-structured Markdown, OMIT "formatted_content" entirely (do not set it to null or empty string).
 
 Output ONLY the JSON object. No markdown fence, no prose.`
 }
@@ -238,6 +246,9 @@ export class Reviewer {
       findings: (p['findings'] as ReviewFinding[]) ?? [],
       overall_confidence: overallConfidence,
       overall_confidence_rationale: p['overall_confidence_rationale'] as string,
+      ...(typeof p['formatted_content'] === 'string' && p['formatted_content']
+        ? { formatted_content: p['formatted_content'] as string }
+        : {}),
       meta: {
         llm_used: result.model,
         tokens_input: result.tokensIn,
