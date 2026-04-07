@@ -81,20 +81,29 @@ export class InMemoryRunStore implements ExecutorDb {
       }
       return result as unknown as ReturnType<ExecutorDb['node']['findOrphaned']> extends Promise<infer T> ? T : never
     },
-    updateMany: async ({ where, data }: { where: { id?: string; run_id?: string; status?: string | { in: string[] } }; data: Record<string, unknown> }) => {
+    updateMany: async ({ where, data }: { where: { id?: string | { in: string[] }; run_id?: string; node_id?: string | { in: string[] }; status?: string | { in: string[] } }; data: Record<string, unknown> }) => {
       let count = 0
       const pools = where.run_id
         ? [this._nodes.get(where.run_id) ?? []]
         : [...this._nodes.values()]
       for (const list of pools) {
         for (const node of list) {
-          const idMatch = !where.id || node['id'] === where.id
+          const idMatch = !where.id
+            ? true
+            : typeof where.id === 'string'
+              ? node['id'] === where.id
+              : (where.id as { in: string[] }).in.includes(node['id'] as string)
+          const nodeIdMatch = !where.node_id
+            ? true
+            : typeof where.node_id === 'string'
+              ? node['node_id'] === where.node_id
+              : (where.node_id as { in: string[] }).in.includes(node['node_id'] as string)
           const statusMatch = !where.status
             ? true
             : typeof where.status === 'string'
               ? node['status'] === where.status
               : (where.status as { in: string[] }).in.includes(node['status'] as string)
-          if (idMatch && statusMatch) {
+          if (idMatch && nodeIdMatch && statusMatch) {
             Object.assign(node, data)
             count++
           }

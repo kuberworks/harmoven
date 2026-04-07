@@ -72,6 +72,12 @@
       "chainNewRun": "Chain a new run from this output",
       "runChained": "run chained",
       "runsChained": "runs chained"
+    },
+    "reReview": {
+      "label": "Re-run Reviewer",
+      "loading": "Launching…",
+      "success": "Reviewer relaunched",
+      "noReviewer": "No reviewer node found in this run"
     }
   },
   "gates": {
