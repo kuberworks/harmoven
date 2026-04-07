@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { CriticalReviewTab } from '@/components/gate/CriticalReviewTab'
 import { EvalTab } from '@/components/gate/EvalTab'
@@ -50,7 +51,7 @@ interface Props {
   uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'
 }
 
-type Decision = 'approve' | 'abort'
+type Decision = 'approve' | 'abort' | 'modify'
 
 export function GateClient({
   runId,
@@ -72,6 +73,8 @@ export function GateClient({
   const [submitting, setSubmitting] = useState<Decision | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [blockingWarn, setBlockingWarn] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
+  const [feedbackText, setFeedbackText] = useState('')
   // L-4 fix: track ignored/fixed findings locally so CriticalReviewTab stays reactive.
   const [ignoredFindings, setIgnoredFindings] = useState<Set<string>>(new Set())
   const [pendingFindings, setPendingFindings] = useState<Set<string>>(new Set())
@@ -99,14 +102,16 @@ export function GateClient({
     await submitDecision(decision)
   }
 
-  async function submitDecision(decision: Decision) {
+  async function submitDecision(decision: Decision, patch?: Record<string, unknown>) {
     setSubmitting(decision)
     setError(null)
     try {
+      const body: Record<string, unknown> = { decision }
+      if (patch) body['patch'] = patch
       const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/gate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string }
@@ -145,14 +150,10 @@ export function GateClient({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleDecision('abort')}
+              onClick={() => setShowFeedback(v => !v)}
               disabled={!!submitting}
             >
-              {submitting === 'abort' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <XCircle className="h-3.5 w-3.5" />
-              )}
+              <MessageSquare className="h-3.5 w-3.5" />
               Request changes
             </Button>
             <PermissionGuard permissions={permissions} permission="gates:approve">
@@ -173,6 +174,53 @@ export function GateClient({
           </div>
         )}
       </div>
+
+      {/* ── Request changes feedback panel ── */}
+      {showFeedback && canDecide && (
+        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+          <p className="text-sm font-medium text-amber-300">Request changes — describe what should be revised</p>
+          <Textarea
+            value={feedbackText}
+            onChange={(e) => setFeedbackText(e.target.value)}
+            placeholder="e.g. The content is too long. Please shorten to 3 paragraphs and focus on the key points…"
+            className="min-h-[100px] bg-surface-1 border-surface-border text-sm text-foreground"
+            disabled={!!submitting}
+          />
+          <div className="flex items-center gap-2 justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setShowFeedback(false); setFeedbackText('') }}
+              disabled={!!submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => submitDecision('abort')}
+              disabled={!!submitting}
+              className="border-red-500/40 text-red-400 hover:bg-red-900/20"
+            >
+              {submitting === 'abort' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+              Abort run
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (feedbackText.trim()) {
+                  void submitDecision('modify', { review_feedback: feedbackText.trim() })
+                }
+              }}
+              disabled={!!submitting || !feedbackText.trim()}
+              className="bg-amber-600 hover:bg-amber-500 text-white border-0"
+            >
+              {submitting === 'modify' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+              Send feedback &amp; resume
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ── Blocking warning banner ── */}
       {blockingWarn && (
