@@ -1434,9 +1434,10 @@ export class CustomExecutor implements IExecutionEngine {
         })
         this._emit(runId, { type: 'node_snapshot', node_id: node.node_id ?? node.id, data: { status: 'INTERRUPTED' } })
       } else {
+        const failedAt = new Date()
         await this.db.node.update({
           where: { id: node.id },
-          data: { status: 'FAILED', error: message },
+          data: { status: 'FAILED', error: message, completed_at: failedAt },
         })
         // Emit error SSE event and a full node snapshot so client updates status + error together
         this._emit(runId, { type: 'error', node_id: node.node_id ?? node.id, message })
@@ -1446,6 +1447,7 @@ export class CustomExecutor implements IExecutionEngine {
           data: {
             status: 'FAILED',
             error: message,
+            completed_at: failedAt.toISOString(),
             cost_usd: partialCost?.costUsd ?? 0,
             tokens_in: partialCost?.tokensIn ?? 0,
             tokens_out: partialCost?.tokensOut ?? 0,
