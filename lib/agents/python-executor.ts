@@ -20,11 +20,14 @@ import { resolve } from 'path'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_TIMEOUT_MS = 30_000
-const MAX_TIMEOUT_MS     = 120_000
-const MEMORY_LIMIT_MB    = 256
-const MAX_OUTPUT_CHARS   = 50_000
-const MAX_CODE_BYTES     = 100_000  // 100 KB code size limit
+const DEFAULT_TIMEOUT_MS  = 30_000
+const MAX_TIMEOUT_MS      = 120_000
+const MEMORY_LIMIT_MB     = 256
+const MAX_OUTPUT_CHARS    = 50_000
+const MAX_CODE_BYTES      = 100_000  // 100 KB code size limit
+const MAX_PACKAGES        = 20
+// Safe PyPI package name: alphanumeric, dots, hyphens, underscores; optional ==X.Y.Z specifier.
+const PKG_NAME_RE         = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(==?[0-9][a-zA-Z0-9._*-]*)?$/
 
 // Resolve paths once at module load time (not per-invocation).
 // Both paths are in node_modules so they're stable across restarts.
@@ -39,8 +42,15 @@ export interface PythonExecutorInput {
   /**
    * Maximum wall-clock execution time in milliseconds.
    * Capped at MAX_TIMEOUT_MS (120 s). Defaults to DEFAULT_TIMEOUT_MS (30 s).
+   * Note: package installation time counts towards this limit.
    */
   timeout_ms?: number
+  /**
+   * PyPI packages to install via micropip before execution.
+   * Max 20 packages. Names must match /^[a-zA-Z0-9][a-zA-Z0-9._-]*(==?…)?$/.
+   * Example: ['openpyxl', 'numpy==2.2.0']
+   */
+  packages?: string[]
 }
 
 export interface PythonExecutorOutput {
@@ -100,6 +110,20 @@ export async function executePython(
     throw new RangeError(`code exceeds ${MAX_CODE_BYTES / 1000} KB limit`)
   }
 
+  if (input.packages !== undefined) {
+    if (!Array.isArray(input.packages)) {
+      throw new TypeError('packages must be an array')
+    }
+    if (input.packages.length > MAX_PACKAGES) {
+      throw new RangeError(`packages list exceeds ${MAX_PACKAGES} items`)
+    }
+    for (const pkg of input.packages) {
+      if (typeof pkg !== 'string' || !PKG_NAME_RE.test(pkg)) {
+        throw new RangeError(`invalid package name: "${pkg}"`)
+      }
+    }
+  }
+
   const timeoutMs = Math.min(
     input.timeout_ms ?? DEFAULT_TIMEOUT_MS,
     MAX_TIMEOUT_MS,
@@ -111,7 +135,7 @@ export async function executePython(
     let settled = false
 
     const worker = new Worker(WORKER_PATH, {
-      workerData: { code: input.code, pyodidePath: PYODIDE_PATH },
+      workerData: { code: input.code, pyodidePath: PYODIDE_PATH, packages: input.packages ?? [] },
       resourceLimits: {
         maxOldGenerationSizeMb: MEMORY_LIMIT_MB,
         maxYoungGenerationSizeMb: 32,
