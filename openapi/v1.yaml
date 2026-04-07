@@ -3152,6 +3152,147 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimit'
+  /runs/{runId}/prompt-summaries:
+    get:
+      operationId: getRunPromptSummaries
+      x-required-permissions: [runs:read]
+      summary: List prompt execution summaries for a run
+      description: |
+        > **Required permission:** `runs:read` — minimum role: `viewer`
+
+        Returns lightweight prompt execution context captured for every agent node in the run,
+        per Amendment 86 (transparency without full prompt storage).
+
+        Each entry contains:
+        - The agent type and domain profile used for that node
+        - The execution context snapshot (task description, complexity, upstream outputs hash)
+        - Estimated vs. actual token counts
+        - The SHA-256 hash of the upstream handoff payload used as input
+        - The node's final status, timing, cost, and any error message
+
+        Full prompt text is **never stored** (GDPR compliance). This endpoint is intended for
+        audit, compliance review, and cost attribution.
+
+        **Note:** Summaries are written during execution. Nodes that have not yet started
+        will not appear in the response.
+      tags: [Runs]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: >-
+            Prompt execution context for all nodes that have started in this run, ordered
+            by `snapshot_created_at` ascending. Returns an empty `prompt_summaries` array
+            if the run has not yet started any nodes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run_id, run_status, prompt_summaries, note]
+                properties:
+                  run_id:
+                    type: string
+                    format: uuid
+                    description: "UUID of the run."
+                  run_status:
+                    type: string
+                    enum: [PENDING, RUNNING, PAUSED, COMPLETED, FAILED, SUSPENDED]
+                    description: "Current status of the run at time of request."
+                  note:
+                    type: string
+                    description: "Human-readable notice explaining the GDPR rationale (full prompts not stored)."
+                  prompt_summaries:
+                    type: array
+                    description: "One entry per agent node execution, ordered by capture time ascending."
+                    items:
+                      type: object
+                      required: [node_id, agent_type, snapshot_created_at]
+                      properties:
+                        node_id:
+                          type: string
+                          description: "DAG node identifier (e.g. `n1`, `n_writer`)."
+                        agent_type:
+                          type: string
+                          description: "Agent type that executed this node (e.g. `WRITER`, `REVIEWER`, `PLANNER`)."
+                        domain_profile:
+                          type: string
+                          nullable: true
+                          description: "Domain/complexity profile used to build the prompt (e.g. `code`, `finance_modeling`). Null if not applicable."
+                        execution_context:
+                          type: object
+                          nullable: true
+                          description: "Snapshot of the execution context passed to the agent: task description, complexity tier, upstream node summaries. Contains no raw prompt text."
+                          additionalProperties: true
+                        token_estimate:
+                          type: object
+                          nullable: true
+                          description: "Token counts estimated before the LLM call was made."
+                          properties:
+                            tokens_in:
+                              type: integer
+                              nullable: true
+                              description: "Estimated input tokens."
+                            tokens_out:
+                              type: integer
+                              nullable: true
+                              description: "Estimated output tokens."
+                        token_actual:
+                          type: object
+                          nullable: true
+                          description: "Actual token counts reported by the provider after the call. Null if the node has not yet completed."
+                          properties:
+                            tokens_in:
+                              type: integer
+                              nullable: true
+                              description: "Actual input tokens billed."
+                            tokens_out:
+                              type: integer
+                              nullable: true
+                              description: "Actual output tokens billed."
+                        upstream_handoff_hash:
+                          type: string
+                          nullable: true
+                          description: "SHA-256 hash of the upstream handoff payload used as input to this node. Used for audit trail integrity: the hash can be compared against the stored `Handoff` record."
+                        status:
+                          type: string
+                          nullable: true
+                          enum: [PENDING, RUNNING, COMPLETED, FAILED, SUSPENDED]
+                          description: "Final status of the node. Null if the node has not yet been assigned a status."
+                        error:
+                          type: string
+                          nullable: true
+                          description: "Error message if the node failed. Null otherwise."
+                        retries:
+                          type: integer
+                          nullable: true
+                          description: "Number of retry attempts made for this node before success or terminal failure."
+                        started_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                          description: "ISO-8601 timestamp when the node started executing."
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                          description: "ISO-8601 timestamp when the node finished (success or failure). Null if still running."
+                        cost_usd:
+                          type: number
+                          format: float
+                          nullable: true
+                          description: "Total LLM cost in USD for this node (converted from Prisma Decimal). Null if the node has not yet completed."
+                        snapshot_created_at:
+                          type: string
+                          format: date-time
+                          description: "ISO-8601 timestamp when the prompt summary was captured, immediately before the LLM call."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /runs/{runId}/artifacts:
     get:
       operationId: listRunArtifacts
