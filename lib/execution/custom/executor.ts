@@ -1108,6 +1108,45 @@ export class CustomExecutor implements IExecutionEngine {
           console.error(`[executor] Failed to expand DAG from PLANNER output for run ${runId}:`, expandErr)
           // Non-fatal — execution loop continues; if no new ready nodes, run will complete.
         }
+
+        // ── PLANNER low-confidence gate ─────────────────────────────────────────
+        // When the Planner is not confident enough about the plan (confidence < 85),
+        // it sets requires_human_approval = true. Open a HumanGate so the user can
+        // review the proposed DAG before any WRITER/REVIEWER nodes execute.
+        const plan = output.handoffOut as PlannerHandoff
+        if (plan?.requires_human_approval === true) {
+          try {
+            const gate = await this.db.humanGate.create({
+              data: {
+                run_id:     runId,
+                reason:     'low_confidence_plan',
+                timeout_at: gateTimeoutAt(),
+                data: {
+                  node_id:   node.node_id,
+                  confidence: (plan.meta as { confidence?: number })?.confidence ?? 0,
+                  confidence_rationale: (plan.meta as { confidence_rationale?: string })?.confidence_rationale ?? '',
+                },
+              },
+            })
+            const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+            if (canTransitionRun(currentRun.status as RunStatus, 'SUSPENDED')) {
+              await this.transitionRun(runId, currentRun.status as RunStatus, 'SUSPENDED')
+              await this.db.run.update({
+                where: { id: runId },
+                data: { suspended_reason: 'low_confidence_plan' },
+              })
+            }
+            this._emit(runId, {
+              type: 'human_gate',
+              gate_id: gate.id,
+              reason: 'low_confidence_plan',
+              data: { node_id: node.node_id },
+            })
+            this._emit(runId, { type: 'gate_opened', gate_id: gate.id, reason: 'low_confidence_plan' })
+          } catch (gateErr) {
+            console.error(`[executor] Failed to open human gate for low-confidence plan (run ${runId}):`, gateErr)
+          }
+        }
       }
 
       // ── REVIEWER SPAWN_FOLLOWUP ──────────────────────────────────────────────
@@ -1200,6 +1239,49 @@ export class CustomExecutor implements IExecutionEngine {
           } catch (spawnErr) {
             console.error(`[executor] Failed to spawn follow-up runs for run ${runId}:`, spawnErr)
             // Non-fatal — the current run still completes normally.
+          }
+        }
+
+        // ── REVIEWER ESCALATE_HUMAN ─────────────────────────────────────────────
+        // When the REVIEWER cannot approve the output (quality issue, blocked task,
+        // etc.) and escalates to a human, open a HumanGate and SUSPEND the run.
+        // The run must NOT be marked COMPLETED in this case — it stays SUSPENDED
+        // until a human reviews and either approves (runs resume) or rejects.
+        if (reviewerHandoff['verdict'] === 'ESCALATE_HUMAN') {
+          try {
+            const findings = Array.isArray(reviewerHandoff['findings'])
+              ? (reviewerHandoff['findings'] as Array<{ issue?: string; recommendation?: string; severity?: string }>)
+              : []
+            const gate = await this.db.humanGate.create({
+              data: {
+                run_id:     runId,
+                reason:     'reviewer_escalation',
+                timeout_at: gateTimeoutAt(),
+                data: {
+                  node_id:    node.node_id,
+                  verdict:    'ESCALATE_HUMAN',
+                  findings:   findings.slice(0, 5),
+                  confidence: reviewerHandoff['overall_confidence'] ?? null,
+                },
+              },
+            })
+            const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+            if (canTransitionRun(currentRun.status as RunStatus, 'SUSPENDED')) {
+              await this.transitionRun(runId, currentRun.status as RunStatus, 'SUSPENDED')
+              await this.db.run.update({
+                where: { id: runId },
+                data: { suspended_reason: 'reviewer_escalation' },
+              })
+            }
+            this._emit(runId, {
+              type: 'human_gate',
+              gate_id: gate.id,
+              reason: 'reviewer_escalation',
+              data: { node_id: node.node_id, findings },
+            })
+            this._emit(runId, { type: 'gate_opened', gate_id: gate.id, reason: 'reviewer_escalation' })
+          } catch (gateErr) {
+            console.error(`[executor] Failed to open human gate for ESCALATE_HUMAN (run ${runId}):`, gateErr)
           }
         }
       }
