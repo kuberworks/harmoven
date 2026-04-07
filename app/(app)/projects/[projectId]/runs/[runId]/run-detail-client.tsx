@@ -404,7 +404,9 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick =
   const outputType    = output?.['type']    as string | undefined
   const confidence    = output?.['confidence'] as number | undefined
   const llmUsed       = (execMeta?.['llm_used'] ?? node.llm_profile_id) as string | undefined
-  const hasOutput     = !!outputContent || !!node.partial_output
+  // PYTHON_EXECUTOR stores output in handoff.stdout rather than handoff.output.content
+  const stdout        = (handoff?.['stdout'] as string | undefined) ?? null
+  const hasOutput     = !!outputContent || !!node.partial_output || !!stdout
 
   const durationSec = node.started_at && node.completed_at
     ? Math.round((new Date(node.completed_at).getTime() - new Date(node.started_at).getTime()) / 1000)
@@ -484,7 +486,9 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick =
             </div>
           )}
           <pre className="p-4 text-xs text-foreground/90 font-mono whitespace-pre-wrap break-words leading-relaxed">
-            {outputContent ?? (node.partial_output ? extractStreamingContent(node.partial_output) : null)}
+            {outputContent
+              ?? (node.partial_output ? extractStreamingContent(node.partial_output) : null)
+              ?? stdout}
           </pre>
         </div>
       )}
@@ -709,7 +713,7 @@ function ResultTab({
     return [{ node_id: dn.id, agent_type: dn.agent_type, content: fc, isMarkdown: true }]
   })
 
-  // Priority 2: terminal nodes (no outgoing edges)
+  // Priority 2: terminal nodes (no outgoing edges), text or stdout content
   const terminalOutputs: OutputEntry[] = dag.nodes
     .filter((dn) => terminalIds.has(dn.id))
     .flatMap((dn) => {
@@ -717,23 +721,28 @@ function ResultTab({
       if (!node) return []
       const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
       const output  = handoff?.['output'] as Record<string, unknown> | undefined
-      const content = (output?.['content'] ?? output?.['text'] ?? null) as string | null
+      // PYTHON_EXECUTOR: output lives in handoff.stdout
+      const stdout  = (handoff?.['stdout'] as string | undefined) ?? null
+      const content = (output?.['content'] ?? output?.['text'] ?? stdout ?? null) as string | null
       if (!content) return []
       return [{ node_id: dn.id, agent_type: dn.agent_type, content }]
     })
 
-  // Priority 3 (fallback): all completed nodes with output text, in DAG order.
-  // Used when terminal node(s) have no content (e.g. REVIEWER is terminal but lacks output.content).
+  // Priority 3 (fallback): completed WRITER nodes only, in DAG order.
+  // Excludes non-terminal and non-WRITER nodes (e.g. PYTHON_EXECUTOR, CLASSIFIER) so
+  // we never surface intermediate code or raw execution metadata as the final result.
   const fallbackOutputs = (): OutputEntry[] => {
-    return dag.nodes.flatMap((dn) => {
-      const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
-      if (!node) return []
-      const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
-      const output  = handoff?.['output'] as Record<string, unknown> | undefined
-      const content = (output?.['content'] ?? output?.['text'] ?? null) as string | null
-      if (!content) return []
-      return [{ node_id: dn.id, agent_type: dn.agent_type, content }]
-    })
+    return dag.nodes
+      .filter((dn) => dn.agent_type === 'WRITER')
+      .flatMap((dn) => {
+        const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
+        if (!node) return []
+        const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
+        const output  = handoff?.['output'] as Record<string, unknown> | undefined
+        const content = (output?.['content'] ?? output?.['text'] ?? null) as string | null
+        if (!content) return []
+        return [{ node_id: dn.id, agent_type: dn.agent_type, content }]
+      })
   }
 
   const outputs: OutputEntry[] =
