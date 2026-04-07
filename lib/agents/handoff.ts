@@ -126,6 +126,7 @@ export const ReviewerHandoffSchema = z.object({
   })),
   overall_confidence:           z.number().int().min(0).max(100),
   overall_confidence_rationale: z.string(),
+  formatted_content:            z.string().optional(),
   meta: z.object({
     llm_used:         z.string(),
     tokens_input:     z.number().nonnegative(),
