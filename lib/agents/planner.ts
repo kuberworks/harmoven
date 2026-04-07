@@ -252,6 +252,7 @@ export class Planner {
     profile: ClassifierResult,
     run_id: string,
     signal?: AbortSignal,
+    prior_context?: string,
   ): Promise<PlannerHandoff> {
     // Outer loop: retry the full LLM + validation cycle up to 3 times on
     // *validation* failures. withRetry() inside already handles LLM-level
@@ -271,6 +272,10 @@ export class Planner {
                 content: JSON.stringify({
                   task: task_input,
                   run_id,
+                  // Outputs from the parent run (populated for spawned follow-up runs only).
+                  // The Planner must reference these artefacts when building the child DAG
+                  // instead of re-generating what was already produced.
+                  ...(prior_context ? { prior_run_context: prior_context } : {}),
                   // Full classifier context — not just profile id
                   classifier: {
                     domain_profile:          profile.detected_profile,

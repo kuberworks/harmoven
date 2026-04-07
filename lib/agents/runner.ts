@@ -287,8 +287,16 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         // defence-in-depth against jailbreak via prompt flooding or role-override.
         const taskInput = sanitizeTaskInput(rawTaskInput)
 
+        // Am.64-followup: for runs spawned via SPAWN_FOLLOWUP, the executor stores a
+        // truncated summary of the parent's WRITER/PYTHON_EXECUTOR outputs in
+        // meta.prior_run_context.  Pass it to the Planner so it knows what already
+        // exists and can build the child DAG without re-generating prior artefacts.
+        const priorContext = typeof meta['prior_run_context'] === 'string'
+          ? meta['prior_run_context']
+          : undefined
+
         const result = await new Planner(captureClient).plan(
-          taskInput, classifierResult, node.run_id, signal,
+          taskInput, classifierResult, node.run_id, signal, priorContext,
         )
         return { handoffOut: result, costUsd: contextualLlm.totalCostUsd, tokensIn: contextualLlm.totalTokensIn, tokensOut: contextualLlm.totalTokensOut, llm_model: contextualLlm.lastModel ?? undefined }
       }

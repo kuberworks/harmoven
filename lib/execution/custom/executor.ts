@@ -1166,6 +1166,29 @@ export class CustomExecutor implements IExecutionEngine {
             const spawnedRuns: Array<{ run_id: string; label: string }> = []
             const followupTasks = reviewerHandoff['followup_tasks'] as Array<{ label: string; task: string }>
 
+            // ── Collect parent outputs for child-run context ──────────────────
+            // Gather COMPLETED WRITER/PYTHON_EXECUTOR handoff_out values and build
+            // a truncated summary.  `nodes` was fetched at the top of executeNode()
+            // and already contains the upstream outputs (all COMPLETED before the
+            // REVIEWER ran).  This avoids an extra DB round-trip.
+            const priorRunContext: string | null = (() => {
+              const outputNodes = nodes.filter(
+                n => n.status === 'COMPLETED' &&
+                     (n.agent_type === 'WRITER' || n.agent_type === 'PYTHON_EXECUTOR'),
+              )
+              if (outputNodes.length === 0) return null
+              return outputNodes
+                .map(n => {
+                  const ho = n.handoff_out as Record<string, unknown> | null
+                  const out  = ho?.['output'] as Record<string, unknown> | undefined
+                  const raw  = out?.['content'] ?? ho?.['content'] ?? ''
+                  const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 1500)
+                  return `[${n.agent_type} ${n.node_id}]:\n${text}`
+                })
+                .join('\n\n---\n\n')
+                .slice(0, 4000)
+            })()
+
             for (const ft of followupTasks.slice(0, 3)) {
               if (typeof ft.label !== 'string' || typeof ft.task !== 'string') continue
               const childId = uuidv7()
@@ -1218,7 +1241,13 @@ export class CustomExecutor implements IExecutionEngine {
                     ...nodeBase,
                     id: uuidv7(), run_id: childId, node_id: plannerNodeId,
                     agent_type: 'PLANNER', status: 'PENDING',
-                    metadata: { task_input: ft.task, domain_profile: parentRun.domain_profile },
+                    metadata: {
+                      task_input:    ft.task,
+                      domain_profile: parentRun.domain_profile,
+                      // Inject summarised parent-run outputs so the Planner can
+                      // reference existing artefacts when building the child DAG.
+                      ...(priorRunContext !== null ? { prior_run_context: priorRunContext } : {}),
+                    },
                   },
                 ],
               })
