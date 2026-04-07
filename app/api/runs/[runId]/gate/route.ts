@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse }            from 'next/server'
 import { z }                                    from 'zod'
-import { Prisma }                               from '@prisma/client'
+import { Prisma, HumanGateStatus }              from '@prisma/client'
 import { db }                                   from '@/lib/db/client'
 import { resolveCaller }                        from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
@@ -93,6 +93,18 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const engine = await getExecutionEngine()
     let newStatus: string
+
+    // Close all OPEN gates for this run before executing the decision.
+    // Without this, gates accumulate as OPEN and the page/banner never clears.
+    await db.humanGate.updateMany({
+      where:  { run_id: runId, status: HumanGateStatus.OPEN },
+      data:   {
+        status:     HumanGateStatus.RESOLVED,
+        decision:   body.decision,
+        decided_by: actorId,
+        decided_at: new Date(),
+      },
+    })
 
     switch (body.decision) {
       case 'approve': {

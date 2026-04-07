@@ -219,24 +219,29 @@ export class CustomExecutor implements IExecutionEngine {
       data: { id: uuidv7(), actor: actorId, action_type: 'run_resumed', run_id: runId, payload: {} },
     })
 
-    // Special case: planner_exhausted → the PLANNER node is FAILED and no downstream
-    // nodes were created (DAG expansion never ran). Reset the PLANNER node to PENDING
-    // so the execution loop can retry it after the operator unblocks the run.
+    // Special case: planner_exhausted → the PLANNER node is FAILED or INTERRUPTED
+    // (INTERRUPTED if the server crashed mid-execution and orphan-detection fired).
+    // No downstream nodes were created (DAG expansion never ran). Reset the PLANNER
+    // node to PENDING so the execution loop can retry it after the operator unblocks.
     if (run.suspended_reason === 'planner_exhausted') {
       const nodes = await this.db.node.findMany({ where: { run_id: runId } })
-      const failedPlanner = nodes.find(n => n.agent_type === 'PLANNER' && n.status === 'FAILED')
-      if (failedPlanner) {
+      const stalledPlanner = nodes.find(
+        n => n.agent_type === 'PLANNER' && (n.status === 'FAILED' || n.status === 'INTERRUPTED'),
+      )
+      if (stalledPlanner) {
         await this.db.node.update({
-          where: { id: failedPlanner.id },
+          where: { id: stalledPlanner.id },
           data: {
-            status:       'PENDING',
-            error:        null,
-            started_at:   null,
-            completed_at: null,
-            retries:      0,
+            status:         'PENDING',
+            error:          null,
+            started_at:     null,
+            completed_at:   null,
+            interrupted_at: null,
+            interrupted_by: null,
+            retries:        0,
           },
         })
-        this._emit(runId, { type: 'state_change', entity_type: 'node', id: failedPlanner.node_id, status: 'PENDING' })
+        this._emit(runId, { type: 'state_change', entity_type: 'node', id: stalledPlanner.node_id, status: 'PENDING' })
       }
       await this.db.run.update({ where: { id: runId }, data: { suspended_reason: null } })
     }
