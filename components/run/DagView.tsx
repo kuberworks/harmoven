@@ -204,7 +204,7 @@ function DetailPanel({
   const outputObj = handoff?.['output'] as Record<string, unknown> | null | undefined
   const outputContent = (outputObj?.['content'] ?? outputObj?.['summary']) as string | undefined
 
-  const canRestart = !!onRestart && (status === 'FAILED' || status === 'INTERRUPTED')
+  const canRestart = !!onRestart && (status === 'FAILED' || status === 'INTERRUPTED' || status === 'COMPLETED')
 
   return (
     <div className="w-72 shrink-0 flex flex-col overflow-hidden border-l border-border bg-card text-sm">
@@ -309,7 +309,7 @@ function DetailPanel({
           </div>
         )}
 
-        {/* Restart */}
+        {/* Restart / Re-run */}
         {canRestart && (
           <button
             onClick={() => onRestart!(dagNode.id)}
@@ -317,7 +317,9 @@ function DetailPanel({
             className="w-full flex items-center justify-center gap-2 rounded-lg border border-amber-600/40 bg-amber-950/30 px-3 py-2 text-xs font-medium text-amber-300 hover:bg-amber-950/50 transition-colors disabled:opacity-50"
           >
             <RotateCcw className="h-3 w-3" />
-            {restarting.has(dagNode.id) ? 'Restarting…' : 'Restart agent'}
+            {restarting.has(dagNode.id)
+              ? 'Restarting…'
+              : status === 'COMPLETED' ? 'Re-run agent' : 'Restart agent'}
           </button>
         )}
       </div>
