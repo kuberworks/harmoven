@@ -247,9 +247,12 @@ export class CustomExecutor implements IExecutionEngine {
     }
 
     // The execution loop exited cleanly when it detected PAUSED/SUSPENDED status.
-    // Call executeRun again — it accepts SUSPENDED/PAUSED as valid start statuses and
-    // resumes from the last stable node state (COMPLETED nodes are skipped by getReadyNodes).
-    await this.executeRun(runId)
+    // Fire executeRun in the background — same pattern as the initial run creation
+    // (POST /api/runs uses `void engine.executeRun()`).
+    // NOT awaited: resumeRun must return promptly so that the HTTP response is sent
+    // before the whole run completes; otherwise the Resume button spinner hangs for
+    // the entire run duration.
+    void this.executeRun(runId)
   }
 
   // ─── Amendment 64 — Context injection ──────────────────────────────────────
