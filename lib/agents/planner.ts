@@ -18,8 +18,8 @@ import { withRetry } from '@/lib/utils/retry'
 
 export interface PlannerNode {
   node_id: string
-  /** Agent role. WRITER executes leaf tasks; REVIEWER is always the final node. */
-  agent: 'WRITER' | 'REVIEWER' | 'QA' | 'DEVOPS'
+  /** Agent role. WRITER executes leaf tasks; REVIEWER is always the final node. PYTHON_EXECUTOR runs Python code. */
+  agent: 'WRITER' | 'REVIEWER' | 'QA' | 'DEVOPS' | 'PYTHON_EXECUTOR'
   description: string
   /** node_ids that must reach COMPLETED before this node can start. */
   dependencies: string[]
@@ -117,7 +117,27 @@ Rules:
 - CRITICAL: Maximum DAG depth is 6 levels. The longest chain of sequential nodes (longest path from any root node to REVIEWER) must not exceed 6 nodes.
 - SCALE WIDTH, NOT DEPTH: for large tasks (e.g. a 20-section document, a 15-module course), create many parallel WRITER nodes at the same depth level — they all depend on PLANNER and are all depended on by REVIEWER. You may have up to 20 parallel WRITER nodes. Do NOT chain writers sequentially unless there is a strict content dependency between them.
 - GOOD example for a 10-section course: n1=CLASSIFIER→n2=PLANNER→n3..n12 (10×WRITER, all depend on n2)→n13=REVIEWER (depends on n3..n12). Depth=3, width=10.
-- BAD example: n1→n2→n3→n4→n5→n6→n7 (7 sequential nodes). Only do this if each section genuinely requires the previous one as input.`
+- BAD example: n1→n2→n3→n4→n5→n6→n7 (7 sequential nodes). Only do this if each section genuinely requires the previous one as input.
+
+Using PYTHON_EXECUTOR (for downloadable binary files):
+- Use PYTHON_EXECUTOR when the task must produce actual binary files the user can download:
+  Excel workbooks (.xlsx), CSV exports, PDFs, images (PNG/SVG), or other processed data files.
+- Pattern: one or more WRITER nodes generate Python code (using openpyxl, pandas, matplotlib,
+  reportlab, etc.); a PYTHON_EXECUTOR node executes that code in a secure Pyodide sandbox;
+  the files written to disk by the Python code are automatically collected and made downloadable.
+- The WRITER(s) must produce ONLY the complete, self-contained Python source code — no prose, no
+  Markdown fences, just the Python code. The code must write files using open('filename.ext', 'wb')
+  or library save calls (e.g. workbook.save('output.xlsx')). File names must be simple alphanumeric.
+- If the task has multiple logical file sections (e.g. 3 Excel sheets), use ONE WRITER per section
+  and connect all of them to a single PYTHON_EXECUTOR that combines their code and runs it.
+- PYTHON_EXECUTOR output_type should be 'python_files' and complexity 'medium'.
+- GOOD example for a multi-sheet Excel workbook:
+  n1=CLASSIFIER→n2=PLANNER→n3 WRITER (sheet 1 Python code)→n4 WRITER (sheet 2 Python code)
+  →n5 PYTHON_EXECUTOR (depends on n3,n4; runs combined code, produces .xlsx)
+  →n6=REVIEWER (depends on n5). Depth=4.
+- GOOD example for a single Excel file:
+  n1=CLASSIFIER→n2=PLANNER→n3 WRITER (expected_output_type: python_code)
+  →n4=PYTHON_EXECUTOR (depends on n3)→n5=REVIEWER. Depth=4.`
 
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
