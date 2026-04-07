@@ -28,7 +28,7 @@ export default async function RunPage({ params }: Props) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/login')
 
-  const [project, run, auditLogs] = await Promise.all([
+  const [project, run, auditLogs, parentLinks, childLinks] = await Promise.all([
     db.project.findUnique({
       where: { id: projectId, archived_at: null },
       select: { id: true, name: true },
@@ -57,6 +57,14 @@ export default async function RunPage({ params }: Props) {
       orderBy: { timestamp: 'asc' },
       select: { id: true, action_type: true, node_id: true, payload: true, timestamp: true },
       take: 200,
+    }),
+    db.runDependency.findMany({
+      where: { child_run_id: runId },
+      select: { parent_run: { select: { id: true, status: true, task_input: true } } },
+    }),
+    db.runDependency.findMany({
+      where: { parent_run_id: runId },
+      select: { child_run: { select: { id: true, status: true, task_input: true } } },
     }),
   ])
 
@@ -87,6 +95,19 @@ export default async function RunPage({ params }: Props) {
     openGate: run.human_gates[0]
       ? { id: run.human_gates[0].id, reason: run.human_gates[0].reason }
       : null,
+  }
+
+  const serialisedChain = {
+    parents: parentLinks.map(l => ({
+      id: l.parent_run.id,
+      status: l.parent_run.status as string,
+      task_input: typeof l.parent_run.task_input === 'string' ? l.parent_run.task_input.slice(0, 80) : null,
+    })),
+    children: childLinks.map(l => ({
+      id: l.child_run.id,
+      status: l.child_run.status as string,
+      task_input: typeof l.child_run.task_input === 'string' ? l.child_run.task_input.slice(0, 80) : null,
+    })),
   }
 
   const serialisedNodes = run.nodes.map((n) => ({
@@ -134,6 +155,7 @@ export default async function RunPage({ params }: Props) {
         initialNodes={serialisedNodes}
         permissions={permissions}
         uiLevel={uiLevel}
+        chain={serialisedChain}
         initialEvents={auditLogs.map((log) => ({
           id: log.id,
           action_type: log.action_type,

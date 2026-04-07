@@ -66,7 +66,13 @@
     },
     "empty": "No runs yet — start your first run",
     "loading": "Loading runs…",
-    "error": "Could not load runs"
+    "error": "Could not load runs",
+    "chain": {
+      "chainedFrom": "Chained from",
+      "chainNewRun": "Chain a new run from this output",
+      "runChained": "run chained",
+      "runsChained": "runs chained"
+    }
   },
   "gates": {
     "tabs": {

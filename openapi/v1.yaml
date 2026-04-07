@@ -2573,6 +2573,13 @@ paths:
                 raw_dag:
                   $ref: '#/components/schemas/Dag'
                   description: "Expert Mode — bypass Planner. instance_admin only."
+                parent_run_ids:
+                  type: array
+                  description: "UUIDs of up to 5 completed runs whose output this run chains from. The executor records `RunDependency` links and exposes them in the GET response `chain` object. All referenced runs must belong to the same project and have status `COMPLETED`."
+                  maxItems: 5
+                  items:
+                    type: string
+                    format: uuid
       responses:
         '201':
           description: "Run accepted by the orchestrator and placed in PENDING state. The executor picks it up within seconds. Subscribe to `stream_url` for live progress. `estimated_cost_usd` and `estimated_duration_minutes` may be null immediately — they are populated once the Planner generates the DAG."
@@ -7586,6 +7593,47 @@ paths:
                     type: object
                     additionalProperties:
                       type: string
+                  chain:
+                    type: object
+                    description: "Run chaining context. Lists direct parent and child runs linked via `RunDependency`."
+                    properties:
+                      parents:
+                        type: array
+                        description: "Runs whose output was passed as input to this run."
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            status:
+                              type: string
+                              enum: [PENDING, RUNNING, COMPLETED, FAILED, PAUSED, SUSPENDED]
+                            task_input:
+                              type: [string, 'null']
+                            created_at:
+                              type: string
+                              format: date-time
+                      children:
+                        type: array
+                        description: "Runs that consumed this run's output."
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            status:
+                              type: string
+                              enum: [PENDING, RUNNING, COMPLETED, FAILED, PAUSED, SUSPENDED]
+                            task_input:
+                              type: [string, 'null']
+                            created_at:
+                              type: string
+                              format: date-time
+                      output_summary:
+                        type: [string, 'null']
+                        description: "Short extract (≤ 2000 chars) of this run's final output, from reviewer formatted_content or last writer. Useful for chaining context display."
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

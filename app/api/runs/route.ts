@@ -56,6 +56,9 @@ const CreateRunBody = z.object({
   confidentiality:   z.string().max(32).optional(),
   budget_usd:        z.number().positive().optional(),
   budget_tokens:     z.number().int().positive().optional(),
+  // Run chaining: IDs of completed runs whose outputs feed into this run.
+  // Max 5 parents; each must be COMPLETED and belong to the same project.
+  parent_run_ids:    z.array(z.string().uuid()).max(5).optional(),
 }).strict()
 
 export async function GET(req: NextRequest) {
@@ -283,6 +286,28 @@ export async function POST(req: NextRequest) {
       },
     },
   })
+
+  // Run chaining: validate and persist parent dependencies.
+  if (body.parent_run_ids && body.parent_run_ids.length > 0) {
+    const parentRuns = await db.run.findMany({
+      where: { id: { in: body.parent_run_ids } },
+      select: { id: true, status: true, project_id: true },
+    })
+    // Validate: all must exist, be COMPLETED, and belong to the same project.
+    for (const pid of body.parent_run_ids) {
+      const parent = parentRuns.find(p => p.id === pid)
+      if (!parent) return NextResponse.json({ error: `Parent run ${pid} not found` }, { status: 422 })
+      if (parent.project_id !== projectId) return NextResponse.json({ error: `Parent run ${pid} belongs to a different project` }, { status: 422 })
+      if (parent.status !== 'COMPLETED') return NextResponse.json({ error: `Parent run ${pid} is not COMPLETED (status: ${parent.status})` }, { status: 422 })
+    }
+    await db.runDependency.createMany({
+      data: body.parent_run_ids.map(pid => ({
+        child_run_id:  run.id,
+        parent_run_id: pid,
+      })),
+      skipDuplicates: true,
+    })
+  }
 
   // Enqueue asynchronously — route returns 201 immediately.
   const engine = await getExecutionEngine()
