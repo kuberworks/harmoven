@@ -568,8 +568,10 @@ export class CustomExecutor implements IExecutionEngine {
     }
     this._emit(runId, { type: 'state_change', entity_type: 'run', id: runId, status: 'SUSPENDED' })
 
-    // Re-enter the execution loop
-    await this.executeRun(runId)
+    // Fire executeRun in the background — same pattern as resumeRun().
+    // NOT awaited: replayNode must return promptly so the HTTP response is sent
+    // before the reviewer (and any downstream nodes) complete.
+    void this.executeRun(runId)
   }
 
   isShuttingDown(): boolean {
