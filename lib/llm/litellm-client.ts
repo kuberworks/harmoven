@@ -69,8 +69,11 @@ export class LiteLLMClient implements ILLMClient {
     messages: ChatMessage[],
     options:  ChatOptions,
     onChunk:  (chunk: string) => void,
+    onModelResolved?: (model: string) => void,
   ): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    // Fire early with the requested model; updated below if the server returns a different name.
+    onModelResolved?.(options.model)
     const client = await this.getClient()
 
     // Use create({ stream: true }).withResponse() so we can read the x-litellm-cost

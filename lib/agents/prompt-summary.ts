@@ -85,8 +85,9 @@ export class PromptSummaryCaptureClient implements ILLMClient {
     messages: ChatMessage[],
     options: ChatOptions,
     onChunk: (chunk: string) => void,
+    onModelResolved?: (model: string) => void,
   ): Promise<ChatResult> {
-    const result = await this.inner.stream(messages, options, onChunk)
+    const result = await this.inner.stream(messages, options, onChunk, onModelResolved)
 
     // Snapshot after streaming completes
     await this.persistPromptSummary(messages)

@@ -72,10 +72,12 @@ export class MockLLMClient implements ILLMClient {
     messages: ChatMessage[],
     options: ChatOptions,
     onChunk: (chunk: string) => void,
+    onModelResolved?: (model: string) => void,
   ): Promise<ChatResult> {
     this.calls.push({ messages, options })
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     await this.maybeDelay(options.signal)
+    onModelResolved?.(options.model)
     const content = this.dequeue()
     // Emit as a single chunk (no real streaming in mock)
     onChunk(content)
