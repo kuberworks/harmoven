@@ -3,7 +3,7 @@
 // app/(app)/settings/security/security-client.tsx
 // TOTP, passkeys, and active sessions management.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -65,6 +65,11 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
   const [revokeTarget, setRevokeTarget] = useState<string | null>(null)
   const [revoking, setRevoking] = useState(false)
   const [addingPasskey, setAddingPasskey] = useState(false)
+
+  // Sync passkeys state when the server re-renders with fresh data after router.refresh().
+  // useState(initialPasskeys) only reads the prop once on mount, so without this effect
+  // the list never updates after a passkey is added.
+  useEffect(() => { setPasskeys(initialPasskeys) }, [initialPasskeys])
 
   async function revokeSession(id: string) {
     setRevoking(true)
