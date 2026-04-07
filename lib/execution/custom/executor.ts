@@ -416,8 +416,10 @@ export class CustomExecutor implements IExecutionEngine {
           },
         })
         this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'PENDING' })
-        // Resume execution — executeRun accepts SUSPENDED and will pick up the PENDING node.
-        await this.executeRun(runId)
+        // Re-enter the execution loop if it is not already running.
+        // If the run is RUNNING the loop is active and will pick up the PENDING node on its next
+        // iteration — calling executeRun again would be a no-op and throw on RUNNING status.
+        if (run.status !== 'RUNNING') void this.executeRun(runId)
         break
       }
 
@@ -522,7 +524,13 @@ export class CustomExecutor implements IExecutionEngine {
           },
         })
         this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'PENDING' })
-        await this.executeRun(runId)
+        // Only re-launch the loop when it has exited (SUSPENDED / FAILED / re-opened COMPLETED→PENDING).
+        // When originally RUNNING, downstream resets were aborted and the run was transitioned to
+        // SUSPENDED above — so it is now SUSPENDED and executeRun is safe to call.
+        {
+          const runAfterReset = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+          if ((runAfterReset.status as string) !== 'RUNNING') void this.executeRun(runId)
+        }
         break
       }
 
@@ -556,8 +564,9 @@ export class CustomExecutor implements IExecutionEngine {
           },
         })
         this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'COMPLETED' })
-        // Re-enter the run — remaining PENDING nodes (if any) will be executed.
-        await this.executeRun(runId)
+        // If the run is RUNNING the execution loop is already active and will continue to the next
+        // PENDING node automatically. Only re-launch when the loop has exited (SUSPENDED / FAILED).
+        if (run.status !== 'RUNNING') void this.executeRun(runId)
         break
       }
 

@@ -84,6 +84,20 @@ async function getRunStatus(store: InMemoryRunStore, runId: string) {
   return run.status
 }
 
+/** Poll until a node reaches a given status. Used after void-executeRun calls. */
+async function waitForNodeStatus(
+  store: InMemoryRunStore, runId: string, nodeId: string,
+  targetStatus: string, timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const s = await getNodeStatus(store, runId, nodeId)
+    if (s === targetStatus) return
+    await new Promise(r => setTimeout(r, 20))
+  }
+  throw new Error(`Node ${nodeId} did not reach status '${targetStatus}' within ${timeoutMs}ms`)
+}
+
 // ─── Amendment 64 — Context injection ────────────────────────────────────────
 
 describe('injectContext()', () => {
@@ -307,9 +321,10 @@ describe('resolveInterruptGate()', () => {
     const store = buildInterruptedStore(runId)
     const executor = new CustomExecutor(store, neverRunner, 4, undefined)
 
-    // resolveInterruptGate will transition node→PENDING then call executeRun (which
-    // runs it to COMPLETED). After the call, the node should be COMPLETED.
+    // resolveInterruptGate will transition node→PENDING then launch executeRun asynchronously
+    // (void). Wait for the background execution to drive the node to COMPLETED.
     await executor.resolveInterruptGate(runId, 'n1', 'user-1', { decision: 'replay_from_scratch' })
+    await waitForNodeStatus(store, runId, 'n1', 'COMPLETED')
 
     const status = await getNodeStatus(store, runId, 'n1')
     expect(status).toBe('COMPLETED')
@@ -344,18 +359,27 @@ describe('resolveInterruptGate()', () => {
       .rejects.toThrow('must be INTERRUPTED')
   })
 
-  test('throws if run is not SUSPENDED', async () => {
-    const runId = 'run-gate-bad-run'
+  test('resolves successfully when run is RUNNING (loop already active)', async () => {
+    // When a run is RUNNING and an INTERRUPTED node is resolved with accept_partial,
+    // the executor should mark the node COMPLETED and let the existing loop continue
+    // naturally — it must NOT call executeRun again (which would throw on RUNNING status).
+    const runId = 'run-gate-running'
     const store = buildStore(runId, SINGLE_DAG, { status: 'RUNNING' })
     // Manually set node to INTERRUPTED
     const nodes = await store.node.findMany({ where: { run_id: runId } })
     if (nodes[0]) {
-      await store.node.update({ where: { id: nodes[0].id }, data: { status: 'INTERRUPTED' } })
+      await store.node.update({ where: { id: nodes[0].id }, data: { status: 'INTERRUPTED', partial_output: 'partial_content' } })
     }
     const executor = new CustomExecutor(store, happyRunner, 4, undefined)
 
+    // Should NOT throw — the gate resolves the node and skips re-launching the loop
     await expect(executor.resolveInterruptGate(runId, 'n1', 'user-1', { decision: 'accept_partial' }))
-      .rejects.toThrow('must be SUSPENDED')
+      .resolves.toBeUndefined()
+
+    // Node must be COMPLETED after accept_partial
+    const updated = await store.node.findMany({ where: { run_id: runId } })
+    const n1 = updated.find(n => n.node_id === 'n1')
+    expect((n1 as any)?.status).toBe('COMPLETED')
   })
 })
 
