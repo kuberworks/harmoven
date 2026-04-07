@@ -43,7 +43,22 @@ export interface ReviewerOutput {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(profile: ProfileId): string {
+function buildSystemPrompt(profile: ProfileId, outputLanguage?: string): string {
+  const languageRule = outputLanguage
+    ? `\nLanguage rule (IMPORTANT):
+- The expected output language is: ${outputLanguage}
+- Technical vocabulary, algorithm names, mathematical terms (e.g. "minmax", "softmax",
+  "backpropagation"), programming keywords, domain-specific jargon, proper nouns, acronyms,
+  and internationally adopted scientific/technical words are acceptable in text of any
+  language. Do NOT flag them as language inconsistencies.
+- Only flag a language inconsistency when the main narrative prose switches to a language
+  other than ${outputLanguage} for full sentences or paragraphs.`
+    : `\nLanguage rule:
+- Technical vocabulary, algorithm names, mathematical terms, programming keywords,
+  domain-specific jargon, proper nouns, and internationally adopted scientific/technical
+  words are acceptable regardless of their origin language. Do NOT flag them as language
+  inconsistencies. Only flag genuine narrative prose written in an unintended language.`
+
   return `\
 You are a Harmoven Reviewer agent performing a quality gate review for a "${profile}" project.
 You will receive the outputs from all Writer nodes. Review them against the universal checklist
@@ -69,7 +84,7 @@ Universal checklist:
 - No factual contradictions between parallel branches
 - Output format matches expected_output_type
 - No hallucinated data, figures, or unsourced claims
-
+${languageRule}
 Profile-specific rules:
 - app_scaffolding: flag if ESLint/tsc/docker-compose issues mentioned in output
 - legal_compliance: must flag if "consult a lawyer" reminder is absent
@@ -95,13 +110,14 @@ export class Reviewer {
     profile: ProfileId,
     run_id: string,
     signal?: AbortSignal,
+    outputLanguage?: string,
   ): Promise<ReviewerOutput> {
     const startMs = Date.now()
 
     const result = await withRetry(
       () => this.llm.chat(
         [
-          { role: 'system', content: buildSystemPrompt(profile) },
+          { role: 'system', content: buildSystemPrompt(profile, outputLanguage) },
           {
             role: 'user',
             content: JSON.stringify({

@@ -4,7 +4,7 @@
 //
 // Node metadata contract (written when nodes are persisted from Planner output):
 //   WRITER:           { description, complexity, expected_output_type, domain_profile, task_type? }
-//   REVIEWER:         { domain_profile }
+//   REVIEWER:         { domain_profile, output_language? }
 //   PLANNER:          { task_input? }
 //   CLASSIFIER:       handoffIn = string | { input: string }
 //   SMOKE_TEST:       { worktree, routes?, timeout_s? }
@@ -312,9 +312,12 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           ? (handoffIn as WriterOutput[])
           : handoffIn != null ? [handoffIn as WriterOutput] : []
         const profile = asProfileId(meta['domain_profile'])
+        const outputLanguage = typeof meta['output_language'] === 'string'
+          ? (meta['output_language'] as string)
+          : undefined
 
         const result = await new Reviewer(captureClient).review(
-          writerOutputs, profile, node.run_id, signal,
+          writerOutputs, profile, node.run_id, signal, outputLanguage,
         )
         return {
           handoffOut: result,
