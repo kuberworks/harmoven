@@ -375,9 +375,9 @@ export class CustomExecutor implements IExecutionEngine {
     }
 
     const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
-    const runCanResume = run.status === 'SUSPENDED' || run.status === 'FAILED' || run.status === 'RUNNING'
+    const runCanResume = run.status === 'SUSPENDED' || run.status === 'FAILED' || run.status === 'RUNNING' || run.status === 'COMPLETED'
     if (!runCanResume) {
-      throw new Error(`Run '${runId}' cannot be restarted (status: '${run.status}') — must be SUSPENDED, FAILED or RUNNING`)
+      throw new Error(`Run '${runId}' cannot be restarted (status: '${run.status}') — must be SUSPENDED, FAILED, RUNNING or COMPLETED`)
     }
 
     // ── Atomic claim ──────────────────────────────────────────────────────────
@@ -500,6 +500,16 @@ export class CustomExecutor implements IExecutionEngine {
           await this.db.run.update({
             where: { id: runId },
             data: { status: 'PENDING', started_at: null },
+          })
+        }
+        // ── Re-open a COMPLETED run (GitLab-style node replay) ─────────────
+        // When the entire run was COMPLETED and the user replays a node,
+        // reset it to PENDING so executeRun can pick it up again.
+        // completed_at is cleared so the run shows an accurate new completion time.
+        if (freshRun.status === 'COMPLETED') {
+          await this.db.run.update({
+            where: { id: runId },
+            data: { status: 'PENDING', completed_at: null },
           })
         }
 

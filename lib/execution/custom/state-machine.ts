@@ -31,7 +31,7 @@ const RUN_TRANSITIONS: Record<RunStatus, RunStatus[]> = {
   PAUSED:    ['RUNNING', 'FAILED'],            // Am.63 — resume or abort
   SUSPENDED: ['RUNNING', 'FAILED'],            // human gate or crash
   FAILED:    ['RUNNING'],                      // admin retry only
-  COMPLETED: [],                               // terminal
+  COMPLETED: ['RUNNING'],                      // only via explicit node replay (re-run from completed run)
 }
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -78,9 +78,10 @@ export const TERMINAL_NODE_STATUSES = new Set<NodeStatus>([
   'DEADLOCKED',
 ])
 
-/** Run statuses from which no further automatic transitions are possible. */
+/** Run statuses from which no further automatic transitions are possible.
+ * Note: COMPLETED is NOT in this set — a completed run can be re-opened via node replay.
+ * FAILED is included because it requires an explicit admin retry (resumeRun) to re-enter. */
 export const TERMINAL_RUN_STATUSES = new Set<RunStatus>([
-  'COMPLETED',
   'FAILED',
 ])
 
