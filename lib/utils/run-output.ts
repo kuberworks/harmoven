@@ -6,15 +6,24 @@
 export function extractOutputSummary(handoffOut: unknown): string | null {
   if (!handoffOut || typeof handoffOut !== 'object') return null
   const h = handoffOut as Record<string, unknown>
-  // Reviewer formatted_content takes priority
+  // REVIEWER: formatted_content is a consolidated Markdown doc — best summary
   if (typeof h['formatted_content'] === 'string' && h['formatted_content']) {
     return h['formatted_content'].slice(0, 2000)
   }
+  // WRITER / PYTHON_EXECUTOR: content lives under output.*
   const output = h['output'] as Record<string, unknown> | undefined
-  if (!output) return null
-  const summary = output['summary'] as string | undefined
-  const content = (output['content'] ?? output['text']) as string | undefined
-  if (summary) return summary.slice(0, 500)
-  if (content) return content.slice(0, 2000)
+  if (output) {
+    const summary = output['summary'] as string | undefined
+    const content = (output['content'] ?? output['text']) as string | undefined
+    if (summary) return summary.slice(0, 500)
+    if (content) return content.slice(0, 2000)
+  }
+  // REVIEWER without formatted_content: fall back to overall_confidence_rationale
+  if (typeof h['verdict'] === 'string') {
+    const rationale = typeof h['overall_confidence_rationale'] === 'string'
+      ? (h['overall_confidence_rationale'] as string)
+      : null
+    if (rationale) return rationale.slice(0, 500)
+  }
   return null
 }

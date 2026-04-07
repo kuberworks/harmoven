@@ -5,7 +5,7 @@
 // Standard mode: single textarea with character hint.
 // Expert mode: side-by-side text + JSON schema override panel.
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -40,11 +40,20 @@ export function TaskInput({
   placeholder,
   expertMode = false,
   disabled = false,
-  maxLength = 4000,
+  maxLength = 100_000,
 }: TaskInputProps) {
   const [showSchema, setShowSchema] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hint = placeholder ?? DOMAIN_HINTS[domainProfile ?? 'default'] ?? DOMAIN_HINTS.default
   const chars = value.length
+
+  // Auto-resize: grow the textarea height to fit content without a scrollbar.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [value])
 
   return (
     <div className="space-y-2">
@@ -72,6 +81,7 @@ export function TaskInput({
       <div className={cn('grid gap-3', showSchema && expertMode ? 'grid-cols-2' : 'grid-cols-1')}>
         <div className="space-y-1">
           <Textarea
+            ref={textareaRef}
             id="task-input-textarea"
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -79,7 +89,7 @@ export function TaskInput({
             disabled={disabled}
             rows={6}
             maxLength={maxLength}
-            className="resize-none font-body text-sm leading-relaxed"
+            className="resize-none font-body text-sm leading-relaxed overflow-hidden"
             aria-label="Task description"
           />
           {domainProfile && (

@@ -1650,22 +1650,36 @@ export class CustomExecutor implements IExecutionEngine {
 
       if (outputNodes.length === 0) continue
 
-      // Prefer REVIEWER output (summarised), fall back to WRITER/PYTHON_EXECUTOR
+      // Prefer REVIEWER formatted_content (already a consolidated Markdown document).
+      // REVIEWER handoff_out: { verdict, findings, formatted_content?, overall_confidence_rationale }
+      // WRITER   handoff_out: { output: { content, confidence, ... } }
+      // If reviewer node exists but has no formatted_content, fall back to
+      // WRITER/PYTHON_EXECUTOR output.content so context is never silently empty.
       const reviewerNode = outputNodes.find(n => n.agent_type === 'REVIEWER')
-      const targetNodes  = reviewerNode ? [reviewerNode] : outputNodes
+      let contextAdded = false
 
-      for (const n of targetNodes) {
-        const ho  = n.handoff_out as Record<string, unknown> | null
-        const out = ho?.['output'] as Record<string, unknown> | undefined
-        const raw =
-          ho?.['formatted_content'] ??
-          out?.['summary'] ??
-          out?.['content'] ??
-          ho?.['content'] ??
-          ''
-        const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 1500)
-        if (text.trim()) {
-          contextParts.push(`[Parent run ${parentId.slice(0, 8)} — ${n.agent_type} ${n.node_id}]:\n${text}`)
+      if (reviewerNode) {
+        const rho = reviewerNode.handoff_out as Record<string, unknown> | null
+        const fc  = typeof rho?.['formatted_content'] === 'string' ? (rho!['formatted_content'] as string) : null
+        if (fc?.trim()) {
+          contextParts.push(`[Parent run ${parentId.slice(0, 8)} — REVIEWER]:\n${fc.slice(0, 1500)}`)
+          contextAdded = true
+        }
+      }
+
+      if (!contextAdded) {
+        // REVIEWER had no formatted_content — use WRITER / PYTHON_EXECUTOR output.content
+        const writerNodes = outputNodes.filter(
+          n => n.agent_type === 'WRITER' || n.agent_type === 'PYTHON_EXECUTOR',
+        )
+        for (const n of writerNodes) {
+          const ho  = n.handoff_out as Record<string, unknown> | null
+          const out = ho?.['output'] as Record<string, unknown> | undefined
+          const raw = out?.['content'] ?? out?.['text'] ?? ''
+          const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 1500)
+          if (text.trim()) {
+            contextParts.push(`[Parent run ${parentId.slice(0, 8)} — ${n.agent_type} ${n.node_id}]:\n${text}`)
+          }
         }
       }
     }
