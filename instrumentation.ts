@@ -65,5 +65,21 @@ export async function register(): Promise<void> {
     await maybeGenerateSetupToken().catch((err: unknown) =>
       console.warn('[bootstrap] maybeGenerateSetupToken failed (non-fatal):', err),
     )
+
+    // Warn at startup if ENCRYPTION_KEY is missing or too short (< 32 bytes after base64 decode).
+    // Credentials stored in the vault will fail to decrypt at runtime without it.
+    const encKey = process.env.ENCRYPTION_KEY ?? ''
+    if (!encKey) {
+      console.warn('[bootstrap] ENCRYPTION_KEY is not set — credential vault operations will fail at runtime.')
+    } else {
+      try {
+        const decoded = Buffer.from(encKey, 'base64')
+        if (decoded.length < 32) {
+          console.warn(`[bootstrap] ENCRYPTION_KEY is too short (${decoded.length} bytes after base64 decode; 32 required).`)
+        }
+      } catch {
+        console.warn('[bootstrap] ENCRYPTION_KEY does not appear to be valid base64.')
+      }
+    }
   }
 }

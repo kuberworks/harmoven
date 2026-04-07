@@ -99,10 +99,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, models, base_url: normalised })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // Redact any embedded secrets from error messages
+    // Redact any embedded secrets from error messages (OpenAI sk-*, Gemini AIza*, HuggingFace hf_*, Replicate r8_*, AWS AKIA*, generic 40+ char tokens)
     const safe = msg
       .replace(/sk-[a-zA-Z0-9_-]{20,}/g, '[REDACTED]')
       .replace(/AIza[A-Za-z0-9_-]{30,}/g, '[REDACTED]')
+      .replace(/hf_[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+      .replace(/r8_[a-zA-Z0-9]{20,}/g, '[REDACTED]')
+      .replace(/AKIA[A-Z0-9]{16}/g, '[REDACTED]')
+      .replace(/(?<![\w/])[a-zA-Z0-9+/]{40,}(?:={0,2})(?![\w/])/g, '[REDACTED]')
     return NextResponse.json({ error: `Failed to fetch models: ${safe}` }, { status: 400 })
   }
 }
