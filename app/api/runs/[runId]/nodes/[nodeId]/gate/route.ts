@@ -1,10 +1,10 @@
 // app/api/runs/[runId]/nodes/[nodeId]/gate/route.ts
 // POST /api/runs/:runId/nodes/:nodeId/gate
-// Resolve an Interrupt Gate for an INTERRUPTED node.
+// Resolve an Interrupt Gate for a node in INTERRUPTED, FAILED or COMPLETED status.
 // Three decisions: resume_from_partial | replay_from_scratch | accept_partial
-// Amendment 65.
+// Amendment 65 + node-restart-any-status.
 //
-// Auth: gates:approve permission required.
+// Auth: gates:approve or runs:replay permission required.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z }                         from 'zod'
@@ -82,7 +82,7 @@ export async function POST(
     if (message.includes('not found')) {
       return NextResponse.json({ error: message }, { status: 404 })
     }
-    if (message.includes('cannot be restarted') || message.includes('not INTERRUPTED') || message.includes('not SUSPENDED') || message.includes('status')) {
+    if (message.includes('cannot be restarted') || message.includes('not INTERRUPTED') || message.includes('not SUSPENDED') || message.includes('must be INTERRUPTED') || message.includes('must be SUSPENDED') || message.includes('must be COMPLETED') || message.includes('status')) {
       return NextResponse.json({ error: message }, { status: 409 })
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

@@ -245,7 +245,8 @@ function FeedbackPanel({ runId }: { runId: string }) {
 
 // ─── Restart node button ────────────────────────────────────────────────────
 
-function RestartNodeButton({ runId, nodeId, onSuccess }: { runId: string; nodeId: string; onSuccess?: () => void }) {
+function RestartNodeButton({ runId, nodeId, onSuccess, isRerun }: { runId: string; nodeId: string; onSuccess?: () => void; isRerun?: boolean }) {
+  const t = useT()
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
@@ -283,7 +284,7 @@ function RestartNodeButton({ runId, nodeId, onSuccess }: { runId: string; nodeId
         {loading
           ? <Loader2 className="h-3 w-3 animate-spin" />
           : <RotateCcw className="h-3 w-3" />}
-        Restart
+        {isRerun ? t('run.node.rerun') : t('run.node.restart')}
       </button>
       {error && <span className="text-xs text-destructive">{error}</span>}
     </div>
@@ -390,7 +391,7 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick =
     return () => clearInterval(id)
   }, [node.started_at, node.completed_at])
 
-  const restartable = canRestart && (node.status === 'FAILED' || node.status === 'INTERRUPTED')
+  const restartable = canRestart && (node.status === 'FAILED' || node.status === 'INTERRUPTED' || node.status === 'COMPLETED')
 
   // Parse handoff_out for display
   const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
@@ -546,7 +547,7 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick =
 
       {restartable && (
         <div className="border-t border-surface-border/50 px-3 py-2">
-          <RestartNodeButton runId={runId} nodeId={node.node_id} onSuccess={onRestart} />
+          <RestartNodeButton runId={runId} nodeId={node.node_id} onSuccess={onRestart} isRerun={node.status === 'COMPLETED'} />
         </div>
       )}
     </div>

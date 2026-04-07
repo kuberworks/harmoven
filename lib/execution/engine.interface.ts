@@ -228,11 +228,16 @@ export interface IExecutionEngine {
   interruptNode(runId: string, nodeId: string, actorId: string): Promise<void>
 
   /**
-   * Resolve an Interrupt Gate — called after a node has been INTERRUPTED.
+   * Resolve an Interrupt Gate — called after a node has been INTERRUPTED, FAILED,
+   * or to force-restart a COMPLETED node.
    * Three decisions are supported (see GateDecision):
-   *   resume_from_partial — re-queue the node with the edited partial as seed context
-   *   replay_from_scratch — re-queue the node ignoring any partial output
+   *   resume_from_partial — re-queue the node with the edited partial as seed context (INTERRUPTED only)
+   *   replay_from_scratch — reset the node (and any downstream nodes if COMPLETED) to PENDING
    *   accept_partial      — mark the node COMPLETED using partial_output as handoff_out
+   *
+   * When the target node is COMPLETED and the run is RUNNING, a downstream cascade
+   * is triggered: all transitively-dependent nodes are reset to PENDING and any
+   * currently-RUNNING downstream nodes are aborted first.
    */
   resolveInterruptGate(
     runId: string,
