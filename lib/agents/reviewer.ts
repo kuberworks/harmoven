@@ -100,6 +100,51 @@ Verdict rules:
 Output ONLY the JSON object. No markdown fence, no prose.`
 }
 
+// Maximum characters of writer content included in the reviewer prompt per node.
+// Sending the full content (often 20K+ chars) inflates the input token count and
+// leaves little room for the JSON output, causing the LLM to truncate mid-response.
+// The reviewer only needs the summary + a representative excerpt to do its job.
+const REVIEWER_CONTENT_EXCERPT_CHARS = 3000
+
+// ─── Truncation recovery ──────────────────────────────────────────────────────
+
+/**
+ * Attempt to extract a usable ReviewerOutput from a truncated JSON string.
+ * The LLM puts `verdict` first, so we can almost always recover that.
+ * `findings` may be partially present — we keep only fully-formed objects.
+ * Returns null if even the `verdict` is unrecoverable.
+ */
+function recoverTruncatedReviewerJson(raw: string): Record<string, unknown> | null {
+  // Try to pull verdict — it's always the very first field.
+  const verdictMatch = raw.match(/"verdict"\s*:\s*"([^"]+)"/)
+  if (!verdictMatch) return null
+  const verdict = verdictMatch[1]
+  if (!['APPROVE', 'REQUEST_REVISION', 'ESCALATE_HUMAN'].includes(verdict!)) return null
+
+  // Extract all complete finding objects (must have all 4 required fields).
+  const findings: ReviewFinding[] = []
+  const findingRe = /\{[^{}]*"severity"\s*:\s*"([^"]+)"[^{}]*"node_id"\s*:\s*"([^"]+)"[^{}]*"issue"\s*:\s*"([^"]+)"[^{}]*"recommendation"\s*:\s*"([^"]+)"[^{}]*\}/g
+  let m: RegExpExecArray | null
+  while ((m = findingRe.exec(raw)) !== null) {
+    findings.push({
+      severity: m[1] as ReviewFinding['severity'],
+      node_id: m[2]!,
+      issue: m[3]!,
+      recommendation: m[4]!,
+    })
+  }
+
+  const confidenceMatch = raw.match(/"overall_confidence"\s*:\s*(\d+)/)
+  const rationaleMatch  = raw.match(/"overall_confidence_rationale"\s*:\s*"([^"]+)"/)
+
+  return {
+    verdict,
+    findings,
+    overall_confidence:           confidenceMatch  ? parseInt(confidenceMatch[1]!, 10) : 50,
+    overall_confidence_rationale: rationaleMatch?.[1] ?? 'Response was truncated — partial review only.',
+  }
+}
+
 // ─── Reviewer ─────────────────────────────────────────────────────────────────
 
 export class Reviewer {
@@ -127,7 +172,11 @@ export class Reviewer {
                 node_id: w.source_node_id,
                 output_type: w.output.type,
                 summary: w.output.summary,
-                content: w.output.content,
+                // Truncate content to avoid inflating context so much that the
+                // JSON response itself gets cut at max_tokens.
+                content: w.output.content.length > REVIEWER_CONTENT_EXCERPT_CHARS
+                  ? w.output.content.slice(0, REVIEWER_CONTENT_EXCERPT_CHARS) + '\n…[truncated for review]'
+                  : w.output.content,
                 confidence: w.output.confidence,
                 assumptions_made: w.assumptions_made,
               })),
@@ -146,7 +195,21 @@ export class Reviewer {
     let parsed: unknown
     try {
       const stripped = result.content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-      parsed = JSON.parse(stripped)
+      try {
+        parsed = JSON.parse(stripped)
+      } catch {
+        // JSON may be truncated (LLM hit max_tokens mid-output). Try recovery.
+        const recovered = recoverTruncatedReviewerJson(stripped)
+        if (recovered) {
+          console.warn(
+            `[Reviewer] response truncated — recovered verdict="${recovered['verdict']}", ` +
+            `${(recovered['findings'] as ReviewFinding[]).length} finding(s)`,
+          )
+          parsed = recovered
+        } else {
+          throw new SyntaxError('no recoverable JSON in reviewer response')
+        }
+      }
     } catch {
       throw new Error(
         `Reviewer: LLM returned invalid JSON — ${result.content.slice(0, 200)}`,
