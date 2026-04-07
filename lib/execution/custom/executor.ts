@@ -219,9 +219,31 @@ export class CustomExecutor implements IExecutionEngine {
       data: { id: uuidv7(), actor: actorId, action_type: 'run_resumed', run_id: runId, payload: {} },
     })
 
-    // The execution loop exited cleanly when it detected PAUSED status.
-    // Call executeRun again — it accepts PAUSED as a valid start status and resumes
-    // from the last stable node state (COMPLETED nodes are skipped by getReadyNodes).
+    // Special case: planner_exhausted → the PLANNER node is FAILED and no downstream
+    // nodes were created (DAG expansion never ran). Reset the PLANNER node to PENDING
+    // so the execution loop can retry it after the operator unblocks the run.
+    if (run.suspended_reason === 'planner_exhausted') {
+      const nodes = await this.db.node.findMany({ where: { run_id: runId } })
+      const failedPlanner = nodes.find(n => n.agent_type === 'PLANNER' && n.status === 'FAILED')
+      if (failedPlanner) {
+        await this.db.node.update({
+          where: { id: failedPlanner.id },
+          data: {
+            status:       'PENDING',
+            error:        null,
+            started_at:   null,
+            completed_at: null,
+            retries:      0,
+          },
+        })
+        this._emit(runId, { type: 'state_change', entity_type: 'node', id: failedPlanner.node_id, status: 'PENDING' })
+      }
+      await this.db.run.update({ where: { id: runId }, data: { suspended_reason: null } })
+    }
+
+    // The execution loop exited cleanly when it detected PAUSED/SUSPENDED status.
+    // Call executeRun again — it accepts SUSPENDED/PAUSED as valid start statuses and
+    // resumes from the last stable node state (COMPLETED nodes are skipped by getReadyNodes).
     await this.executeRun(runId)
   }
 

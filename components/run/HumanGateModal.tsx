@@ -37,7 +37,7 @@ export function HumanGateModal({
       const res = await fetch(`/api/runs/${runId}/gate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gate_id: gateId, action }),
+        body: JSON.stringify({ decision: action === 'reject' ? 'abort' : 'approve' }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       toast({
