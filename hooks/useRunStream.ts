@@ -44,6 +44,7 @@ type StreamEvent =
   | { type: 'budget_warning'; percent_used: number; remaining_usd: number }
   | { type: 'completed'; run: RunState; handoff_note: string }
   | { type: 'error'; node_id: string; message: string }
+  | { type: 'artifacts_ready'; node_id: string; artifact_count: number; filenames: string[] }
 
 export interface StreamState {
   run: RunState | null

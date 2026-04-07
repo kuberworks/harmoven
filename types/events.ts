@@ -75,6 +75,14 @@ export type RunSSEEventError = {
   message: string
 }
 
+/** Emitted after PYTHON_EXECUTOR artifacts are persisted. */
+export type RunSSEEventArtifactsReady = {
+  type:           'artifacts_ready'
+  node_id:        string
+  artifact_count: number
+  filenames:      string[]  // for UI display, not for download (use artifact IDs)
+}
+
 /**
  * Full discriminated union of all SSE event payloads.
  * Parsed from the `data` field of each `text/event-stream` message.
@@ -101,6 +109,7 @@ export type RunSSEEvent =
   | RunSSEEventLlmFallback
   | RunSSEEventCompleted
   | RunSSEEventError
+  | RunSSEEventArtifactsReady
 
 /** Project-level lifecycle events (emitted on /api/projects/:id/stream). */
 export type ProjectLifecycleEvent =

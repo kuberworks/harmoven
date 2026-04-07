@@ -34,6 +34,7 @@ import { resolveCriticalSeverity } from '@/lib/agents/reviewer/critical-reviewer
 import { PromptSummaryCaptureClient } from '@/lib/agents/prompt-summary'
 import { executePython } from '@/lib/agents/python-executor'
 import { db } from '@/lib/db/client'
+import { projectEventBus } from '@/lib/events/project-event-bus.factory'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -439,14 +440,47 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
         const result = await executePython({ code, timeout_ms: timeoutMs, packages }, signal)
 
+        // Persist generated files as RunArtifact rows
+        if (result.files.length > 0) {
+          const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+          await db.runArtifact.createMany({
+            data: result.files.map(f => ({
+              run_id:     node.run_id,
+              node_id:    node.node_id,
+              filename:   f.name,
+              mime_type:  f.mime,
+              size_bytes: f.sizeBytes,
+              data:       Buffer.from(f.buffer),
+              expires_at: expiresAt,
+            })),
+          })
+
+          // Emit SSE artifacts_ready event so the UI can update without polling
+          const runForProject = await db.run.findUnique({ where: { id: node.run_id }, select: { project_id: true } })
+          if (runForProject) {
+            void projectEventBus.emit({
+              project_id: runForProject.project_id,
+              run_id:     node.run_id,
+              event: {
+                type:           'artifacts_ready',
+                node_id:        node.node_id,
+                artifact_count: result.files.length,
+                filenames:      result.files.map(f => f.name),
+              },
+              emitted_at: new Date(),
+            })
+          }
+        }
+
         return {
           handoffOut: {
-            stdout:      result.stdout,
-            stderr:      result.stderr,
-            exit_code:   result.exit_code,
-            duration_ms: result.duration_ms,
-            truncated:   result.truncated,
-            error:       result.error,
+            stdout:         result.stdout,
+            stderr:         result.stderr,
+            exit_code:      result.exit_code,
+            duration_ms:    result.duration_ms,
+            truncated:      result.truncated,
+            error:          result.error,
+            artifact_count: result.files.length,
           },
           costUsd:   0,
           tokensIn:  0,
