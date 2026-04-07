@@ -9,6 +9,12 @@ organization:
 execution_engine:
   provider: custom
   max_concurrent_nodes: 20
+writer:
+  # Max output tokens per complexity tier. Defaults match provider maximums.
+  # Reduce these if you want to limit output length / cost.
+  max_tokens_low:    8192
+  max_tokens_medium: 32768
+  max_tokens_high:   65536
 llm:
   default_provider: anthropic
   profiles_active:
