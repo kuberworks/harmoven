@@ -821,8 +821,13 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
     return () => clearInterval(t)
   }, [run.started_at, isTerminal])
 
-  // Gates
-  const hasOpenGate = initialRun.openGate || stream.events.some((e) => e.type === 'human_gate')
+  // Gates — a human_gate SSE event opens the banner; the banner is dismissed
+  // as soon as the run transitions back to RUNNING (resume) or reaches a
+  // terminal state. We use the live run.status from the reducer (which is
+  // updated by state_change events) rather than scanning the raw event list,
+  // so the banner disappears the moment the SSE confirms the run is running.
+  const hasOpenGate = (run.status === 'SUSPENDED' || run.status === 'PAUSED')
+    && (!!initialRun.openGate || stream.events.some((e) => e.type === 'human_gate'))
 
   return (
     <div className="space-y-6">
