@@ -45,7 +45,23 @@ export interface ReviewerOutput {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(profile: ProfileId, outputLanguage?: string): string {
+function buildSystemPrompt(
+  profile: ProfileId,
+  outputLanguage?: string,
+  hasParallelExcelSheets?: boolean,
+): string {
+  const parallelSheetsRule = hasParallelExcelSheets
+    ? `\nParallel worksheets rule (IMPORTANT — applies to this run):
+- All writer outputs are INDIVIDUAL WORKSHEETS of a single unified workbook, each covering a
+  distinct scope defined in the writer's assigned_task.
+- Do NOT flag partial costs, subtotals, or section-level figures in one sheet as contradictions
+  with aggregated totals in another sheet — these are additive components, not competing claims.
+- DO flag when a key reference value (number of guests, event date, couple names, currency)
+  differs across sheets — those are genuine inconsistencies.
+- For each writer output, judge it against its own assigned_task (what that specific sheet was
+  asked to produce), NOT against the outputs of sibling writer sheets.`
+    : ''
+
   const languageRule = outputLanguage
     ? `\nLanguage rule (IMPORTANT):
 - The expected output language is: ${outputLanguage}
@@ -87,7 +103,7 @@ Universal checklist:
 - No factual contradictions between parallel branches
 - Output format matches expected_output_type
 - No hallucinated data, figures, or unsourced claims
-${languageRule}
+${languageRule}${parallelSheetsRule}
 Profile-specific rules:
 - app_scaffolding: flag if ESLint/tsc/docker-compose issues mentioned in output
 - legal_compliance: must flag if "consult a lawyer" reminder is absent
@@ -155,6 +171,13 @@ function recoverTruncatedReviewerJson(raw: string): Record<string, unknown> | nu
 
 // ─── Reviewer ─────────────────────────────────────────────────────────────────
 
+export interface ReviewerTaskContext {
+  /** Assigned task description per writer node_id (from Planner metadata). */
+  writerDescriptions: Record<string, string>
+  /** The reviewer node's own assigned task description (from Planner metadata). */
+  reviewerDescription?: string
+}
+
 export class Reviewer {
   constructor(private readonly llm: ILLMClient) {}
 
@@ -164,20 +187,31 @@ export class Reviewer {
     run_id: string,
     signal?: AbortSignal,
     outputLanguage?: string,
+    taskContext?: ReviewerTaskContext,
   ): Promise<ReviewerOutput> {
     const startMs = Date.now()
+
+    // Detect parallel-excel-sheets scenario: all writers have the same excel output type.
+    const allOutputTypes = writerOutputs.map(w => w.output.type)
+    const hasParallelExcelSheets =
+      writerOutputs.length > 1 &&
+      allOutputTypes.every(t => t === 'excel_file' || t === 'spreadsheet' || t === 'csv')
 
     const result = await withRetry(
       () => this.llm.chat(
         [
-          { role: 'system', content: buildSystemPrompt(profile, outputLanguage) },
+          { role: 'system', content: buildSystemPrompt(profile, outputLanguage, hasParallelExcelSheets) },
           {
             role: 'user',
             content: JSON.stringify({
               run_id,
               domain_profile: profile,
+              // Reviewer's own assigned task — helps the LLM understand the consolidation goal.
+              reviewer_task: taskContext?.reviewerDescription ?? null,
               writer_outputs: writerOutputs.map(w => ({
                 node_id: w.source_node_id,
+                // What this writer was specifically assigned to produce.
+                assigned_task: taskContext?.writerDescriptions[w.source_node_id] ?? null,
                 output_type: w.output.type,
                 summary: w.output.summary,
                 // Truncate content to avoid inflating context so much that the
