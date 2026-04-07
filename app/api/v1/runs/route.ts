@@ -20,6 +20,7 @@ import {
   UnauthorizedError,
 }                                    from '@/lib/auth/rbac'
 import { createRunRateLimitAsync }    from '@/lib/auth/rate-limit'
+import { classifyConfidentiality }    from '@/lib/llm/confidentiality'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
 
@@ -141,6 +142,21 @@ export async function POST(req: NextRequest) {
   // H-04: actor is always traceable — "apikey:<keyId>" for API key callers, userId for sessions.
   const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
 
+  // Apply local confidentiality classification — same as /api/runs.
+  // The classifier is authoritative when more restrictive than the caller-supplied level.
+  const LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
+  type Level = typeof LEVELS[number]
+  const taskInputStr = typeof body.task_input === 'string'
+    ? body.task_input
+    : JSON.stringify(body.task_input)
+  const classificationResult = classifyConfidentiality(taskInputStr)
+  const callerLevel = (body.confidentiality?.toUpperCase() ?? 'LOW') as Level
+  const classifiedLevel = classificationResult.score
+  const effectiveConfidentiality =
+    LEVELS.indexOf(classifiedLevel) > LEVELS.indexOf(callerLevel)
+      ? classifiedLevel
+      : callerLevel
+
   const run = await db.run.create({
     data: {
       id:                uuidv7(),   // Spec T1.2: Run IDs must be UUIDv7
@@ -152,7 +168,7 @@ export async function POST(req: NextRequest) {
       dag:               { nodes: [], edges: [] },
       run_config:        { providers: [] },
       transparency_mode: body.transparency_mode ?? false,
-      confidentiality:   body.confidentiality ?? null,
+      confidentiality:   effectiveConfidentiality,
       budget_usd:        body.budget_usd ?? null,
       budget_tokens:     body.budget_tokens ?? null,
       user_injections:   [],
