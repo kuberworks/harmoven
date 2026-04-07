@@ -152,6 +152,15 @@ export function useRunStream(runId: string) {
 
     function connect() {
       if (destroyed) return
+      // Reset completedClean on every new connection attempt.
+      // Without this, after a run completes (completedClean=true + es.close()), any
+      // subsequent reconnect() call (e.g. node replay, re-review) creates a new
+      // EventSource but inherits completedClean=true. If that new EventSource gets
+      // ANY onerror (HMR, brief network hiccup, browser quirk), onerror silently
+      // returns without reconnecting, the stream dies permanently, and live SSE
+      // events (including state_change(SUSPENDED) for human gates) never reach
+      // the client — so the Human review required banner never appears.
+      completedClean = false
       dispatch({ type: 'RESET' })
       const url = `/api/runs/${encodeURIComponent(runId)}/stream`
         + (lastEventIdRef.current ? `?lastEventId=${lastEventIdRef.current}` : '')
