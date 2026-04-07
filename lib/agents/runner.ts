@@ -10,6 +10,7 @@
 //   SMOKE_TEST:       { worktree, routes?, timeout_s? }
 //   REPAIR:           { worktree, subpath } — used standalone (smoke-test integrates repair internally)
 //   CRITICAL_REVIEW:  { domain_profile, run_config_severity?, project_severity?, preset? }
+//   PYTHON_EXECUTOR:  { timeout_ms? } — handoffIn.output.content (WriterOutput) is the code
 //
 // Selection context (optional, also from node metadata):
 //   { confidentiality?, jurisdiction_tags?, preferred_llm?, estimated_tokens? }
@@ -29,6 +30,7 @@ import { repairForSubpath } from '@/lib/agents/scaffolding/repair.agent'
 import { CriticalReviewer } from '@/lib/agents/critical-reviewer'
 import { resolveCriticalSeverity } from '@/lib/agents/reviewer/critical-reviewer.types'
 import { PromptSummaryCaptureClient } from '@/lib/agents/prompt-summary'
+import { executePython } from '@/lib/agents/python-executor'
 import { db } from '@/lib/db/client'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ const VALID_PROFILES = new Set<string>([
 // an unintended code path via a case-folding variant.
 const ALLOWED_AGENT_TYPES = new Set([
   'CLASSIFIER', 'PLANNER', 'WRITER', 'REVIEWER',
-  'SMOKE_TEST', 'REPAIR', 'CRITICAL_REVIEW',
+  'SMOKE_TEST', 'REPAIR', 'CRITICAL_REVIEW', 'PYTHON_EXECUTOR',
 ])
 
 function asProfileId(v: unknown): ProfileId {
@@ -401,6 +403,49 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           tokensIn:  result.meta.tokens_input,
           tokensOut: result.meta.tokens_output,
           llm_model: contextualLlm.lastModel ?? undefined,
+        }
+      }
+
+      // ── PYTHON_EXECUTOR ─────────────────────────────────────────────────────
+      // Runs Python code in a Pyodide (WebAssembly) sandbox.
+      // handoffIn sources (in priority order):
+      //   1. { code: string } — explicit code field
+      //   2. WriterOutput    — uses output.content as the Python source
+      //   3. string          — treated directly as code
+      // metadata: { timeout_ms? } — max execution time in ms (default 30 000, max 120 000)
+      case 'PYTHON_EXECUTOR': {
+        let code: string
+        const hi = handoffIn as Record<string, unknown> | string | null
+        if (typeof hi === 'string') {
+          code = hi
+        } else if (typeof (hi as Record<string, unknown>)?.['code'] === 'string') {
+          code = (hi as Record<string, unknown>)['code'] as string
+        } else if (typeof ((hi as Record<string, unknown>)?.['output'] as Record<string, unknown>)?.['content'] === 'string') {
+          // WriterOutput shape: { output: { content: string, ... }, ... }
+          code = ((hi as Record<string, unknown>)['output'] as Record<string, unknown>)['content'] as string
+        } else {
+          throw new Error('[agentRunner] PYTHON_EXECUTOR: no code found in handoffIn (expected .code or .output.content)')
+        }
+
+        const timeoutMs = typeof meta['timeout_ms'] === 'number'
+          ? (meta['timeout_ms'] as number)
+          : undefined
+
+        const result = await executePython({ code, timeout_ms: timeoutMs }, signal)
+
+        return {
+          handoffOut: {
+            stdout:      result.stdout,
+            stderr:      result.stderr,
+            exit_code:   result.exit_code,
+            duration_ms: result.duration_ms,
+            truncated:   result.truncated,
+            error:       result.error,
+          },
+          costUsd:   0,
+          tokensIn:  0,
+          tokensOut: 0,
+          llm_model: undefined,
         }
       }
 
