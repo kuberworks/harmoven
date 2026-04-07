@@ -11,7 +11,8 @@
 //   REPAIR:           { worktree, subpath } — used standalone (smoke-test integrates repair internally)
 //   CRITICAL_REVIEW:  { domain_profile, run_config_severity?, project_severity?, preset? }
 //   PYTHON_EXECUTOR:  { timeout_ms?, packages? } — handoffIn.output.content (WriterOutput) is the code
-//                      packages: PyPI package names to install via micropip (e.g. ['openpyxl', 'numpy'])
+//                      packages: explicit PyPI names (only when import name ≠ package name).
+//                      If absent, third-party imports are auto-detected from the code's AST.
 //
 // Selection context (optional, also from node metadata):
 //   { confidentiality?, jurisdiction_tags?, preferred_llm?, estimated_tokens? }
