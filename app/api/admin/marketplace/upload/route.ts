@@ -5,12 +5,12 @@
 // B.3.2 — SEC-07, SEC-08, SEC-12
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin } from '@/lib/auth/rbac'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 import { validateHpkg, persistHpkg, HpkgError } from '@/lib/marketplace/upload-hpkg'
 import { assertImportReasonRequired, ImportReasonRequiredError } from '@/lib/marketplace/assert-import-reason'
+import { checkRateLimitAsync } from '@/lib/auth/rate-limit'
 
 // B.3.2: max 10 MB file
 export const config = {
@@ -27,17 +27,12 @@ export async function POST(req: NextRequest) {
   assertInstanceAdmin(caller)
 
   // SEC-07: rate limit 5 uploads/userId/hour
-  const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS)
-  const recentUploads = await db.auditLog.count({
-    where: {
-      actor:       caller.userId,
-      action_type: 'marketplace_upload_approved',
-      timestamp:   { gte: windowStart },
-    },
-  })
-  if (recentUploads >= RATE_LIMIT_MAX) {
-    return NextResponse.json({ error: 'RATE_LIMITED', message: 'Upload limit reached (5 per hour).' }, { status: 429 })
-  }
+  // Uses checkRateLimitAsync (keyed by userId) so that ALL attempts — including
+  // those rejected by validation — count toward the quota. The previous
+  // db.auditLog.count approach only counted approved uploads, which allowed
+  // unlimited requests as long as no upload was approved.
+  const rl = await checkRateLimitAsync(req, `upload:${caller.userId}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)
+  if (rl) return rl
 
   let formData: FormData
   try {

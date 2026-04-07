@@ -34,7 +34,7 @@ function getSafeCallbackURL(raw: string | null): string {
   } catch {
     return '/dashboard'
   }
-  if (decoded.startsWith('/') && !decoded.startsWith('//')) {
+  if (decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.startsWith('/\\')) {
     const blocked = ['/login', '/register']
     if (!blocked.some(b => decoded === b || decoded.startsWith(b + '?'))) {
       return decoded
