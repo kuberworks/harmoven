@@ -43,6 +43,15 @@ class PrismaExecutorDb implements ExecutorDb {
   get runDependency(): ExecutorDb['runDependency'] {
     return {
       create: (args) => (_prismaDb.runDependency.create as Function)(args),
+      findMany: (args: { where: { child_run_id: string } }) =>
+        (_prismaDb.runDependency.findMany as Function)({
+          where: args.where,
+          select: {
+            parent_run: {
+              select: { id: true, status: true },
+            },
+          },
+        }),
     }
   }
 

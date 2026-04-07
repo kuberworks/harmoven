@@ -103,7 +103,7 @@ interface Props {
   initialEvents: AuditEntry[]
   uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'
   chain?: {
-    parents:  { id: string; status: string; task_input: string | null }[]
+    parents:  { id: string; status: string; task_input: string | null; output_summary?: string | null }[]
     children: { id: string; status: string; task_input: string | null }[]
   }
 }
@@ -1263,14 +1263,20 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               </CardHeader>
               <CardContent className="space-y-1.5 text-xs">
                 {chain!.parents.map(p => (
-                  <Link
-                    key={p.id}
-                    href={`/projects/${projectId}/runs/${p.id}`}
-                    className="flex items-center justify-between gap-2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <span className="font-mono truncate">{p.id.slice(0, 8)}</span>
-                    <Badge variant={STATUS_VARIANT[p.status as RunStatus] ?? 'pending'} className="text-[10px]">{p.status}</Badge>
-                  </Link>
+                  <div key={p.id} className="flex flex-col gap-0.5">
+                    <Link
+                      href={`/projects/${projectId}/runs/${p.id}`}
+                      className="flex items-center justify-between gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <span className="font-mono truncate">{p.id.slice(0, 8)}</span>
+                      <Badge variant={STATUS_VARIANT[p.status as RunStatus] ?? 'pending'} className="text-[10px]">{p.status}</Badge>
+                    </Link>
+                    {p.output_summary && (
+                      <p className="text-muted-foreground line-clamp-3 text-[11px] pl-1">
+                        {p.output_summary}
+                      </p>
+                    )}
+                  </div>
                 ))}
               </CardContent>
             </Card>

@@ -7,25 +7,9 @@ import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertProjectAccess, assertRunAccess } from '@/lib/auth/ownership'
 import { resolvePermissions, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
+import { extractOutputSummary }      from '@/lib/utils/run-output'
 
 type Params = { params: Promise<{ runId: string }> }
-
-/** Extract a short plaintext summary from a completed node's handoff_out for run chaining pre-fill. */
-function extractOutputSummary(handoffOut: unknown): string | null {
-  if (!handoffOut || typeof handoffOut !== 'object') return null
-  const h = handoffOut as Record<string, unknown>
-  // Reviewer formatted_content takes priority
-  if (typeof h['formatted_content'] === 'string' && h['formatted_content']) {
-    return h['formatted_content'].slice(0, 2000)
-  }
-  const output = h['output'] as Record<string, unknown> | undefined
-  if (!output) return null
-  const summary = output['summary'] as string | undefined
-  const content = (output['content'] ?? output['text']) as string | undefined
-  if (summary) return summary.slice(0, 500)
-  if (content) return content.slice(0, 2000)
-  return null
-}
 
 export async function GET(req: NextRequest, { params }: Params) {
   const { runId } = await params

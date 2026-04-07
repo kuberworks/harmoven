@@ -133,6 +133,10 @@ export interface ExecutorDb {
   runDependency: {
     /** Create a parent → child run dependency row. */
     create(args: { data: { child_run_id: string; parent_run_id: string } }): Promise<unknown>
+    /** Find all parent run dependency rows for a given child run. */
+    findMany(args: { where: { child_run_id: string } }): Promise<Array<{
+      parent_run: { id: string; status: string }
+    }>>
   }
 }
 

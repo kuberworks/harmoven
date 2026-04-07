@@ -954,6 +954,26 @@ export class CustomExecutor implements IExecutionEngine {
       let _lastChunkEmit = 0
       const CHUNK_EMIT_THROTTLE_MS = 250
 
+      // ─── Inject prior_run_context for manually chained PLANNER nodes ──────
+      // SPAWN_FOLLOWUP children already have prior_run_context in their metadata
+      // (set at spawn time). For user-initiated chains (parent_run_ids at creation),
+      // we build it here from the parent run's completed node outputs.
+      if (node.agent_type === 'PLANNER') {
+        const existingMeta = (node.metadata ?? {}) as Record<string, unknown>
+        if (!existingMeta['prior_run_context']) {
+          const priorCtx = await this._buildPriorRunContext(runId)
+          if (priorCtx) {
+            const updatedMeta = { ...existingMeta, prior_run_context: priorCtx }
+            await this.db.node.update({
+              where: { id: node.id },
+              data: { metadata: updatedMeta },
+            })
+            // Update local reference so the agent runner sees the injected context.
+            node = { ...node, metadata: updatedMeta }
+          }
+        }
+      }
+
       const output = await this.agentRunner(node, handoffIn, nodeSignal, (chunk) => {
         _partialBuffer += chunk
         const now = Date.now()
@@ -1589,5 +1609,57 @@ export class CustomExecutor implements IExecutionEngine {
       .filter(Boolean)
 
     return outputs.length === 1 ? outputs[0] : outputs
+  }
+
+  /**
+   * For manually chained runs (parent_run_ids at creation), build a
+   * prior_run_context string from each parent run's WRITER/PYTHON_EXECUTOR/REVIEWER
+   * outputs. Same format as the SPAWN_FOLLOWUP path so the Planner can use it uniformly.
+   * Returns null when there are no parent runs or no relevant completed outputs.
+   */
+  private async _buildPriorRunContext(runId: string): Promise<string | null> {
+    const parentLinks = await this.db.runDependency.findMany({
+      where: { child_run_id: runId },
+    })
+    if (parentLinks.length === 0) return null
+
+    const contextParts: string[] = []
+
+    for (const link of parentLinks) {
+      const parentId = link.parent_run.id
+      const parentNodes = await this.db.node.findMany({ where: { run_id: parentId } })
+
+      const outputNodes = parentNodes.filter(
+        n =>
+          n.status === 'COMPLETED' &&
+          (n.agent_type === 'WRITER' ||
+           n.agent_type === 'PYTHON_EXECUTOR' ||
+           n.agent_type === 'REVIEWER'),
+      )
+
+      if (outputNodes.length === 0) continue
+
+      // Prefer REVIEWER output (summarised), fall back to WRITER/PYTHON_EXECUTOR
+      const reviewerNode = outputNodes.find(n => n.agent_type === 'REVIEWER')
+      const targetNodes  = reviewerNode ? [reviewerNode] : outputNodes
+
+      for (const n of targetNodes) {
+        const ho  = n.handoff_out as Record<string, unknown> | null
+        const out = ho?.['output'] as Record<string, unknown> | undefined
+        const raw =
+          ho?.['formatted_content'] ??
+          out?.['summary'] ??
+          out?.['content'] ??
+          ho?.['content'] ??
+          ''
+        const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 1500)
+        if (text.trim()) {
+          contextParts.push(`[Parent run ${parentId.slice(0, 8)} — ${n.agent_type} ${n.node_id}]:\n${text}`)
+        }
+      }
+    }
+
+    if (contextParts.length === 0) return null
+    return contextParts.join('\n\n---\n\n').slice(0, 4000)
   }
 }

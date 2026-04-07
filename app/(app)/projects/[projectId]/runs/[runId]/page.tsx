@@ -13,6 +13,7 @@ import { resolvePermissions } from '@/lib/auth/rbac'
 import { ChevronRight } from 'lucide-react'
 import { RunDetailClient } from './run-detail-client'
 import { PageBreadcrumb } from '@/components/shared/PageBreadcrumb'
+import { extractOutputSummary } from '@/lib/utils/run-output'
 
 interface Props {
   params: Promise<{ projectId: string; runId: string }>
@@ -60,7 +61,20 @@ export default async function RunPage({ params }: Props) {
     }),
     db.runDependency.findMany({
       where: { child_run_id: runId },
-      select: { parent_run: { select: { id: true, status: true, task_input: true } } },
+      select: {
+        parent_run: {
+          select: {
+            id:         true,
+            status:     true,
+            task_input: true,
+            nodes: {
+              where:   { agent_type: { in: ['REVIEWER', 'WRITER'] }, status: 'COMPLETED' },
+              select:  { agent_type: true, node_id: true, handoff_out: true },
+              orderBy: { node_id: 'asc' },
+            },
+          },
+        },
+      },
     }),
     db.runDependency.findMany({
       where: { parent_run_id: runId },
@@ -98,11 +112,19 @@ export default async function RunPage({ params }: Props) {
   }
 
   const serialisedChain = {
-    parents: parentLinks.map(l => ({
-      id: l.parent_run.id,
-      status: l.parent_run.status as string,
-      task_input: typeof l.parent_run.task_input === 'string' ? l.parent_run.task_input.slice(0, 80) : null,
-    })),
+    parents: parentLinks.map(l => {
+      const pNodes = l.parent_run.nodes ?? []
+      const reviewerNode = pNodes.find(n => n.agent_type === 'REVIEWER')
+      const writerNode   = [...pNodes].reverse().find(n => n.agent_type === 'WRITER')
+      const summary = extractOutputSummary(reviewerNode?.handoff_out) ??
+                      extractOutputSummary(writerNode?.handoff_out)
+      return {
+        id:             l.parent_run.id,
+        status:         l.parent_run.status as string,
+        task_input:     typeof l.parent_run.task_input === 'string' ? l.parent_run.task_input.slice(0, 80) : null,
+        output_summary: summary ?? null,
+      }
+    }),
     children: childLinks.map(l => ({
       id: l.child_run.id,
       status: l.child_run.status as string,
