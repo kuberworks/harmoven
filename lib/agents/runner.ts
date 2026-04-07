@@ -322,10 +322,20 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
       // ── REVIEWER ────────────────────────────────────────────────────────────
       case 'REVIEWER': {
-        // handoffIn from the executor is either a single WriterOutput or an array
-        const writerOutputs: WriterOutput[] = Array.isArray(handoffIn)
-          ? (handoffIn as WriterOutput[])
-          : handoffIn != null ? [handoffIn as WriterOutput] : []
+        // handoffIn from the executor is either a single WriterOutput or an array.
+        // Filter to keep only real WriterOutput shapes (must have output.content: string).
+        // Non-WriterOutput nodes upstream (PYTHON_EXECUTOR, CLASSIFIER, etc.) are silently
+        // excluded — they are not subject to Reviewer quality assessment.
+        const raw: unknown[] = Array.isArray(handoffIn)
+          ? (handoffIn as unknown[])
+          : handoffIn != null ? [handoffIn] : []
+        const writerOutputs: WriterOutput[] = raw.filter(
+          (h): h is WriterOutput =>
+            typeof h === 'object' && h !== null &&
+            typeof (h as Record<string, unknown>)['output'] === 'object' &&
+            (h as Record<string, unknown>)['output'] !== null &&
+            typeof ((h as Record<string, unknown>)['output'] as Record<string, unknown>)['content'] === 'string',
+        )
         const profile = asProfileId(meta['domain_profile'])
         const outputLanguage = typeof meta['output_language'] === 'string'
           ? (meta['output_language'] as string)
