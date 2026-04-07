@@ -142,9 +142,11 @@ function validateClassifierResponse(raw: Record<string, unknown>): ClassifierRes
     throw new Error('IntentClassifier: missing "confidence_rationale" field')
   }
 
-  if (typeof raw['user_confirmation_text'] !== 'string') {
-    throw new Error('IntentClassifier: missing "user_confirmation_text" field')
-  }
+  // user_confirmation_text is a non-critical display field (UI banner).
+  // Some LLMs omit it — fall back to input_summary rather than crashing the run.
+  const userConfirmationText = typeof raw['user_confirmation_text'] === 'string'
+    ? raw['user_confirmation_text']
+    : (raw['input_summary'] as string)
 
   const questions = Array.isArray(raw['clarification_questions'])
     ? (raw['clarification_questions'] as string[]).slice(0, 3)
@@ -162,7 +164,7 @@ function validateClassifierResponse(raw: Record<string, unknown>): ClassifierRes
     fallback_profile: VALID_PROFILES.has(raw['fallback_profile'] as ProfileId)
       ? (raw['fallback_profile'] as ProfileId)
       : 'generic',
-    user_confirmation_text: raw['user_confirmation_text'] as string,
+    user_confirmation_text: userConfirmationText,
     requires_clarification: confidence < 80,
   }
 }
