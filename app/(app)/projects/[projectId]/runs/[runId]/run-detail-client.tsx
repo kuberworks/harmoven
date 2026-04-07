@@ -610,22 +610,19 @@ function ResultTab({
       return [{ node_id: dn.id, agent_type: dn.agent_type, content }]
     })
 
-  // Fallback: most-recently-completed node that has output text
+  // Fallback: all completed nodes with output text, in DAG order.
+  // Used when the terminal node(s) have no content (e.g. REVIEWER is terminal).
+  // For multi-section documents this collects all WRITER outputs in order.
   const fallbackOutputs = (): Array<{ node_id: string; agent_type: string; content: string }> => {
-    const sorted = [...nodes]
-      .filter((n) => n.status === 'COMPLETED')
-      .sort((a, b) => {
-        const ta = a.completed_at ? new Date(a.completed_at).getTime() : 0
-        const tb = b.completed_at ? new Date(b.completed_at).getTime() : 0
-        return tb - ta
-      })
-    for (const n of sorted) {
-      const handoff = (n.handoff_out as Record<string, unknown> | null) ?? null
+    return dag.nodes.flatMap((dn) => {
+      const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
+      if (!node) return []
+      const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
       const output  = handoff?.['output'] as Record<string, unknown> | undefined
       const content = (output?.['content'] ?? output?.['text'] ?? null) as string | null
-      if (content) return [{ node_id: n.node_id, agent_type: n.agent_type, content }]
-    }
-    return []
+      if (!content) return []
+      return [{ node_id: dn.id, agent_type: dn.agent_type, content }]
+    })
   }
 
   const outputs = terminalOutputs.length > 0 ? terminalOutputs : fallbackOutputs()
