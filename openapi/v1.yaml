@@ -3176,6 +3176,48 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /runs/{runId}/artifacts/zip:
+    get:
+      operationId: downloadRunArtifactsZip
+      x-required-permissions: [runs:read]
+      summary: Download run artifacts as a ZIP archive
+      description: |
+        > **Required permission:** `runs:read` — minimum role: `viewer`
+        Builds and streams a ZIP archive (DEFLATE level 6) of all artifact files for the run.
+        Use the optional `node_id` query parameter to limit the archive to a single DAG node.
+        When the archive spans multiple nodes, entries are namespaced as `<node_id>/<filename>`
+        to avoid collisions. When scoped to one node, a flat structure is used.
+        The ZIP name is `harmoven-<runId8>.zip` (or `harmoven-<runId8>-<nodeId>.zip`).
+      tags: [Runs]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: node_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Limit the archive to artifacts from a single DAG node (e.g. `n3`)"
+      responses:
+        '200':
+          description: ZIP archive of the requested artifacts
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /runs/{runId}/artifacts/{artifactId}:
     get:
       operationId: downloadRunArtifact

@@ -747,7 +747,8 @@
   "run": {
     "node": {
       "artifacts": {
-        "title": "Fichiers générés"
+        "title": "Fichiers générés",
+        "downloadZip": "Télécharger en ZIP"
       }
     }
   }
