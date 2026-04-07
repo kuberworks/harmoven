@@ -43,6 +43,7 @@ type StreamEvent =
   | { type: 'human_gate'; gate_id: string; reason: string; data: Record<string, unknown> }
   | { type: 'budget_warning'; percent_used: number; remaining_usd: number }
   | { type: 'completed'; run: RunState; handoff_note: string }
+  | { type: 'run_finished'; status: string }
   | { type: 'error'; node_id: string; message: string }
   | { type: 'artifacts_ready'; node_id: string; artifact_count: number; filenames: string[] }
   | { type: 'spawned_followup_runs'; node_id: string; runs: Array<{ run_id: string; label: string }> }
@@ -108,6 +109,10 @@ function reducer(state: StreamState, action: Action): StreamState {
         run = { ...run, cost_actual_usd: e.cost_usd, tokens_actual: e.tokens }
       } else if (e.type === 'completed' && run) {
         run = { ...e.run }
+      } else if (e.type === 'run_finished' && run) {
+        // run_finished carries the terminal/suspended status — keeps run.status in sync
+        // when the stream doesn't receive a matching state_change (e.g. SUSPENDED on gate open).
+        run = { ...run, status: e.status as RunStatus }
       }
       return {
         ...state,

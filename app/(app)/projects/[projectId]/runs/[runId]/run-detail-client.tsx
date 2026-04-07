@@ -953,7 +953,8 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
   const nodes: (InitialNode | NodeState)[] = lastNodesRef.current.length > 0 ? lastNodesRef.current : initialNodes
 
-  const isLive = run.status === 'RUNNING' || run.status === 'PAUSED'
+  // SUSPENDED is also "live" — the run is awaiting human approval and will resume.
+  const isLive = run.status === 'RUNNING' || run.status === 'PAUSED' || run.status === 'SUSPENDED'
   const isTerminal = run.status === 'COMPLETED' || run.status === 'FAILED'
 
   // Active tab — defaults to 'result' for completed runs, auto-switches once on completion
@@ -980,13 +981,18 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
     return () => clearInterval(t)
   }, [run.started_at, isTerminal])
 
-  // Gates — a human_gate SSE event opens the banner; the banner is dismissed
-  // as soon as the run transitions back to RUNNING (resume) or reaches a
-  // terminal state. We use the live run.status from the reducer (which is
-  // updated by state_change events) rather than scanning the raw event list,
-  // so the banner disappears the moment the SSE confirms the run is running.
-  const hasOpenGate = (run.status === 'SUSPENDED' || run.status === 'PAUSED')
-    && (!!initialRun.openGate || stream.events.some((e) => e.type === 'human_gate'))
+  // Gate banner: shown whenever the run is SUSPENDED or PAUSED — the executor
+  // always transitions to SUSPENDED before emitting human_gate, so basing this
+  // purely on run.status avoids the race condition where the state_change(SUSPENDED)
+  // arrives before the human_gate event and the banner fails to appear on first render.
+  const hasOpenGate = run.status === 'SUSPENDED' || run.status === 'PAUSED'
+
+  // Gate reason — prefer the live SSE event reason (for gates opened after page load),
+  // fall back to the server-fetched initialRun.openGate (for gates already open on load).
+  const liveGateEvent = stream.events.findLast?.((e) => e.type === 'human_gate') ??
+    stream.events.filter((e) => e.type === 'human_gate').at(-1)
+  const gateReason = (liveGateEvent as { type: 'human_gate'; reason: string } | undefined)?.reason
+    ?? initialRun.openGate?.reason
 
   return (
     <div className="space-y-6">
@@ -1040,8 +1046,8 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
             <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
             <div>
               <p className="text-sm font-medium text-amber-300">Human review required</p>
-              {initialRun.openGate?.reason && (
-                <p className="text-xs text-amber-400/80 mt-0.5">{initialRun.openGate.reason}</p>
+              {gateReason && (
+                <p className="text-xs text-amber-400/80 mt-0.5">{gateReason}</p>
               )}
             </div>
           </div>
