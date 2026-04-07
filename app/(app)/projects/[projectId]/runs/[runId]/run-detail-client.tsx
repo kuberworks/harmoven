@@ -838,13 +838,13 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
     <div className="space-y-6">
       {/* Run header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0 flex-1">
+          {initialRun.task_input && (
+            <p className="text-base font-semibold text-foreground whitespace-pre-wrap break-words leading-snug mb-2">
+              {initialRun.task_input}
+            </p>
+          )}
           <div className="flex items-center gap-3">
-            {initialRun.task_input && (
-              <span className="text-sm font-medium text-foreground truncate max-w-xs" title={initialRun.task_input}>
-                {initialRun.task_input.trim().split(/\s+/).slice(0, 8).join(' ')}{initialRun.task_input.trim().split(/\s+/).length > 8 ? '…' : ''}
-              </span>
-            )}
             <Badge variant={STATUS_VARIANT[run.status] ?? 'pending'} className="text-sm px-3 py-1">
               {run.status}
             </Badge>
