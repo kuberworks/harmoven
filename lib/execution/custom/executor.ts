@@ -495,6 +495,83 @@ export class CustomExecutor implements IExecutionEngine {
     }
   }
 
+  // ─── Re-review a node from a COMPLETED run ─────────────────────────────────
+
+  async replayNode(runId: string, nodeId: string, actorId: string): Promise<void> {
+    const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+    if (run.status !== 'COMPLETED') {
+      throw new Error(`Run '${runId}' must be COMPLETED to replay a node (current: '${run.status}')`)
+    }
+
+    const allNodes = await this.db.node.findMany({ where: { run_id: runId } })
+    const target   = allNodes.find(n => n.node_id === nodeId)
+    if (!target) throw new Error(`Node '${nodeId}' not found in run '${runId}'`)
+
+    // Collect the target node plus any downstream nodes (nodes that directly or
+    // transitively depend on it). We reset them all so the reviewer output is
+    // not mixed with stale downstream data.
+    const dag = run.dag as Dag
+    const downstreamIds = new Set<string>()
+    downstreamIds.add(nodeId)
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const edge of dag.edges) {
+        if (downstreamIds.has(edge.from) && !downstreamIds.has(edge.to)) {
+          downstreamIds.add(edge.to)
+          changed = true
+        }
+      }
+    }
+
+    // Reset all collected nodes to PENDING (bypasses state machine — this is an
+    // explicit admin/user action, not an automated transition).
+    await this.db.node.updateMany({
+      where: { run_id: runId, node_id: { in: [...downstreamIds] } },
+      data:  {
+        status:             'PENDING',
+        started_at:         null,
+        completed_at:       null,
+        interrupted_at:     null,
+        interrupted_by:     null,
+        partial_output:     null,
+        partial_updated_at: null,
+        error:              null,
+        cost_usd:           0,
+        tokens_in:          0,
+        tokens_out:         0,
+      },
+    })
+
+    // Transition run back to SUSPENDED so executeRun can pick it up.
+    // Direct DB update — the state machine has COMPLETED as terminal, but this is
+    // an explicit user-initiated re-review action, not an automated transition.
+    await this.db.run.update({
+      where: { id: runId },
+      data:  { status: 'SUSPENDED', completed_at: null, suspended_reason: 're_review' },
+    })
+
+    await this.db.auditLog.create({
+      data: {
+        id:          uuidv7(),
+        run_id:      runId,
+        node_id:     nodeId,
+        actor:       actorId,
+        action_type: 'node_re_review',
+        payload:     { reset_nodes: [...downstreamIds] },
+      },
+    })
+
+    // Emit SSE updates for each reset node so the client reflects PENDING status
+    for (const nid of downstreamIds) {
+      this._emit(runId, { type: 'state_change', entity_type: 'node', id: nid, status: 'PENDING' })
+    }
+    this._emit(runId, { type: 'state_change', entity_type: 'run', id: runId, status: 'SUSPENDED' })
+
+    // Re-enter the execution loop
+    await this.executeRun(runId)
+  }
+
   isShuttingDown(): boolean {
     return this._shuttingDown
   }

@@ -2900,6 +2900,75 @@ paths:
           $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimit'
+  /runs/{runId}/re-review:
+    post:
+      operationId: reReviewRun
+      x-required-permissions: [runs:replay]
+      summary: Re-run the reviewer node on a completed run
+      description: |
+        > **Required permission:** `runs:replay` — minimum role: `developer`
+
+        Resets the target REVIEWER node (and all nodes downstream of it) back to
+        `PENDING`, transitions the run from `COMPLETED` back to `SUSPENDED`, and
+        re-enters the execution loop.
+
+        If `node_id` is omitted the first REVIEWER node in the DAG is used
+        automatically. Returns `422` if the run has no REVIEWER node.
+
+        **State effect:** `COMPLETED` → `SUSPENDED` → `RUNNING`
+        Node(s) affected: `COMPLETED` → `PENDING`
+      tags: [runs]
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                node_id:
+                  type: string
+                  maxLength: 128
+                  description: "DAG node identifier (e.g. `n3`) of the reviewer node to replay. Defaults to the first REVIEWER node in the DAG if omitted."
+              additionalProperties: false
+      responses:
+        '200':
+          description: "Reviewer node reset to PENDING and execution loop re-entered. All nodes downstream of the target were also reset to PENDING."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  run_id:
+                    type: string
+                    description: "Identifier of the parent run."
+                  node_id:
+                    type: string
+                    description: "DAG node identifier of the reviewer node that was reset."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: "Run is not in COMPLETED status."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: "No REVIEWER node found in the run's DAG, or the supplied `node_id` does not exist."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+
   /runs/{runId}/resume:
     post:
       operationId: resumeRun

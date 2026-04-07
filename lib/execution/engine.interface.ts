@@ -61,7 +61,7 @@ export interface ExecutorDb {
     findOrphaned(args: { before: Date }): Promise<NodeRow[]>
     create(args: { data: Omit<NodeRow, 'id'> }): Promise<NodeRow>
     update(args: { where: { id: string }; data: Partial<NodeRow> }): Promise<NodeRow>
-    updateMany(args: { where: { id?: string; run_id?: string; status?: string | { in: string[] } }; data: Partial<NodeRow> }): Promise<{ count: number }>
+    updateMany(args: { where: { id?: string | { in: string[] }; run_id?: string; node_id?: string | { in: string[] }; status?: string | { in: string[] } }; data: Partial<NodeRow> }): Promise<{ count: number }>
   }
   handoff: {
     create(args: { data: unknown }): Promise<unknown>
@@ -240,4 +240,16 @@ export interface IExecutionEngine {
     actorId: string,
     gate: GateDecision,
   ): Promise<void>
+
+  // ─── Re-review ─────────────────────────────────────────────────────────────
+
+  /**
+   * Replay a specific node on a COMPLETED run.
+   * Resets the node (and any nodes downstream of it) to PENDING, transitions
+   * the run back to SUSPENDED, and re-enters the execution loop.
+   *
+   * Intended use-case: "Re-run Reviewer" button at the end of a completed run.
+   * `runs:replay` permission required at the API layer.
+   */
+  replayNode(runId: string, nodeId: string, actorId: string): Promise<void>
 }

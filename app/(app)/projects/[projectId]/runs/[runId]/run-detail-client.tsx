@@ -283,6 +283,51 @@ function RestartNodeButton({ runId, nodeId, onSuccess }: { runId: string; nodeId
 
 // ─── Status helpers ─────────────────────────────────────────────────────────
 
+// ─── Re-run reviewer button ──────────────────────────────────────────────────
+
+function ReRunReviewerButton({ runId, onSuccess }: { runId: string; onSuccess?: () => void }) {
+  const t = useT()
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+
+  const trigger = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/runs/${runId}/re-review`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({}),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+      }
+      onSuccess?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to re-run reviewer')
+    } finally {
+      setLoading(false)
+    }
+  }, [runId, onSuccess])
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={trigger}
+        disabled={loading}
+        className="flex items-center justify-center gap-1.5 w-full rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-amber-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {loading
+          ? <><Loader2 className="h-3 w-3 animate-spin" />{t('runs.reReview.loading')}</>
+          : <><RotateCcw className="h-3 w-3" />{t('runs.reReview.label')}</>}
+      </button>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
 const STATUS_VARIANT = RUN_STATUS_VARIANT
 
 const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
@@ -1160,6 +1205,13 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                 ))}
               </CardContent>
             </Card>
+          )}
+
+          {run.status === 'COMPLETED' && permissions.has('runs:replay') && run.dag.nodes.some(n => n.agent_type === 'REVIEWER') && (
+            <ReRunReviewerButton
+              runId={run.id}
+              onSuccess={() => { reconnect(); setActiveTab('agents') }}
+            />
           )}
 
           {run.status === 'COMPLETED' && (

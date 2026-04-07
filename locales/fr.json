@@ -72,6 +72,12 @@
       "chainNewRun": "Enchaîner une nouvelle exécution depuis cette sortie",
       "runChained": "exécution enchaînée",
       "runsChained": "exécutions enchaînées"
+    },
+    "reReview": {
+      "label": "Relancer le reviewer",
+      "loading": "Lancement…",
+      "success": "Reviewer relancé",
+      "noReviewer": "Aucun nœud reviewer trouvé dans cette exécution"
     }
   },
   "gates": {
