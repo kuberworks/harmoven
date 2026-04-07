@@ -329,7 +329,10 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
   const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
   const output  = handoff?.['output'] as Record<string, unknown> | undefined
   const execMeta = handoff?.['execution_meta'] as Record<string, unknown> | undefined
-  const outputContent = (output?.['content'] ?? output?.['text'] ?? null) as string | null
+  // formatted_content is set by the REVIEWER when writer outputs lacked Markdown structure.
+  // It takes lowest priority — shown only when output.content / output.text are absent.
+  const formattedContent = (handoff?.['formatted_content'] as string | undefined) ?? null
+  const outputContent = (output?.['content'] ?? output?.['text'] ?? formattedContent ?? null) as string | null
   const outputSummary = output?.['summary'] as string | undefined
   const outputType    = output?.['type']    as string | undefined
   const confidence    = output?.['confidence'] as number | undefined
