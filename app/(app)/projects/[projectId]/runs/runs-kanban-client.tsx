@@ -42,6 +42,7 @@ export interface RunSummary {
   user: { name: string } | null
   task_input: string | null
   has_open_gate: boolean
+  parent_count: number
 }
 
 interface Props {
@@ -189,6 +190,15 @@ function RunCard({ run, projectId }: { run: RunSummary; projectId: string }) {
         <div className="mt-1.5">
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-amber-500/30 bg-amber-500/10 text-amber-400">
             paused
+          </span>
+        </div>
+      )}
+
+      {/* Chained badge */}
+      {run.parent_count > 0 && (
+        <div className="mt-1.5">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono border border-amber-500/20 bg-amber-500/5 text-amber-500/70">
+            ⛓ {run.parent_count > 1 ? `${run.parent_count} parents` : 'chained'}
           </span>
         </div>
       )}

@@ -3,8 +3,8 @@
 // app/(app)/projects/[projectId]/runs/new/page.tsx
 // Create a new run for the project — POST /api/runs, then redirect to the run detail page.
 
-import { useState, use } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, use, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -38,12 +38,36 @@ interface Props {
 export default function NewRunPage({ params }: Props) {
   const { projectId } = use(params)
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [taskInput, setTaskInput]       = useState('')
   const [domainProfile, setDomainProfile] = useState('generic')
   const [budgetUsd, setBudgetUsd]       = useState('')
   const [error, setError]               = useState<string | null>(null)
   const [loading, setLoading]           = useState(false)
+  const [parentRunIds, setParentRunIds] = useState<string[]>([])
+  const [parentLabels, setParentLabels] = useState<Record<string, string>>({})
+
+  // Parse ?from=id1,id2,... and fetch the task_input for each parent to show in the banner
+  useEffect(() => {
+    const from = searchParams.get('from')
+    if (!from) return
+    const ids = from.split(',').map(s => s.trim()).filter(Boolean).slice(0, 5)
+    setParentRunIds(ids)
+    ids.forEach(id => {
+      fetch(`/api/runs/${id}`)
+        .then(r => r.ok ? r.json() : null)
+        .then((data: { run?: { task_input?: string } } | null) => {
+          if (data?.run?.task_input) {
+            setParentLabels(prev => ({
+              ...prev,
+              [id]: data.run!.task_input!.slice(0, 60) + (data.run!.task_input!.length > 60 ? '…' : ''),
+            }))
+          }
+        })
+        .catch(() => { /* ignore */ })
+    })
+  }, [searchParams])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -60,6 +84,9 @@ export default function NewRunPage({ params }: Props) {
         project_id:    projectId,
         task_input:    taskInput.trim(),
         domain_profile: domainProfile,
+      }
+      if (parentRunIds.length > 0) {
+        body['parent_run_ids'] = parentRunIds
       }
       if (budgetUsd) {
         const v = parseFloat(budgetUsd)
@@ -108,6 +135,21 @@ export default function NewRunPage({ params }: Props) {
           Describe the task and an agent will be assigned automatically.
         </p>
       </div>
+
+      {parentRunIds.length > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+          <span className="font-medium">⛓ Chaining from {parentRunIds.length} run{parentRunIds.length > 1 ? 's' : ''}</span>
+          {parentRunIds.map(id => (
+            <Link
+              key={id}
+              href={`/projects/${projectId}/runs/${id}`}
+              className="font-mono hover:underline"
+            >
+              {id.slice(0, 8)}{parentLabels[id] ? ` — ${parentLabels[id]}` : ''}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <Card>
         <CardContent className="pt-5">

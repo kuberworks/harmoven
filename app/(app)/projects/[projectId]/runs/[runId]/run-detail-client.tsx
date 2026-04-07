@@ -93,6 +93,10 @@ interface Props {
   permissions: Set<Permission>
   initialEvents: AuditEntry[]
   uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'
+  chain?: {
+    parents:  { id: string; status: string; task_input: string | null }[]
+    children: { id: string; status: string; task_input: string | null }[]
+  }
 }
 
 // ─── Post-run feedback panel ────────────────────────────────────────────────
@@ -789,7 +793,8 @@ function CostMeter({
 
 // ─── Main client component ──────────────────────────────────────────────────
 
-export function RunDetailClient({ projectId, initialRun, initialNodes, permissions, initialEvents, uiLevel }: Props) {
+export function RunDetailClient({ projectId, initialRun, initialNodes, permissions, initialEvents, uiLevel, chain }: Props) {
+  const t = useT()
   const stream = useRunStream(initialRun.id)
   const { reconnect } = stream
 
@@ -1101,6 +1106,58 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               </div>
             </CardContent>
           </Card>
+
+          {/* Run chain */}
+          {(chain?.parents ?? []).length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">⛓ {t('runs.chain.chainedFrom')}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5 text-xs">
+                {chain!.parents.map(p => (
+                  <Link
+                    key={p.id}
+                    href={`/projects/${projectId}/runs/${p.id}`}
+                    className="flex items-center justify-between gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <span className="font-mono truncate">{p.id.slice(0, 8)}</span>
+                    <Badge variant={STATUS_VARIANT[p.status as RunStatus] ?? 'pending'} className="text-[10px]">{p.status}</Badge>
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {run.status === 'COMPLETED' && (
+            <Link
+              href={`/projects/${projectId}/runs/new?from=${run.id}`}
+              className="flex items-center justify-center gap-1.5 w-full rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-amber-500/40 transition-colors"
+            >
+              ⛓ {t('runs.chain.chainNewRun')}
+            </Link>
+          )}
+
+          {(chain?.children ?? []).length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">
+                  ↓ {chain!.children.length} {chain!.children.length > 1 ? t('runs.chain.runsChained') : t('runs.chain.runChained')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5 text-xs">
+                {chain!.children.map(c => (
+                  <Link
+                    key={c.id}
+                    href={`/projects/${projectId}/runs/${c.id}`}
+                    className="flex items-center justify-between gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <span className="font-mono truncate">{c.id.slice(0, 8)}</span>
+                    <Badge variant={STATUS_VARIANT[c.status as RunStatus] ?? 'pending'} className="text-[10px]">{c.status}</Badge>
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {run.status === 'COMPLETED' && (
             <FeedbackPanel runId={run.id} />

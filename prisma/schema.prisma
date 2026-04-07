@@ -346,12 +346,31 @@ model Run {
   critical_reviews CriticalReviewResult[]
   prompt_summaries PromptSummary[]
 
+  // Run chaining — a run may depend on the outputs of 1..5 parent runs.
+  parent_links RunDependency[] @relation("RunAsChild")   // parents of this run
+  child_links  RunDependency[] @relation("RunAsParent")  // children spawned from this run
+
   @@index([project_id])
   @@index([status])
   @@index([created_by])
   @@index([run_type])
   @@index([pipeline_template_id])
   @@index([data_expires_at])
+}
+
+// ─── Run chaining — join table ────────────────────────────────────────────────
+// Allows a run to depend on the outputs of multiple parent runs (up to 5).
+// Cascade delete: removing a run removes all dependency rows referencing it.
+
+model RunDependency {
+  child_run_id   String
+  parent_run_id  String
+  child_run      Run      @relation("RunAsChild",  fields: [child_run_id],  references: [id], onDelete: Cascade)
+  parent_run     Run      @relation("RunAsParent", fields: [parent_run_id], references: [id], onDelete: Cascade)
+  created_at     DateTime @default(now())
+
+  @@id([child_run_id, parent_run_id])
+  @@index([parent_run_id])
 }
 
 // ─── Nodes ───────────────────────────────────────────────────────────────────

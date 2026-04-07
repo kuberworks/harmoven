@@ -71,6 +71,7 @@ export default async function ProjectPage({ params }: Props) {
       task_input: true,
       user: { select: { name: true } },
       human_gates: { where: { status: 'OPEN' }, select: { id: true }, take: 1 },
+      _count: { select: { parent_links: true } },
     },
   })
 
@@ -86,6 +87,7 @@ export default async function ProjectPage({ params }: Props) {
     task_input: typeof r.task_input === 'string' ? r.task_input : (r.task_input != null ? JSON.stringify(r.task_input) : null),
     user: r.user,
     has_open_gate: r.human_gates.length > 0,
+    parent_count: r._count.parent_links,
   }))
   return (
     <div className="space-y-6 animate-stagger">
