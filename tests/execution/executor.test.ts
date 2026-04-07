@@ -94,6 +94,22 @@ async function getRunStatus(store: InMemoryRunStore, runId: string) {
   return run.status
 }
 
+/**
+ * Poll until the run reaches a terminal status (COMPLETED or FAILED).
+ * Needed after operations like resumeRun() that fire executeRun() asynchronously
+ * (void) so the HTTP response returns promptly while execution continues in the
+ * background.  In tests we need to wait for background execution to finish.
+ */
+async function waitForRunDone(store: InMemoryRunStore, runId: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const status = await getRunStatus(store, runId)
+    if (status === 'COMPLETED' || status === 'FAILED') return
+    await new Promise(r => setTimeout(r, 20))
+  }
+  throw new Error(`Run ${runId} did not reach terminal status within ${timeoutMs}ms`)
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('CustomExecutor', () => {
@@ -249,6 +265,9 @@ describe('CustomExecutor', () => {
 
     // Resume — this calls executeRun(PAUSED) which resumes from n2
     await executor.resumeRun(runId, 'test-actor')
+    // resumeRun fires executeRun asynchronously (void) so the HTTP response returns promptly.
+    // Wait for background execution to complete before asserting.
+    await waitForRunDone(store, runId)
 
     // All nodes should be complete
     const statuses = await getNodeStatuses(store, runId)
@@ -274,6 +293,8 @@ describe('CustomExecutor', () => {
 
     // Resume — runs all 3 nodes from scratch (all are PENDING)
     await executor.resumeRun(runId, 'test-actor')
+    // resumeRun fires executeRun asynchronously (void) — wait for completion.
+    await waitForRunDone(store, runId)
 
     const statuses = await getNodeStatuses(store, runId)
     expect(statuses['n1']).toBe('COMPLETED')
