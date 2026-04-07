@@ -84,6 +84,25 @@ export function GateClient({
   const blockingCount = criticalReview?.output.findings.filter(f => f.severity === 'blocking').length ?? 0
   const totalFindings = criticalReview?.output.findings.length ?? 0
 
+  const isPlannerExhausted = gateReason === 'planner_exhausted'
+
+  // Human-readable gate reason labels
+  const gateReasonLabel: Record<string, string> = {
+    planner_exhausted: 'Planner failed after 3 attempts — operator review required',
+    low_confidence:    'Low confidence — human review requested',
+    reviewer_findings: 'Reviewer found issues requiring human decision',
+    budget_warning:    'Budget threshold exceeded',
+  }
+  const gateReasonDisplay = gateReason ? (gateReasonLabel[gateReason] ?? gateReason) : null
+
+  // Context-aware copy for the feedback panel
+  const feedbackPanelLabel = isPlannerExhausted
+    ? 'Provide guidance to help the planner generate a valid execution plan'
+    : 'Request changes — describe what should be revised'
+  const feedbackPlaceholder = isPlannerExhausted
+    ? 'e.g. Limit to 5 parallel sections maximum. Focus only on the main topic — no appendices…'
+    : 'e.g. The content is too long. Please shorten to 3 paragraphs and focus on the key points…'
+
   const defaultTab = writerContent
     ? 'preview'
     : criticalReview
@@ -140,8 +159,8 @@ export function GateClient({
               {hasOpenGate ? '⏸ Decision' : runStatus === 'COMPLETED' ? '✓ Resolved' : runStatus}
             </Badge>
           </div>
-          {gateReason && (
-            <p className="text-sm text-muted-foreground mt-1">{gateReason}</p>
+          {gateReasonDisplay && (
+            <p className="text-sm text-muted-foreground mt-1">{gateReasonDisplay}</p>
           )}
         </div>
 
@@ -178,13 +197,14 @@ export function GateClient({
       {/* ── Request changes feedback panel ── */}
       {showFeedback && canDecide && (
         <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
-          <p className="text-sm font-medium text-amber-300">Request changes — describe what should be revised</p>
+          <p className="text-sm font-medium text-amber-300">{feedbackPanelLabel}</p>
           <Textarea
             value={feedbackText}
             onChange={(e) => setFeedbackText(e.target.value)}
-            placeholder="e.g. The content is too long. Please shorten to 3 paragraphs and focus on the key points…"
-            className="min-h-[100px] bg-surface-1 border-surface-border text-sm text-foreground"
+            placeholder={feedbackPlaceholder}
+            className="min-h-[100px] border-amber-500/30 text-sm"
             disabled={!!submitting}
+            autoFocus
           />
           <div className="flex items-center gap-2 justify-end">
             <Button
@@ -301,8 +321,8 @@ export function GateClient({
             <div className="rounded-lg border border-surface-border bg-surface-raised p-10 max-w-3xl text-center">
               <MessageSquare className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">No writer output available.</p>
-              {gateReason && (
-                <p className="text-xs text-muted-foreground/60 mt-1">{gateReason}</p>
+              {gateReasonDisplay && (
+                <p className="text-xs text-muted-foreground/60 mt-1">{gateReasonDisplay}</p>
               )}
             </div>
           )}
