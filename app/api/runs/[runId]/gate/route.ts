@@ -25,7 +25,7 @@ const GateBody = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('abort')   }).strict(),
   z.object({
     decision: z.literal('replay_node'),
-    node_id:  z.string().min(1),
+    node_id:  z.string().min(1).max(128),
     // CVE-HARM-012: limit patch size to prevent oversized inputs
     patch:    z.record(z.unknown()).refine(
       (p) => JSON.stringify(p).length <= 100_000,
