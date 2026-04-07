@@ -128,8 +128,8 @@ function maxTokensFor(complexity: Complexity, profile: ProfileId): number {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(profile: ProfileId): string {
-  return `\
+function buildSystemPrompt(profile: ProfileId, isPythonCodeNode: boolean): string {
+  const basePrompt = `\
 You are a Harmoven Writer agent executing a single task node for a "${profile}" project.
 Produce the requested output and respond ONLY with valid JSON matching this schema:
 
@@ -148,6 +148,25 @@ Rules:
 - Output ONLY the JSON object. No markdown fence, no prose.
 - assumptions_made: list every decision you made that was not explicit in the task.
 - confidence < 80 means the output needs revision.`
+
+  if (!isPythonCodeNode) return basePrompt
+
+  return basePrompt + `
+
+CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
+- output.type MUST be "code".
+- output.content MUST be complete, self-contained, executable Python source code — nothing else.
+- Do NOT write prose, descriptions, JSON structures, or markdown in output.content.
+- The Python code MUST save every file to disk using the appropriate library call:
+  openpyxl: workbook.save('filename.xlsx')
+  pandas:   df.to_csv('filename.csv', index=False)  or  df.to_excel('filename.xlsx', index=False)
+  matplotlib: plt.savefig('filename.png', dpi=150, bbox_inches='tight')
+  reportlab: canvas.save()  or  doc.build(story)
+- File names must use only letters, digits, dots, and hyphens (no spaces, no accents).
+- The code runs in Pyodide (Python 3.11 WASM). All standard library modules are available.
+  Popular packages (openpyxl, pandas, matplotlib, reportlab) are auto-installed.
+- Do not include any top-level async code; use synchronous code only.
+- Do NOT output JSON that describes what the file contains — output only the Python code.`
 }
 
 // ─── Input sanitizer (Section 24) ────────────────────────────────────────────
@@ -207,7 +226,7 @@ export class Writer {
     let retries = 0
 
     const messages = [
-      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile) },
+      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code') },
       {
         role: 'user' as const,
         content: JSON.stringify({
