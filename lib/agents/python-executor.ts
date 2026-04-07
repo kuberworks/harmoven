@@ -30,9 +30,12 @@ const MAX_PACKAGES        = 20
 const PKG_NAME_RE         = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(==?[0-9][a-zA-Z0-9._*-]*)?$/
 
 // Resolve paths once at module load time (not per-invocation).
-// Both paths are in node_modules so they're stable across restarts.
+// WORKER_PATH uses process.cwd() (= project root) rather than __dirname.
+// In Next.js, server-side code is compiled into .next/server/chunks/, so
+// __dirname resolves to .next/server/ — not lib/agents/ — causing a
+// "Cannot find module" error at Worker spawn time.
 const PYODIDE_PATH  = require.resolve('pyodide')
-const WORKER_PATH   = resolve(__dirname, 'python-executor.worker.cjs')
+const WORKER_PATH   = resolve(process.cwd(), 'lib/agents/python-executor.worker.cjs')
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
