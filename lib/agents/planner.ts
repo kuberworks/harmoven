@@ -109,7 +109,10 @@ Output ONLY valid JSON matching this schema — no markdown, no prose:
 }
 
 Rules:
-- Use WRITER for all content/code generation nodes.
+- Use WRITER for prose, text, and code generation — EXCEPT when the task requires
+  downloadable binary files (Excel, CSV, PDF, image, etc.): in that case you MUST follow
+  the PYTHON_EXECUTOR rule below. NEVER use WRITER to output a JSON description or text
+  placeholder for a file; the file must be actually created by PYTHON_EXECUTOR.
 - REVIEWER must be the final node (depends on all other leaf nodes).
 - dependencies contains node_ids that must complete first.
 - If meta.confidence < 85, the plan will require human approval before execution.
@@ -119,25 +122,26 @@ Rules:
 - GOOD example for a 10-section course: n1=CLASSIFIER→n2=PLANNER→n3..n12 (10×WRITER, all depend on n2)→n13=REVIEWER (depends on n3..n12). Depth=3, width=10.
 - BAD example: n1→n2→n3→n4→n5→n6→n7 (7 sequential nodes). Only do this if each section genuinely requires the previous one as input.
 
-Using PYTHON_EXECUTOR (for downloadable binary files):
-- Use PYTHON_EXECUTOR when the task must produce actual binary files the user can download:
-  Excel workbooks (.xlsx), CSV exports, PDFs, images (PNG/SVG), or other processed data files.
-- Pattern: one or more WRITER nodes generate Python code (using openpyxl, pandas, matplotlib,
-  reportlab, etc.); a PYTHON_EXECUTOR node executes that code in a secure Pyodide sandbox;
-  the files written to disk by the Python code are automatically collected and made downloadable.
-- The WRITER(s) must produce ONLY the complete, self-contained Python source code — no prose, no
-  Markdown fences, just the Python code. The code must write files using open('filename.ext', 'wb')
-  or library save calls (e.g. workbook.save('output.xlsx')). File names must be simple alphanumeric.
-- If the task has multiple logical file sections (e.g. 3 Excel sheets), use ONE WRITER per section
-  and connect all of them to a single PYTHON_EXECUTOR that combines their code and runs it.
-- PYTHON_EXECUTOR output_type should be 'python_files' and complexity 'medium'.
-- GOOD example for a multi-sheet Excel workbook:
-  n1=CLASSIFIER→n2=PLANNER→n3 WRITER (sheet 1 Python code)→n4 WRITER (sheet 2 Python code)
-  →n5 PYTHON_EXECUTOR (depends on n3,n4; runs combined code, produces .xlsx)
-  →n6=REVIEWER (depends on n5). Depth=4.
-- GOOD example for a single Excel file:
-  n1=CLASSIFIER→n2=PLANNER→n3 WRITER (expected_output_type: python_code)
-  →n4=PYTHON_EXECUTOR (depends on n3)→n5=REVIEWER. Depth=4.`
+MANDATORY — PYTHON_EXECUTOR for downloadable binary files:
+- TRIGGER KEYWORDS: spreadsheet, Excel, .xlsx, .xls, CSV, PDF, chart, graph, image, PNG, SVG,
+  or any request for a file the user can download → you MUST add a PYTHON_EXECUTOR node.
+- NEVER output a text/JSON description of what a file should contain; the file must be created
+  by Python code. A WRITER saying "here is the Excel content" with no PYTHON_EXECUTOR is WRONG.
+- Pattern: WRITER nodes produce ONLY raw Python source code (no prose, no Markdown fences);
+  a single PYTHON_EXECUTOR node executes all that code in a sandboxed Pyodide environment;
+  files saved to disk by the Python code are automatically collected and made downloadable.
+- Python code MUST write files with workbook.save('name.xlsx'), df.to_csv('name.csv'),
+  plt.savefig('name.png'), or open('name.ext', 'wb'). File names: alphanumeric + dots/hyphens.
+- One PYTHON_EXECUTOR receives all WRITER code outputs as input, combines, and runs them.
+- WRITER nodes feeding PYTHON_EXECUTOR: expected_output_type = "python_code".
+- PYTHON_EXECUTOR node: expected_output_type = "python_files", complexity = "medium".
+- GOOD example — multi-sheet Excel:
+  n3=WRITER(sheet 1 code) + n4=WRITER(sheet 2 code) → n5=PYTHON_EXECUTOR → n6=REVIEWER.
+  Full chain: n1=CLASSIFIER→n2=PLANNER→{n3,n4}→n5→n6. Depth=4.
+- GOOD example — single file:
+  n3=WRITER(python_code) → n4=PYTHON_EXECUTOR → n5=REVIEWER. Depth=4.
+- BAD example (FORBIDDEN): n3=WRITER outputs {"sheet":"Budget","rows":[...]} and no
+  PYTHON_EXECUTOR exists → the file is never created, the user gets nothing to download.`
 
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
