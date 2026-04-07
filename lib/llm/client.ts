@@ -447,9 +447,12 @@ export class DirectLLMClient implements ILLMClient {
     messages: ChatMessage[],
     options:  ChatOptions,
     onChunk:  (chunk: string) => void,
+    onModelResolved?: (model: string) => void,
   ): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const profile = this.resolveProfile(options.model, options.selectionContext)
+    // Fire before the stream starts so the UI can display the model while still RUNNING.
+    onModelResolved?.(profile.model_string ?? profile.id)
     const result  = await this.dispatchStream(profile, messages, options, onChunk)
     return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
   }

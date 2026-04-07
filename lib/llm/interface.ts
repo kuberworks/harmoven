@@ -50,5 +50,7 @@ export interface ILLMClient {
     messages: ChatMessage[],
     options: ChatOptions,
     onChunk: (chunk: string) => void,
+    /** Fired as soon as the model is selected (before the first chunk). */
+    onModelResolved?: (model: string) => void,
   ): Promise<ChatResult>
 }

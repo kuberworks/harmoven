@@ -143,11 +143,21 @@ class ContextualLLMClient implements ILLMClient {
     messages: ChatMessage[],
     options: ChatOptions,
     onChunk: (chunk: string) => void,
+    onModelResolved?: (model: string) => void,
   ): Promise<ChatResult> {
-    const result = await this.inner.stream(messages, { ...options, selectionContext: this.ctx }, onChunk)
+    const result = await this.inner.stream(
+      messages,
+      { ...options, selectionContext: this.ctx },
+      onChunk,
+      // Fire onModelResolved as soon as the inner client selects the model
+      // (before the stream starts) so the UI shows the model while RUNNING.
+      (model) => this._trackModel(model),
+    )
     this.totalCostUsd   += result.costUsd
     this.totalTokensIn  += result.tokensIn
     this.totalTokensOut += result.tokensOut
+    // _trackModel may already have been called by onModelResolved above;
+    // call again to ensure lastModel is set even if inner skipped the callback.
     this._trackModel(result.model)
     return result
   }
