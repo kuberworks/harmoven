@@ -83,6 +83,20 @@ export default async function GatePage({ params }: Props) {
   const writerHandoff = writerNode?.handoff_out as Record<string, unknown> | null ?? null
   const writerOutput = writerHandoff?.['output'] as Record<string, unknown> | undefined
 
+  // Extract planner plan for low_confidence_plan gates (writer hasn't run yet)
+  const plannerNode = [...run.nodes].reverse().find(n => n.agent_type === 'PLANNER' && n.handoff_out != null)
+  const plannerHandoff = plannerNode?.handoff_out as Record<string, unknown> | null ?? null
+  type PlanNodeShape = { node_id: string; agent: string; description: string; complexity: string }
+  const plannerPlan = openGate?.reason === 'low_confidence_plan' && plannerHandoff
+    ? {
+        task_summary:          (plannerHandoff['task_summary']          as string | undefined) ?? null,
+        confidence:            ((plannerHandoff['meta'] as Record<string, unknown> | undefined)?.['confidence'] as number | undefined) ?? null,
+        confidence_rationale:  ((plannerHandoff['meta'] as Record<string, unknown> | undefined)?.['confidence_rationale'] as string | undefined) ?? null,
+        assumptions:           (plannerHandoff['assumptions'] as string[] | undefined) ?? [],
+        nodes:                 ((plannerHandoff['dag'] as Record<string, unknown> | undefined)?.['nodes'] as PlanNodeShape[] | undefined) ?? [],
+      }
+    : null
+
   // ── Server-side data filtering by permission ──────────────────────────────
   // PermissionGuard in gate-client is UI-only. Sensitive data must be
   // withheld at this layer so it never reaches the rendered HTML payload.
@@ -167,6 +181,7 @@ export default async function GatePage({ params }: Props) {
         writerContent={(writerOutput?.['content'] ?? writerOutput?.['text'] ?? null) as string | null}
         writerSummary={(writerOutput?.['summary'] ?? null) as string | null}
         writerType={(writerOutput?.['type'] ?? null) as string | null}
+        plannerPlan={plannerPlan}
         nodes={nodes}
         criticalReview={criticalReview}
         evalResult={evalResult}

@@ -37,6 +37,13 @@ interface Props {
   writerContent: string | null
   writerSummary: string | null
   writerType: string | null
+  plannerPlan: {
+    task_summary: string | null
+    confidence: number | null
+    confidence_rationale: string | null
+    assumptions: string[]
+    nodes: Array<{ node_id: string; agent: string; description: string; complexity: string }>
+  } | null
   nodes: NodeCost[]
   criticalReview: {
     id: string
@@ -63,6 +70,7 @@ export function GateClient({
   writerContent,
   writerSummary,
   writerType,
+  plannerPlan,
   nodes,
   criticalReview,
   evalResult,
@@ -88,10 +96,11 @@ export function GateClient({
 
   // Human-readable gate reason labels
   const gateReasonLabel: Record<string, string> = {
-    planner_exhausted: 'Planner failed after 3 attempts — operator review required',
-    low_confidence:    'Low confidence — human review requested',
-    reviewer_findings: 'Reviewer found issues requiring human decision',
-    budget_warning:    'Budget threshold exceeded',
+    planner_exhausted:    'Planner failed after 3 attempts — operator review required',
+    low_confidence_plan:  'Planner confidence below threshold — review the proposed plan before it executes',
+    low_confidence:       'Low confidence — human review requested',
+    reviewer_findings:    'Reviewer found issues requiring human decision',
+    budget_warning:       'Budget threshold exceeded',
   }
   const gateReasonDisplay = gateReason ? (gateReasonLabel[gateReason] ?? gateReason) : null
 
@@ -105,11 +114,13 @@ export function GateClient({
 
   const defaultTab = writerContent
     ? 'preview'
-    : criticalReview
-      ? 'critical'
-      : evalResult
-        ? 'eval'
-        : 'preview'
+    : plannerPlan
+      ? 'preview'
+      : criticalReview
+        ? 'critical'
+        : evalResult
+          ? 'eval'
+          : 'preview'
 
   const totalCost = nodes.reduce((s, n) => s + n.cost_usd, 0)
 
@@ -297,7 +308,7 @@ export function GateClient({
           </PermissionGuard>
         </TabsList>
 
-        {/* Preview tab — actual writer output */}
+        {/* Preview tab — writer output OR planner plan for low_confidence_plan */}
         <TabsContent value="preview" className="mt-0 pt-4">
           {writerContent ? (
             <div className="rounded-lg border border-surface-border bg-surface-raised p-5 max-w-3xl">
@@ -315,6 +326,71 @@ export function GateClient({
               </div>
               {writerSummary && (
                 <p className="text-xs text-muted-foreground mt-3 italic">{writerSummary}</p>
+              )}
+            </div>
+          ) : plannerPlan ? (
+            <div className="space-y-4 max-w-3xl">
+              {/* Confidence banner */}
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span className="text-sm font-semibold text-amber-300">
+                    Planner confidence: {plannerPlan.confidence !== null ? `${plannerPlan.confidence}%` : '—'}
+                  </span>
+                </div>
+                {plannerPlan.confidence_rationale && (
+                  <p className="text-xs text-amber-400/80 mt-1">{plannerPlan.confidence_rationale}</p>
+                )}
+              </div>
+
+              {/* Task summary */}
+              {plannerPlan.task_summary && (
+                <div className="rounded-lg border border-surface-border bg-surface-raised p-4">
+                  <p className="text-xs text-muted-foreground/60 font-mono mb-1">Task summary</p>
+                  <p className="text-sm text-foreground">{plannerPlan.task_summary}</p>
+                </div>
+              )}
+
+              {/* Proposed plan nodes */}
+              {plannerPlan.nodes.length > 0 && (
+                <div className="rounded-lg border border-surface-border bg-surface-raised p-4 space-y-3">
+                  <p className="text-xs text-muted-foreground/60 font-mono">Proposed execution plan ({plannerPlan.nodes.length} steps)</p>
+                  <div className="space-y-2">
+                    {plannerPlan.nodes.map((node, i) => (
+                      <div
+                        key={node.node_id}
+                        className="flex items-start gap-3 rounded-md border border-surface-border/60 bg-surface-1 px-3 py-2.5"
+                      >
+                        <span className="shrink-0 mt-0.5 text-xs font-mono text-muted-foreground/50 w-6 text-right">{i + 1}.</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-mono font-medium text-foreground">{node.node_id}</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/60 bg-surface-border/40 rounded px-1.5 py-0.5">
+                              {node.agent}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/40 font-mono">{node.complexity}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{node.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Assumptions */}
+              {plannerPlan.assumptions.length > 0 && (
+                <div className="rounded-lg border border-surface-border bg-surface-raised p-4">
+                  <p className="text-xs text-muted-foreground/60 font-mono mb-2">Planner assumptions</p>
+                  <ul className="space-y-1">
+                    {plannerPlan.assumptions.map((a, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                        <span className="shrink-0 text-muted-foreground/40 mt-0.5">•</span>
+                        <span>{a}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           ) : (
