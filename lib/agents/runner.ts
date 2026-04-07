@@ -440,24 +440,39 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
       // ── PYTHON_EXECUTOR ─────────────────────────────────────────────────────
       // Runs Python code in a Pyodide (WebAssembly) sandbox.
-      // handoffIn sources (in priority order):
-      //   1. { code: string } — explicit code field
-      //   2. WriterOutput    — uses output.content as the Python source
-      //   3. string          — treated directly as code
+      // handoffIn sources (handled in priority order, or array of these):
+      //   1. { code: string }   — explicit code field
+      //   2. WriterOutput       — uses output.content as the Python source
+      //   3. string             — treated directly as code
+      // When multiple upstream nodes feed in (array), each code block is extracted
+      // and concatenated with a comment separator — allowing several WRITER nodes
+      // to each produce a section of code that runs as a single combined script.
       // metadata: { timeout_ms? } — max execution time in ms (default 30 000, max 120 000)
       case 'PYTHON_EXECUTOR': {
-        let code: string
-        const hi = handoffIn as Record<string, unknown> | string | null
-        if (typeof hi === 'string') {
-          code = hi
-        } else if (typeof (hi as Record<string, unknown>)?.['code'] === 'string') {
-          code = (hi as Record<string, unknown>)['code'] as string
-        } else if (typeof ((hi as Record<string, unknown>)?.['output'] as Record<string, unknown>)?.['content'] === 'string') {
-          // WriterOutput shape: { output: { content: string, ... }, ... }
-          code = ((hi as Record<string, unknown>)['output'] as Record<string, unknown>)['content'] as string
-        } else {
+        // Normalise handoffIn to an array so single and multi-input are handled uniformly.
+        const inputs: unknown[] = Array.isArray(handoffIn)
+          ? (handoffIn as unknown[])
+          : handoffIn != null ? [handoffIn] : []
+
+        function extractCode(item: unknown): string | null {
+          if (typeof item === 'string') return item
+          const r = item as Record<string, unknown>
+          if (typeof r?.['code'] === 'string') return r['code'] as string
+          const out = r?.['output'] as Record<string, unknown> | undefined
+          if (typeof out?.['content'] === 'string') return out['content'] as string
+          return null
+        }
+
+        const codeBlocks = inputs.map(extractCode).filter((c): c is string => c !== null)
+        if (codeBlocks.length === 0) {
           throw new Error('[agentRunner] PYTHON_EXECUTOR: no code found in handoffIn (expected .code or .output.content)')
         }
+
+        // Combine multiple code blocks with section separators so they run as one script.
+        // Each block gets a comment header so Python tracebacks remain readable.
+        const code = codeBlocks.length === 1
+          ? codeBlocks[0]!
+          : codeBlocks.map((block, i) => `# ── Section ${i + 1} ──\n${block}`).join('\n\n')
 
         const timeoutMs = typeof meta['timeout_ms'] === 'number'
           ? (meta['timeout_ms'] as number)
