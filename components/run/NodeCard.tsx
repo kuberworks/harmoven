@@ -87,7 +87,7 @@ export function NodeCard({ node, showCost, showTimings = true, onClick, selected
         <Cpu className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground truncate">{label}</p>
-          {node.error && (
+          {node.error && (node.status === 'FAILED' || node.status === 'INTERRUPTED') && (
             <p className="text-xs text-[var(--color-status-failed)] mt-0.5 truncate">{node.error}</p>
           )}
         </div>
