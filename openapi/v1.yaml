@@ -610,13 +610,12 @@ components:
     InterruptGateDecision:
       type: string
       description: |
-        Decision submitted by the user after manually interrupting an in-flight node via
-        `POST /runs/{id}/nodes/{nid}/interrupt`. The partial LLM output accumulated before
-        the interrupt is preserved and displayed in the gate panel for review.
+        Decision submitted by the user after manually interrupting a node, restarting a FAILED node,
+        or force-restarting a COMPLETED node. In all cases a `replay_from_scratch` gate call is valid.
         - `resume_from_partial`: mark the node COMPLETED using the partial output as its
-          `handoff_out`; downstream nodes proceed with what was generated.
-        - `replay_from_scratch`: discard the partial output and restart the node from the
-          beginning with its original inputs.
+          `handoff_out`; downstream nodes proceed with what was generated (INTERRUPTED nodes only).
+        - `replay_from_scratch`: reset the node to PENDING for re-dispatch. If the node is COMPLETED,
+          all transitively downstream nodes are also reset; any downstream RUNNING nodes are aborted first.
         - `accept_partial`: alias for `resume_from_partial`, kept for SDK compatibility.
         - `abort`: discard the output and transition the entire run to FAILED.
       enum: [resume_from_partial, replay_from_scratch, accept_partial, abort]
@@ -3373,7 +3372,7 @@ paths:
                   description: "Optional instruction added to context"
       responses:
         '200':
-          description: "Interrupt-gate decision applied. `resume_from_partial`: execution continues from the (optionally edited) partial output. `replay_from_scratch`: node resets to PENDING for re-dispatch. `accept_partial`: node is marked COMPLETED with the partial output as `handoff_out`. `abort`: run transitions to FAILED."
+          description: "Interrupt-gate decision applied. `resume_from_partial`: execution continues from the (optionally edited) partial output (INTERRUPTED nodes only). `replay_from_scratch`: node resets to PENDING for re-dispatch; if the node was COMPLETED, all transitively downstream nodes are also reset and any downstream RUNNING nodes are aborted first. `accept_partial`: node is marked COMPLETED with the partial output as `handoff_out`. `abort`: run transitions to FAILED."
           content:
             application/json:
               schema:

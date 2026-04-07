@@ -365,9 +365,9 @@ export class CustomExecutor implements IExecutionEngine {
     const nodes = await this.db.node.findMany({ where: { run_id: runId } })
     const node = nodes.find(n => n.node_id === nodeId)
     if (!node) throw new Error(`Node '${nodeId}' not found in run '${runId}'`)
-    const canRestart = node.status === 'INTERRUPTED' || node.status === 'FAILED'
+    const canRestart = node.status === 'INTERRUPTED' || node.status === 'FAILED' || node.status === 'COMPLETED'
     if (!canRestart) {
-      throw new Error(`Node '${nodeId}' cannot be restarted (status: '${node.status}') — must be INTERRUPTED or FAILED`)
+      throw new Error(`Node '${nodeId}' cannot be restarted (status: '${node.status}') — must be INTERRUPTED, FAILED or COMPLETED`)
     }
     // resume_from_partial requires partial output, only valid for INTERRUPTED nodes
     if (gate.decision === 'resume_from_partial' && node.status !== 'INTERRUPTED') {
@@ -375,9 +375,9 @@ export class CustomExecutor implements IExecutionEngine {
     }
 
     const run = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
-    const runCanResume = run.status === 'SUSPENDED' || run.status === 'FAILED'
+    const runCanResume = run.status === 'SUSPENDED' || run.status === 'FAILED' || run.status === 'RUNNING'
     if (!runCanResume) {
-      throw new Error(`Run '${runId}' cannot be restarted (status: '${run.status}') — must be SUSPENDED or FAILED`)
+      throw new Error(`Run '${runId}' cannot be restarted (status: '${run.status}') — must be SUSPENDED, FAILED or RUNNING`)
     }
 
     // ── Atomic claim ──────────────────────────────────────────────────────────
@@ -385,7 +385,7 @@ export class CustomExecutor implements IExecutionEngine {
     // INTERRUPTED/FAILED → PENDING. This prevents two concurrent gate calls for
     // the same node from both proceeding: only the first one will find count > 0.
     const claimed = await this.db.node.updateMany({
-      where: { id: node.id, status: { in: ['INTERRUPTED', 'FAILED'] } },
+      where: { id: node.id, status: { in: ['INTERRUPTED', 'FAILED', 'COMPLETED'] } },
       data:  { status: 'PENDING' },
     })
     if (claimed.count === 0) {
@@ -433,19 +433,82 @@ export class CustomExecutor implements IExecutionEngine {
             error: null,
           },
         })
-        // If the run itself is FAILED/SUSPENDED, reset it to PENDING so executeRun proceeds.
-        if (run.status !== 'SUSPENDED') {
+
+        // ── Cascade downstream for COMPLETED node restart ──────────────────
+        // If the target node was COMPLETED, collect downstream nodes and reset
+        // them too. For any downstream node currently RUNNING (in-process),
+        // interrupt it first so its execution loop does not overwrite the reset.
+        const dag = run.dag as Dag
+        const downstreamIds = new Set<string>()
+        const seed = new Set<string>([nodeId])
+        let changed = true
+        while (changed) {
+          changed = false
+          for (const edge of dag.edges) {
+            if (seed.has(edge.from) && !seed.has(edge.to)) {
+              seed.add(edge.to)
+              downstreamIds.add(edge.to)
+              changed = true
+            }
+          }
+        }
+
+        if (downstreamIds.size > 0) {
+          // Abort any RUNNING downstream nodes before resetting them
+          const downstreamNodes = nodes.filter(n => downstreamIds.has(n.node_id))
+          const runningDownstream = downstreamNodes.filter(n => n.status === 'RUNNING')
+          if (runningDownstream.length > 0) {
+            // Suspend the run first to prevent executeRun from spawning new nodes
+            if (run.status === 'RUNNING') {
+              await this.transitionRun(runId, 'RUNNING', 'SUSPENDED')
+            }
+            for (const dn of runningDownstream) {
+              const ctrl = this._nodeAbortControllers.get(dn.id)
+              if (ctrl) ctrl.abort()
+            }
+            // Small wait for abort handlers to clean up
+            await new Promise(resolve => setTimeout(resolve, 50))
+          }
+
+          // Reset all downstream nodes to PENDING
+          await this.db.node.updateMany({
+            where: { run_id: runId, node_id: { in: [...downstreamIds] } },
+            data: {
+              status:             'PENDING',
+              started_at:         null,
+              completed_at:       null,
+              interrupted_at:     null,
+              interrupted_by:     null,
+              partial_output:     null,
+              partial_updated_at: null,
+              error:              null,
+              handoff_out:        null,
+              cost_usd:           0,
+              tokens_in:          0,
+              tokens_out:         0,
+            },
+          })
+
+          for (const did of downstreamIds) {
+            this._emit(runId, { type: 'state_change', entity_type: 'node', id: did, status: 'PENDING' })
+          }
+        }
+
+        // Reset run to PENDING if it was FAILED or SUSPENDED (but NOT from RUNNING transition above)
+        const freshRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
+        if (freshRun.status === 'FAILED' || (freshRun.status === 'SUSPENDED' && run.status !== 'RUNNING')) {
           await this.db.run.update({
             where: { id: runId },
             data: { status: 'PENDING', started_at: null },
           })
         }
+
         await this.db.auditLog.create({
           data: {
             id: uuidv7(),
             run_id: runId, node_id: nodeId, actor: actorId,
             action_type: 'gate_replay_from_scratch',
-            payload: { patch: gate.patch ?? null, restarted_from: node.status },
+            payload: { patch: gate.patch ?? null, restarted_from: node.status, reset_downstream: [...downstreamIds] },
           },
         })
         this._emit(runId, { type: 'state_change', entity_type: 'node', id: nodeId, status: 'PENDING' })

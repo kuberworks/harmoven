@@ -749,7 +749,9 @@
       "artifacts": {
         "title": "Generated files",
         "downloadZip": "Download as ZIP"
-      }
+      },
+      "restart": "Restart",
+      "rerun": "Re-run"
     }
   }
 }
