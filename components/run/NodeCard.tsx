@@ -32,7 +32,9 @@ interface NodeCardProps {
 }
 
 function formatDuration(startMs: number, endMs: number): string {
-  const sec = Math.round((endMs - startMs) / 1000)
+  const ms = endMs - startMs
+  if (ms < 1000) return '<1s'
+  const sec = Math.round(ms / 1000)
   if (sec < 60) return `${sec}s`
   return `${Math.floor(sec / 60)}m ${sec % 60}s`
 }
