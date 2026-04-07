@@ -1,136 +1,97 @@
 # orchestrator.yaml — Harmoven instance configuration
 # No secrets here — commit this file. Secrets go in .env (never committed).
-# Auto-synced to config.git on every change via PATCH /api/projects/:id (Am.83).
+# Auto-synced to config.git on every change via the admin UI or startup sync.
 
 organization:
-  name: "My Organization"
-  preset: small_business           # small_business | enterprise | developer
-  deployment_mode: docker          # docker | electron
-
+  name: kuberworks
+  preset: small_business
+  deployment_mode: docker
 execution_engine:
-  provider: custom                 # custom | temporal | restate
-  max_concurrent_nodes: 4          # per run — respected by CustomExecutor
-
+  provider: custom
+  max_concurrent_nodes: 20
 llm:
   default_provider: anthropic
   profiles_active:
-    - claude-haiku-4-5             # fast     — CLASSIFIER, simple tasks
-    - claude-sonnet-4-6            # balanced — PLANNER, WRITER
-    - claude-opus-4-6              # powerful — REVIEWER, complex reasoning
-    # CometAPI (disabled):
-    # - cometapi-fast
-    # - cometapi
-    # - cometapi-powerful
-    # Legacy Claude 3.x (fallback if needed):
-    # - claude-3-5-haiku-20241022
-    # - claude-3-7-sonnet-20250219
-    # - claude-3-opus-20240229
-
+    - claude-haiku-4-5
+    - claude-sonnet-4-6
+    - claude-opus-4-6
 confidentiality:
-  default_level: MEDIUM            # LOW | MEDIUM | HIGH | CRITICAL
-  local_classifier: true           # always true — cloud never used for classification
-
+  default_level: MEDIUM
+  local_classifier: true
 privacy:
   presidio:
-    enabled: false                 # opt-in — requires PRESIDIO_ENDPOINT in .env
-
+    enabled: false
 secrets_backend:
-  provider: internal               # internal | onecli
+  provider: internal
   key_rotation:
     alert_after_days: 80
-
 security:
-  mfa_required_for_admin: true     # enforced — TOTP or Passkey required
+  mfa_required_for_admin: true
   mfa_required_for_user: false
-  mfa_methods: [totp, passkey]
+  mfa_methods:
+    - totp
+    - passkey
   email_verification: true
-  session_timeout_minutes: 480     # 8 hours
-  setup_token_required: true       # /setup route protected by token shown in Docker logs
-  rate_limit_provider: memory      # memory (default, Electron-safe) | upstash (production)
-  allow_public_signup: false       # opt-in — set true for SaaS / open registration
-                                   # When false, only instance_admin can create accounts
-                                   # (via admin → users) or invite users to projects.
-                                   # Override: HARMOVEN_ALLOW_PUBLIC_SIGNUP=true env var.
-  supply_chain:                    # Amendment 91 — T3.8 supply chain security
-    verify_image_digest: true      # reject Docker image updates without digest match
-    verify_pack_signatures: false  # GPG verification for marketplace packs (enable after key setup)
-    verify_mcp_skill_hashes: true  # SHA256 each MCP skill entrypoint at startup
-    require_github_release: true   # reject updates with no matching GitHub release tag
-    cosign_public_key: null        # absolute path to Cosign public key (enables Cosign verify)
-    pinned_litellm_version: "1.82.6"  # must match litellm.pinned_version above
-
+  session_timeout_minutes: 480
+  setup_token_required: true
+  rate_limit_provider: memory
+  allow_public_signup: false
+  supply_chain:
+    verify_image_digest: true
+    verify_pack_signatures: false
+    verify_mcp_skill_hashes: true
+    require_github_release: true
+    cosign_public_key: null
+    pinned_litellm_version: 1.82.6
 proactivity:
   max_auto_runs_per_day: 20
-  max_cost_usd_per_day: 10.00
-  full_auto_enabled: false         # admin must enable explicitly
-
+  max_cost_usd_per_day: 10
+  full_auto_enabled: false
 litellm:
-  enabled: false                   # opt-in — requires LiteLLM sidecar in docker-compose.yml
-  pinned_version: "1.82.6"         # T3.8: sidecar must run this exact version
-  # gateway_url — set via LITELLM_GATEWAY_URL env var (injected by docker-compose)
-
+  enabled: false
+  pinned_version: 1.82.6
 memory:
   enabled: true
-  scope: app_scaffolding           # v1: app_scaffolding only
-  backend: sqlite                  # sqlite | postgres | pgvector
-
+  scope: app_scaffolding
+  backend: sqlite
 updates:
-  auto_check:    true              # check for new versions on schedule
-  auto_download: true              # download Docker image layers silently
-  auto_install:  notify            # notify | auto | manual
-                                   #   notify → show banner, user decides (default)
-                                   #   auto   → auto-install MINOR+PATCH; MAJOR always requires confirmation
-                                   #   manual → never check automatically
+  auto_check: true
+  auto_download: true
+  auto_install: notify
   check_interval_hours: 24
-  update_channel: stable           # stable | edge
-  verify_digest:  true             # always verify Docker image digest (anti tag-hijacking)
-  cosign_verify:  false            # verify Cosign signature — enable with cosign_public_key
-  cosign_public_key: null          # absolute path to Cosign public key file
-  require_github_release: true     # refuse update if no matching GitHub release tag
-
+  update_channel: stable
+  verify_digest: true
+  cosign_verify: false
+  cosign_public_key: null
+  require_github_release: true
 marketplace:
-  registry_url: "https://registry.harmoven.com/v1"    # official Harmoven pack registry
+  registry_url: https://registry.harmoven.com/v1
   auto_check_updates: true
   update_check_interval_hours: 24
-  default_update_policy: notify    # auto | notify | manual
-  # auto   → auto-install patch bumps; notify for minor/major
-  # notify → always prompt the user before installing any update
-  # manual → never check automatically — user-initiated only
+  default_update_policy: notify
   security:
-    verify_content_hash: true      # SHA-256 content hash always verified at install time
-    verify_gpg_signature: false    # GPG verification — requires keyring setup (Am.91, T3.8)
-                                   # Set to true after importing the Harmoven registry public key:
-                                   #   gpg --import harmoven-registry.pub
-    scan_content: true             # local prompt-injection + external URL scan always on
-
-ui:                                  # Amendment 86
-  default_locale: en               # en | fr — instance-wide default for all users
-  # If not set: browser Accept-Language is used as fallback.
-  # Users can override this individually in Settings → Preferences.
-
-analytics:                           # Amendment 85
+    verify_content_hash: true
+    verify_gpg_signature: false
+    scan_content: true
+ui:
+  default_locale: en
+analytics:
   enabled: true
-  hourly_rate_usd: 75.0            # assumed hourly cost for ROI calculation
-  anonymize_exports: false         # true = user names replaced by "User A", "User B"
-  retention_days: 365              # how long to keep computed analytics
-
+  hourly_rate_usd: 75
+  anonymize_exports: false
+  retention_days: 365
 regulatory:
-  contexts: []                     # e.g. [gdpr, hipaa] — declare what applies
-
+  contexts: []
 experimental:
   actor_stats:
-    enabled: false                 # Am.80 — RunActorStats model present but disabled
+    enabled: false
   mcp_server:
-    enabled: false                 # Am.81 — MCP server exposure disabled by default
-    transport: stdio               # stdio | sse
-    gate_strategy: suspend         # suspend | auto_approve | reject
-
+    enabled: false
+    transport: stdio
+    gate_strategy: suspend
 app_scaffolding:
   preview:
-    mode: auto                     # auto | subdomain | subpath | screenshots
-    # wildcard_domain: ""          # e.g. "preview.harmoven.mycompany.com"
-    #                              # Requires: *.preview.harmoven.mycompany.com DNS + TLS
-    # base_url: ""                 # auto-detected from AUTH_URL if empty
-    port_range_start: 3100         # inclusive
-    port_range_end: 3199           # inclusive (100 concurrent previews max)
-    smoke_test_timeout_s: 30       # seconds to wait for the container to be healthy
+    mode: auto
+    port_range_start: 3100
+    port_range_end: 3199
+    smoke_test_timeout_s: 30

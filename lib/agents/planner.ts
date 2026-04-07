@@ -114,7 +114,10 @@ Rules:
 - dependencies contains node_ids that must complete first.
 - If meta.confidence < 85, the plan will require human approval before execution.
 - Max lateral delegations: 2.
-- CRITICAL: Maximum DAG depth is 4 levels. The longest chain of sequential nodes (longest path from any root node to REVIEWER) must not exceed 4 nodes. Use parallel branches (siblings with the same dependency) to scale width, not depth.`
+- CRITICAL: Maximum DAG depth is 6 levels. The longest chain of sequential nodes (longest path from any root node to REVIEWER) must not exceed 6 nodes.
+- SCALE WIDTH, NOT DEPTH: for large tasks (e.g. a 20-section document, a 15-module course), create many parallel WRITER nodes at the same depth level — they all depend on PLANNER and are all depended on by REVIEWER. You may have up to 20 parallel WRITER nodes. Do NOT chain writers sequentially unless there is a strict content dependency between them.
+- GOOD example for a 10-section course: n1=CLASSIFIER→n2=PLANNER→n3..n12 (10×WRITER, all depend on n2)→n13=REVIEWER (depends on n3..n12). Depth=3, width=10.
+- BAD example: n1→n2→n3→n4→n5→n6→n7 (7 sequential nodes). Only do this if each section genuinely requires the previous one as input.`
 
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
@@ -165,9 +168,9 @@ function validateDag(dag: PlannerHandoff['dag']): void {
   const hasSuccessor = dag.edges.some(e => e.from === reviewerId)
   if (hasSuccessor) throw new Error('Planner: REVIEWER node must be the final node (no outgoing edges)')
 
-  // Depth check: longest path must not exceed 4 levels (spec §lib/dag/validate.ts).
+  // Depth check: longest path must not exceed 6 levels (spec §lib/dag/validate.ts).
   // Recompute in-degree from scratch (the Kahn queue above is already consumed).
-  const MAX_DAG_DEPTH = 4
+  const MAX_DAG_DEPTH = 6
   const depthInDeg = new Map<string, number>()
   const depthAdj  = new Map<string, string[]>()
   for (const id of nodeIds) { depthInDeg.set(id, 0); depthAdj.set(id, []) }
