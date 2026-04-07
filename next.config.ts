@@ -112,6 +112,14 @@ const nextConfig: NextConfig = {
     return config
   },
 
+  // File tracing — ensure the Pyodide worker CJS is included in standalone builds.
+  // Next.js output: 'standalone' traces only imported files; the worker is spawned
+  // at runtime via worker_threads and is not statically imported, so it must be
+  // listed here explicitly.
+  outputFileTracingIncludes: {
+    '/api/**': ['./lib/agents/python-executor.worker.cjs'],
+  },
+
   // Experimental features
   experimental: {
     serverActions: {
