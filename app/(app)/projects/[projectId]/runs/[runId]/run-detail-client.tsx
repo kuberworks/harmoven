@@ -18,7 +18,7 @@ import { ContextInjectionPanel } from '@/components/run/ContextInjectionPanel'
 import { DagView } from '@/components/run/DagView'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { useT } from '@/lib/i18n/client'
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText, Printer } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText, Printer, Download } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 
@@ -84,6 +84,15 @@ interface AuditEntry {
   node_id: string | null
   payload: Record<string, unknown> | null
   timestamp: string
+}
+
+interface ArtifactMeta {
+  id: string
+  node_id: string
+  filename: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
 }
 
 interface Props {
@@ -339,9 +348,22 @@ const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
 
 // ─── Node card ──────────────────────────────────────────────────────────────
 
-function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: InitialNode | NodeState; runId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED' }) {
+function NodeCard({ node, runId, canRestart, onRestart, uiLevel, artifactsTick = 0 }: { node: InitialNode | NodeState; runId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number }) {
+  const t = useT()
   const [expanded, setExpanded] = useState(false)
   const streamEndRef = useRef<HTMLPreElement>(null)
+
+  // Artifact download state (PYTHON_EXECUTOR nodes only)
+  const [artifacts, setArtifacts] = useState<ArtifactMeta[] | null>(null)
+  useEffect(() => {
+    if (node.agent_type !== 'PYTHON_EXECUTOR') return
+    if (node.status !== 'COMPLETED' && artifactsTick === 0) return
+    fetch(`/api/runs/${runId}/artifacts`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then((all: ArtifactMeta[]) => setArtifacts(all.filter(a => a.node_id === node.node_id)))
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.status, node.agent_type, artifactsTick])
 
   // Auto-scroll streaming panel to bottom as new content arrives
   useEffect(() => {
@@ -482,6 +504,29 @@ function NodeCard({ node, runId, canRestart, onRestart, uiLevel }: { node: Initi
             {extractStreamingContent(node.partial_output)}
             <span className="inline-block w-1.5 h-3 bg-foreground/60 animate-pulse ml-0.5 align-middle" />
           </pre>
+        </div>
+      )}
+
+      {/* Generated files download list (PYTHON_EXECUTOR only) */}
+      {artifacts && artifacts.length > 0 && (
+        <div className="border-t border-surface-border px-4 py-3 space-y-2">
+          <p className="text-xs text-muted-foreground font-medium">
+            {t('run.node.artifacts.title')}
+          </p>
+          {artifacts.map(a => (
+            <a
+              key={a.id}
+              href={`/api/runs/${runId}/artifacts/${a.id}`}
+              download={a.filename}
+              className="flex items-center gap-2 text-xs text-primary hover:underline"
+            >
+              <Download className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{a.filename}</span>
+              <span className="text-muted-foreground/50 shrink-0">
+                {(a.size_bytes / 1024).toFixed(1)} KB
+              </span>
+            </a>
+          ))}
         </div>
       )}
 
@@ -1008,7 +1053,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                     </CardContent>
                   </Card>
                 ) : (
-                  nodes.map((node) => <NodeCard key={node.id} node={node} runId={run.id} canRestart={permissions.has('runs:replay')} onRestart={reconnect} uiLevel={uiLevel} />)
+                  nodes.map((node) => <NodeCard key={node.id} node={node} runId={run.id} canRestart={permissions.has('runs:replay')} onRestart={reconnect} uiLevel={uiLevel} artifactsTick={stream.events.filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length} />)
                 )}
               </div>
             </TabsContent>

@@ -743,5 +743,12 @@
     "snapshot_created": "Snapshot créé",
     "no_summaries": "Aucun contexte d'exécution capturé pour cette exécution",
     "amendment_86": "Amendement 86 — Contexte de prompt léger pour la transparence"
+  },
+  "run": {
+    "node": {
+      "artifacts": {
+        "title": "Fichiers générés"
+      }
+    }
   }
 }

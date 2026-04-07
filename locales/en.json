@@ -743,5 +743,12 @@
     "snapshot_created": "Snapshot created",
     "no_summaries": "No execution context captured for this run",
     "amendment_86": "Amendment 86 — Lightweight prompt context for transparency"
+  },
+  "run": {
+    "node": {
+      "artifacts": {
+        "title": "Generated files"
+      }
+    }
   }
 }

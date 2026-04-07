@@ -16,8 +16,9 @@ export type RunSSEEvent =
   | { type: 'human_gate';     gate_id: string; reason: string; data: unknown }
   | { type: 'budget_warning'; percent_used: number; remaining_usd: number }
   | { type: 'llm_fallback';   node_id: string; from: string; to: string; reason: string }
-  | { type: 'completed';      run: unknown; handoff_note: string }
-  | { type: 'error';          node_id: string; message: string }
+  | { type: 'completed';        run: unknown; handoff_note: string }
+  | { type: 'error';            node_id: string; message: string }
+  | { type: 'artifacts_ready';  node_id: string; artifact_count: number; filenames: string[] }
 
 export type ProjectLifecycleEvent =
   | { type: 'run_started';  profile: string; task_summary: string }
