@@ -113,7 +113,8 @@ Rules:
 - REVIEWER must be the final node (depends on all other leaf nodes).
 - dependencies contains node_ids that must complete first.
 - If meta.confidence < 85, the plan will require human approval before execution.
-- Max lateral delegations: 2.`
+- Max lateral delegations: 2.
+- CRITICAL: Maximum DAG depth is 4 levels. The longest chain of sequential nodes (longest path from any root node to REVIEWER) must not exceed 4 nodes. Use parallel branches (siblings with the same dependency) to scale width, not depth.`
 
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
@@ -275,7 +276,7 @@ export class Planner {
             parsed = JSON.parse(raw)
           } catch {
             const match = raw.match(/\{[\s\S]*\}/)
-            if (!match) throw new Error('no JSON object found in response')
+            if (!match || match[0] == null) throw new Error('no JSON object found in response')
             parsed = JSON.parse(match[0])
           }
         } catch {
