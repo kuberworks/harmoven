@@ -40,13 +40,14 @@ export default function NewRunPage({ params }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const [taskInput, setTaskInput]       = useState('')
+  const [taskInput, setTaskInput]         = useState('')
+  const [schemaInput, setSchemaInput]     = useState('')
   const [domainProfile, setDomainProfile] = useState('generic')
-  const [budgetUsd, setBudgetUsd]       = useState('')
-  const [error, setError]               = useState<string | null>(null)
-  const [loading, setLoading]           = useState(false)
-  const [parentRunIds, setParentRunIds] = useState<string[]>([])
-  const [parentLabels, setParentLabels] = useState<Record<string, string>>({})
+  const [budgetUsd, setBudgetUsd]         = useState('')
+  const [error, setError]                 = useState<string | null>(null)
+  const [loading, setLoading]             = useState(false)
+  const [parentRunIds, setParentRunIds]   = useState<string[]>([])
+  const [parentLabels, setParentLabels]   = useState<Record<string, string>>({})
 
   // Parse ?from=id1,id2,... and fetch the task_input for each parent to show in the banner
   useEffect(() => {
@@ -80,13 +81,30 @@ export default function NewRunPage({ params }: Props) {
 
     setLoading(true)
     try {
+      // Read parent_run_ids directly from searchParams as a fallback — guards
+      // against the edge case where the useEffect state update hasn't flushed.
+      const effectiveParentIds = parentRunIds.length > 0
+        ? parentRunIds
+        : (() => {
+            const from = searchParams.get('from')
+            return from ? from.split(',').map(s => s.trim()).filter(Boolean).slice(0, 5) : []
+          })()
+
+      const taskPayload: unknown =
+        schemaInput.trim()
+          ? (() => {
+              try { return { text: taskInput.trim(), schema: JSON.parse(schemaInput.trim()) } }
+              catch { return taskInput.trim() }
+            })()
+          : taskInput.trim()
+
       const body: Record<string, unknown> = {
         project_id:    projectId,
-        task_input:    taskInput.trim(),
+        task_input:    taskPayload,
         domain_profile: domainProfile,
       }
-      if (parentRunIds.length > 0) {
-        body['parent_run_ids'] = parentRunIds
+      if (effectiveParentIds.length > 0) {
+        body['parent_run_ids'] = effectiveParentIds
       }
       if (budgetUsd) {
         const v = parseFloat(budgetUsd)
@@ -167,8 +185,11 @@ export default function NewRunPage({ params }: Props) {
               <TaskInput
                 value={taskInput}
                 onChange={setTaskInput}
+                schemaValue={schemaInput}
+                onSchemaChange={setSchemaInput}
                 domainProfile={domainProfile}
-                maxLength={4000}
+                expertMode
+                maxLength={100_000}
               />
             </div>
 
