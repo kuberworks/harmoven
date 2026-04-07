@@ -69,13 +69,28 @@ const TIER: Record<Complexity, string> = {
 
 /**
  * Max output tokens per complexity tier.
- * Writers produce full file content — 4096 (the global default) is too small
- * for medium/high tasks and causes truncated JSON responses.
+ * Code/data profiles produce full file content with JSON-encoding overhead
+ * (newlines → \n, quotes → \") that inflates token count ~30-40% vs raw text.
+ * Values are set close to current provider maximums to avoid mid-output truncation.
  */
 const MAX_TOKENS: Record<Complexity, number> = {
-  low:    4096,
-  medium: 8192,
-  high:   16384,
+  low:    8_192,
+  medium: 16_384,
+  high:   32_768,
+}
+
+/**
+ * Profiles that produce code/data output need extra headroom because the LLM
+ * JSON-encodes special characters, inflating token usage. For these profiles the
+ * base MAX_TOKENS is multiplied by this factor (capped at provider max 32K).
+ */
+const CODE_PROFILES = new Set<ProfileId>([
+  'app_scaffolding', 'data_reporting', 'finance_modeling',
+])
+
+function maxTokensFor(complexity: Complexity, profile: ProfileId): number {
+  const base = MAX_TOKENS[complexity]
+  return CODE_PROFILES.has(profile) ? Math.min(base * 2, 65_536) : base
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -178,7 +193,7 @@ export class Writer {
 
     if (onChunk) {
       // Streaming does not retry (chunks already emitted to client)
-      const result = await this.llm.stream(messages, { model: tier, maxTokens: MAX_TOKENS[node.complexity], signal }, onChunk)
+      const result = await this.llm.stream(messages, { model: tier, maxTokens: maxTokensFor(node.complexity, node.domain_profile), signal }, onChunk)
       raw = result.content
       tokensIn = result.tokensIn
       tokensOut = result.tokensOut
@@ -186,7 +201,7 @@ export class Writer {
       modelUsed = result.model
     } else {
       const result = await withRetry(
-        () => this.llm.chat(messages, { model: tier, maxTokens: MAX_TOKENS[node.complexity], signal }),
+        () => this.llm.chat(messages, { model: tier, maxTokens: maxTokensFor(node.complexity, node.domain_profile), signal }),
         {
           signal,
           onRetry: (err, attempt) => {
