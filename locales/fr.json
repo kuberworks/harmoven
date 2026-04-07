@@ -750,6 +750,11 @@
         "title": "Fichiers générés",
         "downloadZip": "Télécharger en ZIP"
       },
+      "reviewer": {
+        "followupRuns": {
+          "title": "Pipelines complémentaires"
+        }
+      },
       "restart": "Redémarrer",
       "rerun": "Relancer"
     }

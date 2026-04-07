@@ -83,6 +83,15 @@ export type RunSSEEventArtifactsReady = {
   filenames:      string[]  // for UI display, not for download (use artifact IDs)
 }
 
+/** Emitted when the REVIEWER spawns follow-up runs (verdict SPAWN_FOLLOWUP). */
+export type RunSSEEventSpawnedFollowupRuns = {
+  type:     'spawned_followup_runs'
+  /** reviewer node_id that triggered the spawn. */
+  node_id:  string
+  /** IDs + labels of newly created runs, in order. */
+  runs:     Array<{ run_id: string; label: string }>
+}
+
 /**
  * Full discriminated union of all SSE event payloads.
  * Parsed from the `data` field of each `text/event-stream` message.
@@ -110,6 +119,7 @@ export type RunSSEEvent =
   | RunSSEEventCompleted
   | RunSSEEventError
   | RunSSEEventArtifactsReady
+  | RunSSEEventSpawnedFollowupRuns
 
 /** Project-level lifecycle events (emitted on /api/projects/:id/stream). */
 export type ProjectLifecycleEvent =

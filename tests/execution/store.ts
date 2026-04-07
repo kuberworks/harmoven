@@ -2,7 +2,7 @@
 // InMemoryRunStore — minimal in-memory ExecutorDb for unit tests.
 // Extracted from executor.ts so production code has zero test-only classes.
 
-import type { ExecutorDb } from '@/lib/execution/engine.interface'
+import type { ExecutorDb, SpawnRunData } from '@/lib/execution/engine.interface'
 
 /** Minimal in-memory DB that satisfies ExecutorDb — used in unit tests. */
 export class InMemoryRunStore implements ExecutorDb {
@@ -43,6 +43,12 @@ export class InMemoryRunStore implements ExecutorDb {
       if (!r) throw new Error(`Run not found: ${where.id}`)
       Object.assign(r, data)
       return r as unknown as ReturnType<ExecutorDb['run']['update']> extends Promise<infer T> ? T : never
+    },
+    create: async ({ data }: { data: SpawnRunData }) => {
+      const run = { ...data }
+      this._runs.set(run.id as string, run as unknown as Record<string, unknown>)
+      this._nodes.set(run.id as string, [])
+      return { id: run.id as string }
     },
   }
 
@@ -111,6 +117,18 @@ export class InMemoryRunStore implements ExecutorDb {
       }
       return { count } as unknown as ReturnType<ExecutorDb['node']['updateMany']> extends Promise<infer T> ? T : never
     },
+    createMany: async ({ data }: { data: unknown[] }) => {
+      let count = 0
+      for (const nodeData of data) {
+        const n = nodeData as Record<string, unknown>
+        const node = { id: crypto.randomUUID(), ...n }
+        const list = this._nodes.get(n['run_id'] as string) ?? []
+        list.push(node)
+        this._nodes.set(n['run_id'] as string, list)
+        count++
+      }
+      return { count }
+    },
   }
 
   handoff = {
@@ -148,5 +166,9 @@ export class InMemoryRunStore implements ExecutorDb {
       this._auditLog.push(data)
       return data
     },
+  }
+
+  runDependency = {
+    create: async (_args: unknown) => ({}),
   }
 }

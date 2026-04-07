@@ -1508,6 +1508,33 @@ components:
           type: string
           description: "Human-readable description of the event, error, or update."
 
+    RunSSEEventSpawnedFollowupRuns:
+      type: object
+      required: [type, node_id, runs]
+      description: "Emitted when a REVIEWER node completes with verdict `SPAWN_FOLLOWUP`. Each entry in `runs` is a newly created child run in the same project, automatically launched by the executor."
+      properties:
+        type:
+          type: string
+          enum: [spawned_followup_runs]
+          description: "SSE event type discriminator."
+        node_id:
+          type: string
+          description: "Identifier of the REVIEWER DAG node that triggered the spawn."
+        runs:
+          type: array
+          description: "List of spawned follow-up runs."
+          items:
+            type: object
+            required: [run_id, label]
+            properties:
+              run_id:
+                type: string
+                format: uuid
+                description: "UUID of the newly created child run."
+              label:
+                type: string
+                description: "Short human-readable label for this follow-up run, as determined by the Reviewer LLM. Displayed in the UI as a link."
+
     RunSSEEvent:
       oneOf:
         - $ref: '#/components/schemas/RunSSEEventInitial'
@@ -1518,6 +1545,7 @@ components:
         - $ref: '#/components/schemas/RunSSEEventLlmFallback'
         - $ref: '#/components/schemas/RunSSEEventCompleted'
         - $ref: '#/components/schemas/RunSSEEventError'
+        - $ref: '#/components/schemas/RunSSEEventSpawnedFollowupRuns'
       discriminator:
         propertyName: type
 

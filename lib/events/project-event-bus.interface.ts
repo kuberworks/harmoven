@@ -18,7 +18,8 @@ export type RunSSEEvent =
   | { type: 'llm_fallback';   node_id: string; from: string; to: string; reason: string }
   | { type: 'completed';        run: unknown; handoff_note: string }
   | { type: 'error';            node_id: string; message: string }
-  | { type: 'artifacts_ready';  node_id: string; artifact_count: number; filenames: string[] }
+  | { type: 'artifacts_ready';           node_id: string; artifact_count: number; filenames: string[] }
+  | { type: 'spawned_followup_runs';      node_id: string; runs: Array<{ run_id: string; label: string }> }
 
 export type ProjectLifecycleEvent =
   | { type: 'run_started';  profile: string; task_summary: string }

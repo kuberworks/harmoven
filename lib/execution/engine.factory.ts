@@ -31,9 +31,20 @@ import { projectEventBus as _defaultEventBus } from '@/lib/events/project-event-
  * the Proxy is properly resolved. Adds findOrphaned via a raw findMany call.
  */
 class PrismaExecutorDb implements ExecutorDb {
-  get run()       { return _prismaDb.run       as unknown as ExecutorDb['run'] }
+  get run(): ExecutorDb['run'] {
+    return {
+      findUniqueOrThrow: (args) => (_prismaDb.run.findUniqueOrThrow as Function)(args),
+      update:            (args) => (_prismaDb.run.update            as Function)(args),
+      create:            (args) => (_prismaDb.run.create            as Function)(args),
+    }
+  }
   get humanGate() { return _prismaDb.humanGate as unknown as ExecutorDb['humanGate'] }
   get auditLog()  { return _prismaDb.auditLog  as unknown as ExecutorDb['auditLog'] }
+  get runDependency(): ExecutorDb['runDependency'] {
+    return {
+      create: (args) => (_prismaDb.runDependency.create as Function)(args),
+    }
+  }
 
   get handoff(): ExecutorDb['handoff'] {
     return {
@@ -53,6 +64,7 @@ class PrismaExecutorDb implements ExecutorDb {
       create:       (args) => (_prismaDb.node.create     as Function)(args),
       update:       (args) => (_prismaDb.node.update     as Function)(args),
       updateMany:   (args) => (_prismaDb.node.updateMany as Function)(args),
+      createMany:   (args) => (_prismaDb.node.createMany as Function)(args),
       /** Return all RUNNING nodes with last_heartbeat before the given threshold. */
       findOrphaned: ({ before }: { before: Date }) =>
         (_prismaDb.node.findMany as Function)({

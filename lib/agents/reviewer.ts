@@ -15,7 +15,18 @@ import { withRetry } from '@/lib/utils/retry'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ReviewVerdict = 'APPROVE' | 'REQUEST_REVISION' | 'ESCALATE_HUMAN'
+export type ReviewVerdict = 'APPROVE' | 'REQUEST_REVISION' | 'ESCALATE_HUMAN' | 'SPAWN_FOLLOWUP'
+
+/**
+ * A follow-up run the reviewer wants to spawn automatically.
+ * Each task is passed as task_input to a new run in the same project.
+ */
+export interface FollowupTask {
+  /** Short label displayed in the UI (e.g. "Generate budget summary PDF"). */
+  label: string
+  /** Full task description sent as the new run's task_input. */
+  task: string
+}
 
 export interface ReviewFinding {
   severity: 'info' | 'warning' | 'error'
@@ -35,6 +46,11 @@ export interface ReviewerOutput {
   overall_confidence_rationale: string
   /** Reviewer-reformatted Markdown consolidation. Set only when writer output(s) lack Markdown structure. */
   formatted_content?: string
+  /**
+   * Follow-up runs to spawn automatically (only present when verdict is SPAWN_FOLLOWUP).
+   * Each entry yields a new independent run in the same project with this run as parent.
+   */
+  followup_tasks?: FollowupTask[]
   meta: {
     llm_used: string
     tokens_input: number
@@ -83,7 +99,7 @@ You will receive the outputs from all Writer nodes. Review them against the univ
 and any profile-specific rules, then respond ONLY with valid JSON matching this schema:
 
 {
-  "verdict": "<APPROVE | REQUEST_REVISION | ESCALATE_HUMAN>",
+  "verdict": "<APPROVE | REQUEST_REVISION | ESCALATE_HUMAN | SPAWN_FOLLOWUP>",
   "findings": [
     {
       "severity": "<info | warning | error>",
@@ -94,7 +110,10 @@ and any profile-specific rules, then respond ONLY with valid JSON matching this 
   ],
   "overall_confidence": <integer 0-100>,
   "overall_confidence_rationale": "<brief explanation>",
-  "formatted_content": "<optional — see Formatting instruction below>"
+  "formatted_content": "<optional — see Formatting instruction below>",
+  "followup_tasks": [
+    { "label": "<short UI label>", "task": "<full task description for the new run>" }
+  ]
 }
 
 Universal checklist:
@@ -113,8 +132,21 @@ Profile-specific rules:
 
 Verdict rules:
 - APPROVE: no errors, warnings are acceptable
-- REQUEST_REVISION: at least one error finding
-- ESCALATE_HUMAN: fundamental ambiguity or budget/scope blocker
+- REQUEST_REVISION: at least one error finding that the WRITER nodes can fix by revising their work
+- ESCALATE_HUMAN: fundamental ambiguity or budget/scope blocker requiring human judgement
+- SPAWN_FOLLOWUP: the current output is acceptable OR covers what was asked, but the overall
+  goal requires additional independent work that cannot be done by revising the existing nodes
+  (e.g. the run produced an Excel planning file but the user also needs a PDF summary, or a
+  data-export run completed but a separate visualisation dashboard is still needed)
+
+SPAWN_FOLLOWUP rules (IMPORTANT — only use when genuinely needed):
+- Use SPAWN_FOLLOWUP only when additional VALUE-ADDING work is clearly implied by the task but
+  was not covered by the current run's scope.
+- Do NOT use SPAWN_FOLLOWUP to compensate for errors — use REQUEST_REVISION instead.
+- Do NOT invent unnecessary follow-up tasks. Maximum 3 follow-up tasks per review.
+- Each follow-up task must have a concise "label" (max 60 chars, visible in UI) and a
+  complete, self-contained "task" description that a new run can execute independently.
+- Set "followup_tasks" ONLY when verdict is SPAWN_FOLLOWUP. Omit it entirely otherwise.
 
 Formatting instruction:
 - Examine whether the writer outputs use proper Markdown structure (headings ##/###, bullet lists, bold, code blocks).
@@ -143,7 +175,7 @@ function recoverTruncatedReviewerJson(raw: string): Record<string, unknown> | nu
   const verdictMatch = raw.match(/"verdict"\s*:\s*"([^"]+)"/)
   if (!verdictMatch) return null
   const verdict = verdictMatch[1]
-  if (!['APPROVE', 'REQUEST_REVISION', 'ESCALATE_HUMAN'].includes(verdict!)) return null
+  if (!['APPROVE', 'REQUEST_REVISION', 'ESCALATE_HUMAN', 'SPAWN_FOLLOWUP'].includes(verdict!)) return null
 
   // Extract all complete finding objects (must have all 4 required fields).
   const findings: ReviewFinding[] = []
@@ -259,9 +291,9 @@ export class Reviewer {
     }
 
     const p = parsed as Record<string, unknown>
-    if (!['APPROVE', 'REQUEST_REVISION', 'ESCALATE_HUMAN'].includes(p['verdict'] as string)) {
+    if (!['APPROVE', 'REQUEST_REVISION', 'ESCALATE_HUMAN', 'SPAWN_FOLLOWUP'].includes(p['verdict'] as string)) {
       throw new Error(
-        `Reviewer: invalid verdict "${p['verdict']}" — must be APPROVE | REQUEST_REVISION | ESCALATE_HUMAN`,
+        `Reviewer: invalid verdict "${p['verdict']}" — must be APPROVE | REQUEST_REVISION | ESCALATE_HUMAN | SPAWN_FOLLOWUP`,
       )
     }
 
@@ -282,6 +314,14 @@ export class Reviewer {
       overall_confidence_rationale: p['overall_confidence_rationale'] as string,
       ...(typeof p['formatted_content'] === 'string' && p['formatted_content']
         ? { formatted_content: p['formatted_content'] as string }
+        : {}),
+      ...(p['verdict'] === 'SPAWN_FOLLOWUP' && Array.isArray(p['followup_tasks']) && p['followup_tasks'].length > 0
+        ? {
+            followup_tasks: (p['followup_tasks'] as Array<Record<string, unknown>>)
+              .filter(t => typeof t['label'] === 'string' && typeof t['task'] === 'string')
+              .slice(0, 3)  // cap at 3 — enforced server-side too
+              .map(t => ({ label: t['label'] as string, task: t['task'] as string }))
+          }
         : {}),
       meta: {
         llm_used: result.model,
