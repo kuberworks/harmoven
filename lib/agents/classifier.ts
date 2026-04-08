@@ -10,7 +10,10 @@
 // - Real LLM wired in T1.9; MockLLMClient used in all unit tests.
 
 import type { ILLMClient } from '@/lib/llm/interface'
+import type { DesiredOutput } from '@/lib/agents/handoff'
+import { DesiredOutputSchema } from '@/lib/agents/handoff'
 import { withRetry } from '@/lib/utils/retry'
+import { z } from 'zod'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +73,12 @@ export interface ClassifierResult {
   user_confirmation_text: string
   /** Derived: true when confidence < 80 → UI shows clarification flow. */
   requires_clarification: boolean
+  /**
+   * Optional list of output formats detected from user intent.
+   * Set only when the intent is unambiguous (e.g. "export to CSV").
+   * Spec: multi-format-artifact-output.feature.md Part 1 §1.1
+   */
+  desired_outputs?: DesiredOutput[]
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -88,7 +97,10 @@ Given a user's free-text input, classify the intent and output ONLY valid JSON m
   "confidence_rationale": "<brief explanation of confidence level>",
   "clarification_questions": ["<question 1>"],
   "fallback_profile": "generic",
-  "user_confirmation_text": "<plain language banner shown to user when confidence >= 80>"
+  "user_confirmation_text": "<plain language banner shown to user when confidence >= 80>",
+  "desired_outputs": [
+    { "format": "<txt|csv|json|yaml|html|md|py|ts|js|sh|docx|pdf>", "description": "<what this file contains>", "produced_by": "<writer|python>" }
+  ]
 }
 
 Available profiles:
@@ -109,7 +121,25 @@ Rules:
 - If confidence >= 80: clarification_questions = []
 - If confidence < 80: include 2–3 targeted clarification questions
 - Output ONLY the JSON object. No markdown fence, no prose.
-- Be concise — the full response must fit in 1024 tokens.`
+- Be concise — the full response must fit in 1024 tokens.
+
+OPTIONAL OUTPUT FORMAT DETECTION:
+If the user explicitly requests a specific file format or document type, add a
+"desired_outputs" array. Only set this if the intent is unambiguous.
+
+Examples that SHOULD set desired_outputs:
+- "generate a Word report" → [{ "format": "docx", "description": "final report", "produced_by": "writer" }]
+- "export to CSV" → [{ "format": "csv", "description": "exported data", "produced_by": "writer" }]
+- "write a Python script" → [{ "format": "py", "description": "Python script", "produced_by": "python" }]
+- "create a JSON config file" → [{ "format": "json", "description": "configuration file", "produced_by": "writer" }]
+
+Examples that should NOT set desired_outputs (format is ambiguous):
+- "generate a report" (no format specified)
+- "create a document" (no format specified)
+- "write some content" (no format specified)
+
+Do NOT set desired_outputs if the intent is ambiguous — it is better to omit it than to guess.
+Omit the "desired_outputs" key entirely when not applicable.`
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -152,6 +182,16 @@ function validateClassifierResponse(raw: Record<string, unknown>): ClassifierRes
     ? (raw['clarification_questions'] as string[]).slice(0, 3)
     : []
 
+  // Parse optional desired_outputs — invalid or badly-shaped entries are silently dropped.
+  let desiredOutputs: DesiredOutput[] | undefined
+  if (Array.isArray(raw['desired_outputs']) && (raw['desired_outputs'] as unknown[]).length > 0) {
+    const DesiredOutputArraySchema = z.array(DesiredOutputSchema)
+    const doResult = DesiredOutputArraySchema.safeParse(raw['desired_outputs'])
+    if (doResult.success && doResult.data.length > 0) {
+      desiredOutputs = doResult.data
+    }
+  }
+
   return {
     classifier_version: (raw['classifier_version'] as string) ?? '1.0',
     input_summary: raw['input_summary'] as string,
@@ -166,6 +206,7 @@ function validateClassifierResponse(raw: Record<string, unknown>): ClassifierRes
       : 'generic',
     user_confirmation_text: userConfirmationText,
     requires_clarification: confidence < 80,
+    desired_outputs: desiredOutputs,
   }
 }
 
