@@ -13,6 +13,7 @@
 import type { ILLMClient } from '@/lib/llm/interface'
 import type { ClassifierResult, ProfileId } from '@/lib/agents/classifier'
 import { withRetry } from '@/lib/utils/retry'
+import { PlannerHandoffSchema } from '@/lib/agents/handoff'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,6 +110,10 @@ Output ONLY valid JSON matching this schema — no markdown, no prose:
 }
 
 Rules:
+- VALID "agent" values for dag.nodes: WRITER, PYTHON_EXECUTOR, REVIEWER only.
+  PLANNER, CLASSIFIER, and any other value are FORBIDDEN in dag.nodes — if you output
+  a node with "agent": "PLANNER" or "agent": "CLASSIFIER" the entire plan is rejected.
+  You are the one-and-only Planner; you do NOT recurse or spawn another Planner.
 - Use WRITER for prose, text, and code generation — EXCEPT when the task requires
   downloadable binary files (Excel, CSV, PDF, image, etc.): in that case you MUST follow
   the PYTHON_EXECUTOR rule below. NEVER use WRITER to output a JSON description or text
@@ -343,10 +348,20 @@ export class Planner {
         const dag = raw['dag'] as PlannerHandoff['dag']
         validateDag(dag)
 
-        return {
-          ...(raw as Omit<PlannerHandoff, 'requires_human_approval'>),
+        // Full Zod schema validation — catches invalid agent types (e.g. "PLANNER"),
+        // bad enum values, missing required fields. Must run AFTER validateDag so that
+        // structural errors (cycles, missing refs) produce better error messages.
+        const zodResult = PlannerHandoffSchema.safeParse({
+          ...raw,
           requires_human_approval: confidence < 85,
+        })
+        if (!zodResult.success) {
+          throw new Error(
+            `Planner: schema validation failed — ${zodResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('; ')}`,
+          )
         }
+
+        return zodResult.data
       } catch (err) {
         // Never retry on abort — it's an intentional cancellation.
         if (err instanceof DOMException && err.name === 'AbortError') throw err
