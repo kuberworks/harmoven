@@ -310,7 +310,6 @@ model Run {
   budget_tokens        Int?
   cost_actual_usd      Decimal   @default(0) @db.Decimal(10, 4)
   tokens_actual        Int       @default(0)
-  primary_artifact_id  String?
   confidentiality      String?
   regulatory_contexts  Json?
   started_at                DateTime?
@@ -1035,18 +1034,16 @@ model MarketplaceRegistry {
 // Artifacts are scoped to a run+node pair and expire after 90 days via cron.
 
 model RunArtifact {
-  id             String   @id @default(uuid())
-  run_id         String
-  node_id        String   // DAG node_id e.g. "n3"
-  run            Run      @relation(fields: [run_id], references: [id], onDelete: Cascade)
-  filename       String   // sanitised, e.g. "report.xlsx"
-  mime_type      String   // from ALLOWED_MIME whitelist
-  size_bytes     Int
-  data           Bytes    // raw binary content
-  created_at     DateTime @default(now())
-  expires_at     DateTime // created_at + 90 days
-  artifact_role  String   @default("pending_review")
-  // Valeurs : "pending_review" | "primary" | "supplementary" | "discarded"
+  id          String   @id @default(uuid())
+  run_id      String
+  node_id     String   // DAG node_id e.g. "n3"
+  run         Run      @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  filename    String   // sanitised, e.g. "report.xlsx"
+  mime_type   String   // from ALLOWED_MIME whitelist
+  size_bytes  Int
+  data        Bytes    // raw binary content
+  created_at  DateTime @default(now())
+  expires_at  DateTime // created_at + 90 days
 
   @@index([run_id])
 }
