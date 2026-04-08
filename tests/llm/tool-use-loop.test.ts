@@ -86,9 +86,10 @@ describe('MockLLMClient — one tool_call iteration', () => {
 
     expect(result.content).toBe('the answer is: pong')
     expect(result.tool_calls_trace).toHaveLength(1)
-    expect(result.tool_calls_trace![0].iteration).toBe(1)
-    expect(result.tool_calls_trace![0].tool_calls).toEqual(toolCallMade)
-    expect(result.tool_calls_trace![0].tool_results[0].content).toBe('echo: ping')
+    const iter0 = result.tool_calls_trace![0]!
+    expect(iter0.iteration).toBe(1)
+    expect(iter0.tool_calls).toEqual(toolCallMade)
+    expect(iter0.tool_results[0]!.content).toBe('echo: ping')
     expect(executorCalls).toHaveLength(1)
   })
 
@@ -140,8 +141,8 @@ describe('ToolInjectionLLMClient', () => {
     const client = new ToolInjectionLLMClient(inner, [ECHO_TOOL], toolExecutor)
     await client.chat(SYSTEM_MESSAGES, BASE_OPTIONS)
 
-    expect(capturedOptions[0].tools).toEqual([ECHO_TOOL])
-    expect(capturedOptions[0].toolExecutor).toBe(toolExecutor)
+    expect(capturedOptions[0]!.tools).toEqual([ECHO_TOOL])
+    expect(capturedOptions[0]!.toolExecutor).toBe(toolExecutor)
   })
 
   it('forwards tools and toolExecutor to inner.stream()', async () => {
@@ -162,8 +163,8 @@ describe('ToolInjectionLLMClient', () => {
     const chunks: string[] = []
     await client.stream(SYSTEM_MESSAGES, BASE_OPTIONS, c => chunks.push(c))
 
-    expect(capturedOptions[0].tools).toEqual([ECHO_TOOL])
-    expect(capturedOptions[0].toolExecutor).toBe(toolExecutor)
+    expect(capturedOptions[0]!.tools).toEqual([ECHO_TOOL])
+    expect(capturedOptions[0]!.toolExecutor).toBe(toolExecutor)
   })
 
   it('does not override tools already in options (merges with spread, options wins)', async () => {
@@ -179,7 +180,7 @@ describe('ToolInjectionLLMClient', () => {
     const client = new ToolInjectionLLMClient(inner, injectedTools, async c => c.map(tc => ({ tool_call_id: tc.id, content: '' })))
     await client.chat(SYSTEM_MESSAGES, BASE_OPTIONS)
 
-    expect(captured[0].tools).toEqual(injectedTools)
+    expect(captured[0]!.tools).toEqual(injectedTools)
   })
 
   it('preserves original options fields (model, maxTokens, etc.)', async () => {
@@ -192,8 +193,8 @@ describe('ToolInjectionLLMClient', () => {
     const client = new ToolInjectionLLMClient(inner, [ECHO_TOOL], async c => c.map(tc => ({ tool_call_id: tc.id, content: '' })))
     await client.chat(SYSTEM_MESSAGES, { ...BASE_OPTIONS, model: 'powerful', maxTokens: 2048 })
 
-    expect(captured[0].model).toBe('powerful')
-    expect(captured[0].maxTokens).toBe(2048)
+    expect(captured[0]!.model).toBe('powerful')
+    expect(captured[0]!.maxTokens).toBe(2048)
   })
 })
 
