@@ -229,8 +229,18 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
 - File names must use only letters, digits, dots, hyphens, underscores, and forward slashes
   for subdirectory paths (e.g. 'src/main/java/App.java'). No spaces, no accents.
 - The code runs in Pyodide (Python 3.11 WASM). All standard library modules are available.
-  Popular packages (openpyxl, pandas, matplotlib, reportlab) are auto-installed.
+  Popular packages (openpyxl, pandas, matplotlib, plotly, seaborn, reportlab, Pillow, scipy,
+  scikit-learn, networkx) are auto-installed on demand.
 - Do not include any top-level async code; use synchronous code only.
+- UNAVAILABLE in this runtime — NEVER generate code that uses these libraries:
+    torch, tensorflow, keras, jax           — no CUDA/native binaries in WASM
+    pydub, moviepy, ffmpeg-python           — require the ffmpeg binary (not present)
+    psycopg2, asyncpg                       — require native libpq
+    grpcio                                  — requires native bindings + TCP
+    tkinter, PyQt5, wx                      — GUI toolkits, no display
+    multiprocessing.Pool, subprocess        — fork/exec not available in WASM
+  If the user's task requires one of these libraries, output a Python script that
+  raises RuntimeError with a clear explanation rather than silently failing.
 - Do NOT output JSON that describes what the file contains — output only the Python code.`
 }
 
