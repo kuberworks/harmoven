@@ -59,6 +59,7 @@ const CreateRunBody = z.object({
   // Run chaining: IDs of completed runs whose outputs feed into this run.
   // Max 5 parents; each must be COMPLETED and belong to the same project.
   parent_run_ids:    z.array(z.string().uuid()).max(5).optional(),
+  enable_web_search: z.boolean().optional().default(false),
 }).strict()
 
 export async function GET(req: NextRequest) {
@@ -231,7 +232,7 @@ export async function POST(req: NextRequest) {
       domain_profile:   body.domain_profile,
       task_input:       body.task_input as Prisma.InputJsonValue,
       dag:              initialDag,
-      run_config:       { providers: [] },
+      run_config:       { providers: [], ...(body.enable_web_search ? { enable_web_search: true } : {}) },
       transparency_mode: body.transparency_mode ?? false,
       // Section 18: use the higher of the caller-supplied level and the local classifier result.
       confidentiality:  effectiveConfidentiality,

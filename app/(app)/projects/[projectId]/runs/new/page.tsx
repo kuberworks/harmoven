@@ -44,6 +44,7 @@ export default function NewRunPage({ params }: Props) {
   const [schemaInput, setSchemaInput]           = useState('')
   const [domainProfile, setDomainProfile]       = useState('generic')
   const [outputFileFormat, setOutputFileFormat] = useState('')
+  const [enableWebSearch, setEnableWebSearch]   = useState(false)
   const [budgetUsd, setBudgetUsd]               = useState('')
   const [error, setError]                 = useState<string | null>(null)
   const [loading, setLoading]             = useState(false)
@@ -109,6 +110,9 @@ export default function NewRunPage({ params }: Props) {
       }
       if (outputFileFormat) {
         body['output_file_format'] = outputFileFormat
+      }
+      if (enableWebSearch) {
+        body['enable_web_search'] = true
       }
       if (budgetUsd) {
         const v = parseFloat(budgetUsd)
@@ -243,6 +247,29 @@ export default function NewRunPage({ params }: Props) {
                   onChange={(e) => setBudgetUsd(e.target.value)}
                   placeholder="e.g. 2.00"
                 />
+              </div>
+            </div>
+
+            <div className="flex flex-row items-start gap-3 rounded-md border border-border p-4">
+              <input
+                id="enable_web_search"
+                type="checkbox"
+                checked={enableWebSearch}
+                onChange={(e) => setEnableWebSearch(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border accent-amber-500 cursor-pointer"
+              />
+              <div className="space-y-1 leading-none">
+                <Label htmlFor="enable_web_search" className="cursor-pointer">
+                  🌐 Real-time web search
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Allows agents to search for current information on the web. May increase run duration and cost.
+                </p>
+                {enableWebSearch && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠️ Search queries may expose terms from your prompt to the search API (Brave/Tavily). Avoid if your request contains sensitive information.
+                  </p>
+                )}
               </div>
             </div>
 
