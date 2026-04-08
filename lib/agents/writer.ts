@@ -218,6 +218,9 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
   openpyxl: workbook.save('filename.xlsx')
   pandas:   df.to_csv('filename.csv', index=False)  or  df.to_excel('filename.xlsx', index=False)
   matplotlib: plt.savefig('filename.png', dpi=150, bbox_inches='tight')
+  NOTE — do NOT call matplotlib.use('Agg') or plt.switch_backend(): the platform
+  sets MPLBACKEND=Agg automatically before execution. Calling it explicitly is a no-op
+  at best and may emit warnings.
   reportlab: canvas.save()  or  doc.build(story)
   project files: os.makedirs('path/to/dir', exist_ok=True) then open('path/to/file.ext', 'w').write(content)
 - IMPORTANT — for project scaffolds (source code projects with multiple files):
