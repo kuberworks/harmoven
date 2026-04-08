@@ -33,6 +33,7 @@ import { PlannerExhaustionError } from '@/lib/agents/planner'
 import type { PlannerHandoff }     from '@/lib/agents/planner'
 import { gateTimeoutAt }          from '@/lib/execution/gate-timeout'
 import { AgentCostError }         from '@/lib/agents/agent-cost-error'
+import { promoteOrphanArtifacts } from '@/lib/agents/runner'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -884,6 +885,11 @@ export class CustomExecutor implements IExecutionEngine {
         // `state_change` event already applied, causing the UI to show "running"
         // even after the run has finished.
         if (finalStatus === 'COMPLETED') {
+          // C4 — auto-promote pending_review artifacts when run finishes without a REVIEWER
+          // (spec §1.8a): if there are artifacts still in 'pending_review', promote them to 'primary'.
+          await promoteOrphanArtifacts(runId).catch(err =>
+            console.error(`[executor] C4 artifact promotion failed for run ${runId}:`, err),
+          )
           this._emit(runId, {
             type: 'completed',
             run: {
