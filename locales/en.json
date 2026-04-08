@@ -760,6 +760,11 @@
         "in_progress": "\uD83C\uDF10 Searching the web\u2026",
         "results": "results"
       },
+      "image_gen": {
+        "generating": "\uD83D\uDDBC\uFE0F Generating image\u2026",
+        "failed": "Image generation failed. Please try again.",
+        "no_provider": "No image generation provider is configured."
+      },
       "restart": "Restart",
       "rerun": "Re-run"
     },

@@ -631,7 +631,7 @@ components:
         agent_type:
           description: "Type of AI agent executing this node. Determines the system prompt template, available tools, and expected handoff schema. The executor validates the handoff output against the declared agent type."
           type: string
-          enum: [classifier, planner, writer, reviewer, critical_reviewer, eval, smoke_test, repair, human_gate]
+          enum: [classifier, planner, writer, reviewer, critical_reviewer, eval, smoke_test, repair, human_gate, image_gen]
         label:
           type: string
           description: "Short human-readable label for this DAG node, shown in the run visualisation graph. Does not affect execution."
@@ -975,6 +975,11 @@ components:
           description: "Optional base URL overriding the provider's default API endpoint. Required for self-hosted Ollama instances, OpenAI-compatible proxies (CometAPI), or private deployments. Validated against the SSRF blocklist before saving."
           type: [string, 'null']
           format: uri
+        modality:
+          type: string
+          enum: [text, image, multimodal]
+          default: text
+          description: "Modality supported by this model. `text` (default) = language model. `image` = image generation model (DALL-E, Imagen). `multimodal` = both text and image. The executor routes IMAGE_GEN DAG nodes to profiles with modality=image."
 
     # ── Analytics ─────────────────────────────────────────────────────────────
     AnalyticsSummary:

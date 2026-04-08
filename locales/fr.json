@@ -760,6 +760,11 @@
         "in_progress": "\uD83C\uDF10 Recherche sur internet\u2026",
         "results": "résultats"
       },
+      "image_gen": {
+        "generating": "\uD83D\uDDBC\uFE0F Génération de l'image\u2026",
+        "failed": "La génération d'image a échoué. Veuillez réessayer.",
+        "no_provider": "Aucun fournisseur de génération d'images n'est configuré."
+      },
       "restart": "Redémarrer",
       "rerun": "Relancer"
     },
