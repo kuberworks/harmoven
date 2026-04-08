@@ -113,12 +113,21 @@ export async function convertToFile(
       return { bytes: Buffer.from(stripped, 'utf-8'), filename, mimeType: MIME_MAP[format] }
     }
 
-    case 'docx':
-    case 'pdf':
-      throw new Error(
-        `Phase B — "${format}" converter not yet implemented. ` +
-        'Use the mf-phase7-docx-pdf-converters task.',
-      )
+    case 'docx': {
+      const { markdownToDocx } = await import('./to-docx')
+      const bytes = await markdownToDocx(content)
+      return {
+        bytes,
+        filename,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }
+    }
+
+    case 'pdf': {
+      const { markdownToPdf } = await import('./to-pdf')
+      const bytes = await markdownToPdf(content)
+      return { bytes, filename, mimeType: 'application/pdf' }
+    }
 
     default: {
       // Exhaustiveness check
