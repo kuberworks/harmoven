@@ -8,6 +8,7 @@
 import OpenAI from 'openai'
 import type { ILLMClient, ChatMessage, ChatOptions, ChatResult } from '@/lib/llm/interface'
 import { validateLLMBaseUrl } from '@/lib/security/ssrf-protection'
+import { runOpenAIToolLoop } from '@/lib/llm/client'
 
 export class LiteLLMClient implements ILLMClient {
   readonly name = 'litellm'
@@ -41,6 +42,17 @@ export class LiteLLMClient implements ILLMClient {
   async chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const client = await this.getClient()
+
+    // If tools present, use the shared OpenAI-compatible agentic loop
+    if (options.tools?.length && options.toolExecutor) {
+      return runOpenAIToolLoop(
+        client,
+        { model_string: options.model },
+        messages.map(m => ({ role: m.role, content: m.content })),
+        options,
+        options.signal,
+      )
+    }
 
     // Use .withResponse() to access the x-litellm-cost HTTP response header.
     // LiteLLM proxies track per-call cost server-side and return it in this header.
