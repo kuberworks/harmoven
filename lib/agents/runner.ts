@@ -58,6 +58,36 @@ function asProfileId(v: unknown): ProfileId {
 }
 
 /**
+ * Detect whether a WRITER output should be saved as a downloadable artifact
+ * rather than rendered inline as text. Returns artifact metadata, or null if
+ * the content can be rendered as Markdown / plain text.
+ *
+ * Currently handles:
+ *   - HTML: content starts with <!DOCTYPE html or <html, or contains <body>
+ *           (even if the writer declared output.type = "document")
+ */
+function detectArtifactFormat(output: WriterOutput): { filename: string; mime: string } | null {
+  const content = output.output.content
+  const trimmed = content.trimStart()
+  const lower   = trimmed.slice(0, 500).toLowerCase()
+
+  const isHtml =
+    lower.startsWith('<!doctype html') ||
+    lower.startsWith('<html') ||
+    /<body[\s>]/.test(lower) ||
+    output.output.type === 'html' ||
+    output.output.type === 'web_page'
+
+  if (isHtml) {
+    return {
+      filename: `output-${output.source_node_id}.html`,
+      mime:     'text/html; charset=utf-8',
+    }
+  }
+  return null
+}
+
+/**
  * Sanitize a user-supplied task description before passing it to a Planner or Classifier.
  *
  * Context: task_input is authored by an authenticated user (not an external attacker), so the
@@ -371,6 +401,44 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         const result = await new Reviewer(captureClient).review(
           writerOutputs, profile, node.run_id, signal, outputLanguage, taskContext,
         )
+
+        // Persist non-text writer outputs (e.g. HTML) as downloadable RunArtifact rows.
+        // The Reviewer runs after all Writers — it is the right place to inspect outputs
+        // that cannot be rendered inline (not Markdown, not plain text).
+        const nonTextOutputs = writerOutputs
+          .map(w => ({ w, fmt: detectArtifactFormat(w) }))
+          .filter((x): x is { w: WriterOutput; fmt: NonNullable<ReturnType<typeof detectArtifactFormat>> } => x.fmt !== null)
+
+        if (nonTextOutputs.length > 0) {
+          const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+          await db.runArtifact.createMany({
+            data: nonTextOutputs.map(({ w, fmt }) => ({
+              run_id:     node.run_id,
+              node_id:    w.source_node_id,
+              filename:   fmt.filename,
+              mime_type:  fmt.mime,
+              size_bytes: Buffer.byteLength(w.output.content, 'utf8'),
+              data:       Buffer.from(w.output.content, 'utf8'),
+              expires_at: expiresAt,
+            })),
+          })
+          // SSE so the UI download section updates without polling
+          const runForProject = await db.run.findUnique({ where: { id: node.run_id }, select: { project_id: true } })
+          if (runForProject) {
+            void projectEventBus.emit({
+              project_id: runForProject.project_id,
+              run_id:     node.run_id,
+              event: {
+                type:           'artifacts_ready',
+                node_id:        node.node_id,
+                artifact_count: nonTextOutputs.length,
+                filenames:      nonTextOutputs.map(x => x.fmt.filename),
+              },
+              emitted_at: new Date(),
+            })
+          }
+        }
+
         return {
           handoffOut: result,
           costUsd:   contextualLlm.totalCostUsd,
