@@ -408,6 +408,11 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
   // PYTHON_EXECUTOR stores output in handoff.stdout rather than handoff.output.content
   const stdout        = (handoff?.['stdout'] as string | undefined) ?? null
   const hasOutput     = !!outputContent || !!node.partial_output || !!stdout
+  // The settled text shown in the expanded panel (not stdout, not streaming)
+  const outputText    = outputContent
+    ?? (node.partial_output ? extractStreamingContent(node.partial_output) : null)
+    ?? null
+  const renderAsMarkdown = !!outputText && looksLikeMarkdown(outputText)
 
   const durationMs = node.started_at && node.completed_at
     ? new Date(node.completed_at).getTime() - new Date(node.started_at).getTime()
@@ -488,11 +493,23 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
               {outputType && <span className="text-xs text-muted-foreground/50 font-mono">{outputType}</span>}
             </div>
           )}
-          <pre className="p-4 text-xs text-foreground/90 font-mono whitespace-pre-wrap break-words leading-relaxed">
-            {outputContent
-              ?? (node.partial_output ? extractStreamingContent(node.partial_output) : null)
-              ?? stdout}
-          </pre>
+          {outputText && renderAsMarkdown && (
+            <div className="p-4 prose prose-sm dark:prose-invert max-w-none text-foreground/90 [&_pre]:bg-surface-raised [&_pre]:border [&_pre]:border-surface-border [&_pre]:rounded [&_pre]:p-3 [&_pre]:overflow-x-auto [&_code]:font-mono [&_code]:text-xs">
+              <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
+                {outputText}
+              </ReactMarkdown>
+            </div>
+          )}
+          {outputText && !renderAsMarkdown && (
+            <pre className="p-4 text-xs text-foreground/90 whitespace-pre-wrap break-words leading-relaxed">
+              {outputText}
+            </pre>
+          )}
+          {!outputText && stdout && (
+            <pre className="p-4 text-xs text-foreground/90 font-mono whitespace-pre-wrap break-words leading-relaxed">
+              {stdout}
+            </pre>
+          )}
         </div>
       )}
 
