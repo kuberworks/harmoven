@@ -106,6 +106,17 @@ export type RunSSEEventArtifactReady = {
   artifact_role: 'pending_review' | 'primary' | 'supplementary'
 }
 
+/** Emitted after each individual web search tool call during a WRITER node execution. */
+export type RunSSEEventToolCallProgress = {
+  type:          'tool_call_progress'
+  node_id:       string
+  tool_name:     string       // 'web_search'
+  iteration:     number       // 1-based
+  query?:        string       // for web_search: the query sent
+  result_count?: number       // for web_search: number of results returned
+  is_error:      boolean
+}
+
 /**
  * Full discriminated union of all SSE event payloads.
  * Parsed from the `data` field of each `text/event-stream` message.
@@ -134,6 +145,7 @@ export type RunSSEEvent =
   | RunSSEEventError
   | RunSSEEventArtifactsReady
   | RunSSEEventArtifactReady
+  | RunSSEEventToolCallProgress
   | RunSSEEventSpawnedFollowupRuns
 
 /** Project-level lifecycle events (emitted on /api/projects/:id/stream). */
