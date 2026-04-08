@@ -36,6 +36,8 @@ export interface WriterNodeInput {
   inputs: Record<string, unknown>
   domain_profile: ProfileId
   run_id: string
+  /** When set, the Writer is instructed to output raw format content (no fences/prose). */
+  output_file_format?: string
 }
 
 export interface WriterOutput {
@@ -127,6 +129,48 @@ function maxTokensFor(complexity: Complexity, profile: ProfileId): number {
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
+
+/**
+ * Build a structured-output instruction suffix for WRITER nodes that specify
+ * an explicit `output_file_format`. Instructs the LLM to output raw format
+ * content only — no markdown fences, no prose preamble.
+ *
+ * Spec: multi-format-artifact-output.feature.md Part 1 §1.5
+ */
+export function buildWriterSystemPrompt(format?: string): string {
+  if (!format) return ''
+  const descriptions: Record<string, string> = {
+    txt:  'plain text',
+    csv:  'CSV — first line is the header, comma-separated, no markdown',
+    json: 'JSON — valid, parseable JSON object or array',
+    yaml: 'YAML — valid YAML document',
+    html: 'HTML — complete <html>…</html> document with <head> and <body>',
+    md:   'Markdown document',
+    py:   'Python source code',
+    ts:   'TypeScript source code',
+    js:   'JavaScript source code',
+    sh:   'shell script',
+    docx: 'document content (plain text / Markdown)',
+    pdf:  'document content (plain text / Markdown)',
+  }
+  const desc = descriptions[format] ?? format
+  const firstChar: Record<string, string> = {
+    csv:  'the header row',
+    json: '{ or [',
+    yaml: 'the first key',
+    html: '<!DOCTYPE html> or <html>',
+    py:   'the first line of code (import, def, or a comment)',
+    ts:   'the first line of code',
+    js:   'the first line of code',
+    sh:   '#!/bin/sh or the first command',
+  }
+  const start = firstChar[format] ?? 'the first word of the content'
+  return (
+    `\n\nOUTPUT INSTRUCTIONS: Output ONLY raw ${desc} content. ` +
+    `No markdown code fences. No preamble. No prose before or after the content. ` +
+    `Start your response with ${start}.`
+  )
+}
 
 function buildSystemPrompt(profile: ProfileId, isPythonCodeNode: boolean): string {
   const basePrompt = `\
@@ -238,7 +282,7 @@ export class Writer {
     let retries = 0
 
     const messages = [
-      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code') },
+      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code') + buildWriterSystemPrompt(node.output_file_format) },
       {
         role: 'user' as const,
         content: JSON.stringify({

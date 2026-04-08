@@ -33,6 +33,8 @@ import { CriticalReviewer } from '@/lib/agents/critical-reviewer'
 import { resolveCriticalSeverity } from '@/lib/agents/reviewer/critical-reviewer.types'
 import { PromptSummaryCaptureClient } from '@/lib/agents/prompt-summary'
 import { executePython } from '@/lib/agents/python-executor'
+import { convertToFile, type OutputFileFormat } from '@/lib/execution/converters/text-to-file'
+import { validateArtifact } from '@/lib/execution/converters/validate'
 import { db } from '@/lib/db/client'
 import { projectEventBus } from '@/lib/events/project-event-bus.factory'
 
@@ -58,33 +60,33 @@ function asProfileId(v: unknown): ProfileId {
 }
 
 /**
- * Detect whether a WRITER output should be saved as a downloadable artifact
- * rather than rendered inline as text. Returns artifact metadata, or null if
- * the content can be rendered as Markdown / plain text.
+ * C4 — Auto-promote orphan artifacts to 'primary' when a run completes.
+ * If a run finishes COMPLETED and there are artifacts still in 'pending_review'
+ * state (i.e. no REVIEWER node ran to set them to 'primary'), promote them
+ * automatically. Also sets Run.primary_artifact_id to the first promoted artifact.
  *
- * Currently handles:
- *   - HTML: content starts with <!DOCTYPE html or <html, or contains <body>
- *           (even if the writer declared output.type = "document")
+ * Called by the executor right after transitioning a run to COMPLETED.
+ * Spec: multi-format-artifact-output.feature.md Part 1 §1.8a (C4 rule)
  */
-function detectArtifactFormat(output: WriterOutput): { filename: string; mime: string } | null {
-  const content = output.output.content
-  const trimmed = content.trimStart()
-  const lower   = trimmed.slice(0, 500).toLowerCase()
-
-  const isHtml =
-    lower.startsWith('<!doctype html') ||
-    lower.startsWith('<html') ||
-    /<body[\s>]/.test(lower) ||
-    output.output.type === 'html' ||
-    output.output.type === 'web_page'
-
-  if (isHtml) {
-    return {
-      filename: `output-${output.source_node_id}.html`,
-      mime:     'text/html; charset=utf-8',
+export async function promoteOrphanArtifacts(runId: string): Promise<void> {
+  const updated = await db.runArtifact.updateMany({
+    where: { run_id: runId, artifact_role: 'pending_review' },
+    data:  { artifact_role: 'primary' },
+  })
+  if (updated.count > 0) {
+    // Set primary_artifact_id to the first promoted artifact
+    const first = await db.runArtifact.findFirst({
+      where:   { run_id: runId, artifact_role: 'primary' },
+      orderBy: { created_at: 'asc' },
+      select:  { id: true },
+    })
+    if (first) {
+      await db.run.update({
+        where: { id: runId },
+        data:  { primary_artifact_id: first.id },
+      })
     }
   }
-  return null
 }
 
 /**
@@ -333,6 +335,10 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
       // ── WRITER ──────────────────────────────────────────────────────────────
       case 'WRITER': {
+        const outputFileFormat = typeof meta['output_file_format'] === 'string'
+          ? (meta['output_file_format'] as OutputFileFormat)
+          : undefined
+
         const nodeInput: WriterNodeInput = {
           node_id:              node.node_id,
           description:          (meta['description'] as string | undefined) ?? '',
@@ -344,11 +350,54 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           inputs: (typeof handoffIn === 'object' && handoffIn !== null
             ? handoffIn as Record<string, unknown>
             : {}) as Record<string, unknown>,
-          domain_profile: asProfileId(meta['domain_profile']),
-          run_id:         node.run_id,
+          domain_profile:      asProfileId(meta['domain_profile']),
+          run_id:              node.run_id,
+          output_file_format:  outputFileFormat,
         }
 
         const result = await new Writer(captureClient).execute(nodeInput, signal, onChunk)
+
+        // NEW: convert raw LLM output into a downloadable file when output_file_format
+        // is explicitly set on the node (spec §1.6).
+        if (outputFileFormat) {
+          const slug = (meta['description'] as string | undefined) ?? node.node_id
+          const { bytes, filename, mimeType } = await convertToFile(
+            result.output.content,
+            outputFileFormat,
+            slug,
+          )
+          validateArtifact(bytes, outputFileFormat)
+          const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+          const artifact = await db.runArtifact.create({
+            data: {
+              run_id:        node.run_id,
+              node_id:       node.node_id,
+              filename,
+              mime_type:     mimeType,
+              artifact_role: 'pending_review', // promoted by Phase 5 reviewer, or C4 on COMPLETED
+              data:          bytes as unknown as Uint8Array<ArrayBuffer>,
+              size_bytes:    bytes.byteLength,
+              expires_at:    expiresAt,
+            },
+          })
+          // SSE so the UI download section updates without polling
+          const runForProject = await db.run.findUnique({ where: { id: node.run_id }, select: { project_id: true } })
+          if (runForProject) {
+            void projectEventBus.emit({
+              project_id: runForProject.project_id,
+              run_id:     node.run_id,
+              event: {
+                type:           'artifacts_ready',
+                node_id:        node.node_id,
+                artifact_count: 1,
+                filenames:      [filename],
+              },
+              emitted_at: new Date(),
+            })
+          }
+          console.log(`[agentRunner] WRITER artifact created: ${filename} (id=${artifact.id}, ${bytes.byteLength} bytes)`)
+        }
+
         return {
           handoffOut: result,
           costUsd:   contextualLlm.totalCostUsd,
@@ -402,42 +451,6 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           writerOutputs, profile, node.run_id, signal, outputLanguage, taskContext,
         )
 
-        // Persist non-text writer outputs (e.g. HTML) as downloadable RunArtifact rows.
-        // The Reviewer runs after all Writers — it is the right place to inspect outputs
-        // that cannot be rendered inline (not Markdown, not plain text).
-        const nonTextOutputs = writerOutputs
-          .map(w => ({ w, fmt: detectArtifactFormat(w) }))
-          .filter((x): x is { w: WriterOutput; fmt: NonNullable<ReturnType<typeof detectArtifactFormat>> } => x.fmt !== null)
-
-        if (nonTextOutputs.length > 0) {
-          const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-          await db.runArtifact.createMany({
-            data: nonTextOutputs.map(({ w, fmt }) => ({
-              run_id:     node.run_id,
-              node_id:    w.source_node_id,
-              filename:   fmt.filename,
-              mime_type:  fmt.mime,
-              size_bytes: Buffer.byteLength(w.output.content, 'utf8'),
-              data:       Buffer.from(w.output.content, 'utf8'),
-              expires_at: expiresAt,
-            })),
-          })
-          // SSE so the UI download section updates without polling
-          const runForProject = await db.run.findUnique({ where: { id: node.run_id }, select: { project_id: true } })
-          if (runForProject) {
-            void projectEventBus.emit({
-              project_id: runForProject.project_id,
-              run_id:     node.run_id,
-              event: {
-                type:           'artifacts_ready',
-                node_id:        node.node_id,
-                artifact_count: nonTextOutputs.length,
-                filenames:      nonTextOutputs.map(x => x.fmt.filename),
-              },
-              emitted_at: new Date(),
-            })
-          }
-        }
 
         return {
           handoffOut: result,
@@ -562,17 +575,19 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
         // Persist generated files as RunArtifact rows — done before the exit_code
         // check so partial artifacts (files saved before a crash) are still accessible.
+        // C3: PYTHON_EXECUTOR produces supplementary artifacts (spec §1.8a).
         if (result.files.length > 0) {
           const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
           await db.runArtifact.createMany({
             data: result.files.map(f => ({
-              run_id:     node.run_id,
-              node_id:    node.node_id,
-              filename:   f.name,
-              mime_type:  f.mime,
-              size_bytes: f.sizeBytes,
-              data:       Buffer.from(f.buffer),
-              expires_at: expiresAt,
+              run_id:        node.run_id,
+              node_id:       node.node_id,
+              filename:      f.name,
+              mime_type:     f.mime,
+              size_bytes:    f.sizeBytes,
+              data:          Buffer.from(f.buffer),
+              artifact_role: 'supplementary', // C3 — PYTHON_EXECUTOR artifacts are supplementary
+              expires_at:    expiresAt,
             })),
           })
 
