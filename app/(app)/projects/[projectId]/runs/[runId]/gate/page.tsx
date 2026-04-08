@@ -78,6 +78,17 @@ export default async function GatePage({ params }: Props) {
 
   const openGate = run.human_gates[0]
 
+  // Image artifacts produced by PYTHON_EXECUTOR — used by Preview tab to display
+  // generated images instead of the raw Python source code from the WRITER node.
+  const imageArtifacts = await db.runArtifact.findMany({
+    where: {
+      run_id: runId,
+      mime_type: { startsWith: 'image/' },
+    },
+    select: { id: true, node_id: true, filename: true, mime_type: true },
+    orderBy: { created_at: 'asc' },
+  })
+
   // Extract writer output from the last WRITER node that has handoff_out
   const writerNode = [...run.nodes].reverse().find(n => n.agent_type === 'WRITER' && n.handoff_out != null)
   const writerHandoff = writerNode?.handoff_out as Record<string, unknown> | null ?? null
@@ -192,6 +203,7 @@ export default async function GatePage({ params }: Props) {
         writerContent={(writerOutput?.['content'] ?? writerOutput?.['text'] ?? null) as string | null}
         writerSummary={(writerOutput?.['summary'] ?? null) as string | null}
         writerType={(writerOutput?.['type'] ?? null) as string | null}
+        imageArtifacts={imageArtifacts}
         plannerPlan={plannerPlan}
         reviewerEscalation={reviewerEscalation}
         nodes={nodes}
