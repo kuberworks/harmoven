@@ -133,10 +133,12 @@ Examples that SHOULD set desired_outputs:
 - "write a Python script" → [{ "format": "py", "description": "Python script", "produced_by": "python" }]
 - "create a JSON config file" → [{ "format": "json", "description": "configuration file", "produced_by": "writer" }]
 
-Examples that should NOT set desired_outputs (format is ambiguous):
+Examples that should NOT set desired_outputs (format is ambiguous OR the output is a zip of files created by PYTHON_EXECUTOR):
 - "generate a report" (no format specified)
 - "create a document" (no format specified)
 - "write some content" (no format specified)
+- "create a Spring Boot / Node.js / React / Django project" (→ zip produced by PYTHON_EXECUTOR; do NOT set desired_outputs)
+- "scaffold an app" (→ PYTHON_EXECUTOR creates the files; do NOT set desired_outputs)
 
 Do NOT set desired_outputs if the intent is ambiguous — it is better to omit it than to guess.
 Omit the "desired_outputs" key entirely when not applicable.`
