@@ -19,6 +19,7 @@ import { DagView } from '@/components/run/DagView'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { useT } from '@/lib/i18n/client'
 import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText, Printer, Download } from 'lucide-react'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 
@@ -88,11 +89,13 @@ interface AuditEntry {
 
 interface ArtifactMeta {
   id: string
-  node_id: string
+  node_id: string | null
   filename: string
   mime_type: string
   size_bytes: number
   created_at: string
+  expires_at: string | null
+  artifact_role: 'pending_review' | 'primary' | 'supplementary' | 'discarded'
 }
 
 interface Props {
@@ -354,17 +357,15 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
   const [expanded, setExpanded] = useState(false)
   const streamEndRef = useRef<HTMLPreElement>(null)
 
-  // Artifact download state (PYTHON_EXECUTOR nodes only)
   const [artifacts, setArtifacts] = useState<ArtifactMeta[] | null>(null)
   useEffect(() => {
-    if (node.agent_type !== 'PYTHON_EXECUTOR') return
     if (node.status !== 'COMPLETED' && artifactsTick === 0) return
     fetch(`/api/runs/${runId}/artifacts`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((all: ArtifactMeta[]) => setArtifacts(all.filter(a => a.node_id === node.node_id)))
+      .then((all: ArtifactMeta[]) => setArtifacts(all.filter(a => a.node_id === node.node_id && a.artifact_role !== 'discarded')))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.status, node.agent_type, artifactsTick])
+  }, [node.status, artifactsTick])
 
   // Auto-scroll streaming panel to bottom as new content arrives
   useEffect(() => {
@@ -599,7 +600,6 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
         </div>
       )}
 
-      {/* Generated files download list (PYTHON_EXECUTOR only) */}
       {artifacts && artifacts.length > 0 && (
         <div className="border-t border-surface-border px-4 py-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -724,11 +724,16 @@ function ResultTab({
   nodes,
   dag,
   runId,
+  runStatus,
+  artifactReadyTick = 0,
 }: {
   nodes: (InitialNode | NodeState)[]
   dag: Dag
   runId: string
+  runStatus: string
+  artifactReadyTick?: number
 }) {
+  const t = useT()
   const printRef = useRef<HTMLDivElement>(null)
 
   // Fetch all artifacts for this run (binary files from PYTHON_EXECUTOR or HTML WRITER outputs).
@@ -740,13 +745,13 @@ function ResultTab({
   // re-trigger when the WRITER (the actual artifact producer) completes.
   const completedCount = nodes.filter(n => n.status === 'COMPLETED').length
   useEffect(() => {
-    if (completedCount === 0) return
+    if (completedCount === 0 && artifactReadyTick === 0) return
     fetch(`/api/runs/${runId}/artifacts`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((all: ArtifactMeta[]) => setRunArtifacts(all))
+      .then((all: ArtifactMeta[]) => setRunArtifacts(all.filter(a => a.artifact_role !== 'discarded')))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, completedCount])
+  }, [runId, completedCount, artifactReadyTick])
 
   function handlePrint() {
     const container = printRef.current
@@ -882,6 +887,40 @@ function ResultTab({
 
   return (
     <div data-print-result ref={printRef}>
+      {/* Primary artifact banner */}
+      {(() => {
+        const primaryArtifact = runArtifacts.find(a => a.artifact_role === 'primary')
+        if (!primaryArtifact || runStatus !== 'COMPLETED') return null
+        const ext = primaryArtifact.filename.split('.').pop()?.toLowerCase() ?? ''
+        const bannerTitle =
+          ['docx', 'pdf', 'txt'].includes(ext) ? t('run.result.banner.document')
+          : ['csv', 'xlsx'].includes(ext)       ? t('run.result.banner.spreadsheet')
+          : ['py', 'js', 'ts', 'sh'].includes(ext) ? t('run.result.banner.script')
+          : t('run.result.banner.file')
+        const sizeLabel = primaryArtifact.size_bytes < 1024
+          ? `${primaryArtifact.size_bytes} B`
+          : primaryArtifact.size_bytes < 1024 * 1024
+          ? `${(primaryArtifact.size_bytes / 1024).toFixed(1)} KB`
+          : `${(primaryArtifact.size_bytes / (1024 * 1024)).toFixed(1)} MB`
+        return (
+          <Alert variant="success" className="mb-4">
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertTitle>{bannerTitle}</AlertTitle>
+            <AlertDescription className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="font-medium">{primaryArtifact.filename}</span>
+              <span className="text-muted-foreground">{sizeLabel}</span>
+              <a
+                href={`/api/runs/${runId}/artifacts/${primaryArtifact.id}`}
+                download={primaryArtifact.filename}
+                className="ml-auto inline-flex items-center gap-1 rounded-md bg-[var(--color-status-completed)] px-2.5 py-1 text-xs font-semibold text-black hover:opacity-90 transition-opacity"
+              >
+                <Download className="h-3 w-3" />
+                {t('run.result.download')}
+              </a>
+            </AlertDescription>
+          </Alert>
+        )
+      })()}
       {outputs.map((o, i) => (
         <Card
           key={o.node_id}
@@ -930,14 +969,14 @@ function ResultTab({
         </Card>
       ))}
 
-      {/* Downloadable files generated by PYTHON_EXECUTOR nodes */}
+      {/* Downloadable files */}
       {runArtifacts.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Download className="h-4 w-4 text-muted-foreground" />
-                Generated files
+                {t('run.result.artifacts.title')}
               </span>
               {runArtifacts.length >= 1 && (
                 <a
@@ -946,29 +985,42 @@ function ResultTab({
                   className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Download className="h-3 w-3" />
-                  Download all (.zip)
+                  {t('run.node.artifacts.downloadZip')}
                 </a>
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-0 space-y-1">
+          <CardContent className="pt-0 space-y-2">
             {runArtifacts.map(a => (
-              <a
-                key={a.id}
-                href={`/api/runs/${runId}/artifacts/${a.id}`}
-                download={a.filename}
-                className="flex items-center gap-2 text-sm text-primary hover:underline py-1"
-              >
-                <Download className="h-4 w-4 shrink-0" />
-                <span className="truncate font-medium">{a.filename}</span>
-                <span className="text-xs text-muted-foreground/60 shrink-0 ml-auto">
-                  {a.size_bytes < 1024
-                    ? `${a.size_bytes} B`
-                    : a.size_bytes < 1024 * 1024
-                    ? `${(a.size_bytes / 1024).toFixed(1)} KB`
-                    : `${(a.size_bytes / (1024 * 1024)).toFixed(1)} MB`}
-                </span>
-              </a>
+              <div key={a.id} className="space-y-1">
+                {a.mime_type.startsWith('image/') && (
+                  <img
+                    src={`/api/runs/${runId}/artifacts/${a.id}/preview`}
+                    alt={a.filename}
+                    className="max-h-48 rounded-md object-contain border border-surface-border"
+                  />
+                )}
+                <a
+                  href={`/api/runs/${runId}/artifacts/${a.id}`}
+                  download={a.filename}
+                  className="flex items-center gap-2 text-sm text-primary hover:underline py-0.5"
+                >
+                  <Download className="h-4 w-4 shrink-0" />
+                  <span className="truncate font-medium">{a.filename}</span>
+                  <span className="text-xs text-muted-foreground/60 shrink-0 ml-auto">
+                    {a.size_bytes < 1024
+                      ? `${a.size_bytes} B`
+                      : a.size_bytes < 1024 * 1024
+                      ? `${(a.size_bytes / 1024).toFixed(1)} KB`
+                      : `${(a.size_bytes / (1024 * 1024)).toFixed(1)} MB`}
+                  </span>
+                </a>
+                {a.expires_at && (
+                  <span className="text-xs text-muted-foreground">
+                    {t('run.result.artifact.expires', { date: new Date(a.expires_at).toLocaleDateString() })}
+                  </span>
+                )}
+              </div>
             ))}
           </CardContent>
         </Card>
@@ -1218,7 +1270,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
             {run.status === 'COMPLETED' && (
               <TabsContent value="result">
-                <ResultTab nodes={nodes} dag={run.dag} runId={run.id} />
+                <ResultTab nodes={nodes} dag={run.dag} runId={run.id} runStatus={run.status} artifactReadyTick={stream.events.filter(e => e.type === 'artifact_ready').length} />
               </TabsContent>
             )}
 

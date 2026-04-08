@@ -757,6 +757,21 @@
       },
       "restart": "Restart",
       "rerun": "Re-run"
+    },
+    "result": {
+      "banner": {
+        "document": "\u2705 Done — your document is ready",
+        "spreadsheet": "\u2705 Done — your spreadsheet is ready",
+        "script": "\u2705 Done — your script is ready",
+        "file": "\u2705 Done — your file is ready"
+      },
+      "download": "Download",
+      "artifacts": {
+        "title": "Generated files"
+      },
+      "artifact": {
+        "expires": "Available until {date}"
+      }
     }
   }
 }
