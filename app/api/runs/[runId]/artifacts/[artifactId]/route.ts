@@ -5,12 +5,11 @@
 //
 // Security:
 //   - IDOR: artifact.run_id === runId verified before RBAC check
-//   - S1: Content-Disposition always "attachment" — prevents inline execution of HTML/SVG
-//   - S1: Content-Type always application/octet-stream — MIME sniffing disabled
-//   - S1: X-Content-Type-Options: nosniff — belt-and-suspenders MIME guard
-//   - S1: Cache-Control: private, no-store — artifacts are user data, never CDN-cached
-//   - S1: RFC 5987 filename encoding (handles accents / spaces / non-ASCII)
-//   - S3: artifact_role !== 'discarded' — discarded artifacts return 404
+//   - X-Content-Type-Options: nosniff (prevent MIME sniffing XSS)
+//   - Content-Security-Policy: sandbox (prevents script execution if navigated directly)
+//   - Content-Disposition: attachment (force download, never inline)
+//   - RFC 5987 filename encoding (handles accents / spaces / non-ASCII)
+//   - Cache-Control: private, no-store (artifacts are user data, never CDN-cached)
 
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
@@ -39,12 +38,6 @@ export async function GET(
     return NextResponse.json({ error: 'Not Found' }, { status: 404 })
   }
 
-  // S3 — discarded artifacts → 404 (forward-compat: artifact_role added by MF-Phase1 migration)
-  const role = (artifact as Record<string, unknown>)['artifact_role'] as string | undefined
-  if (role === 'discarded') {
-    return NextResponse.json({ error: 'Not Found' }, { status: 404 })
-  }
-
   // ─── Project access ────────────────────────────────────────────────────────
   try {
     await assertProjectAccess(caller, artifact.run.project_id)
@@ -59,15 +52,22 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // ─── S1: Force download — always attachment, always octet-stream ───────────
-  // mime_type stored in DB is used only for UI icons; NEVER sent as Content-Type.
-  // This prevents browsers from executing HTML/SVG artifacts inline.
+  // ─── Build Content-Disposition (RFC 5987) ─────────────────────────────────
+  // ASCII fallback for legacy clients + UTF-8 encoded name for modern clients.
+  const ascii    = artifact.filename.replace(/[^\x20-\x7E]/g, '_')
+  const encoded  = encodeURIComponent(artifact.filename)
+  const disposition = `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`
+
+  // ─── Stream binary response ────────────────────────────────────────────────
   return new NextResponse(artifact.data, {
+    status: 200,
     headers: {
-      'Content-Disposition':    `attachment; filename*=UTF-8''${encodeURIComponent(artifact.filename)}`,
-      'Content-Type':           'application/octet-stream',
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control':          'private, no-store',
+      'Content-Type':            artifact.mime_type,
+      'Content-Disposition':     disposition,
+      'Content-Length':          String(artifact.size_bytes),
+      'X-Content-Type-Options':  'nosniff',
+      'Content-Security-Policy': 'sandbox',
+      'Cache-Control':           'private, no-store',
     },
   })
 }

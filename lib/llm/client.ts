@@ -25,9 +25,10 @@ import OpenAI    from 'openai'
 import {
   GoogleGenerativeAI,
   type Content as GeminiContent,
+  type FunctionDeclarationSchema,
 } from '@google/generative-ai'
 
-import type { ILLMClient, ChatMessage, ChatOptions, ChatResult } from '@/lib/llm/interface'
+import type { ILLMClient, ChatMessage, ChatOptions, ChatResult, ToolCall, ToolResult, ToolCallIteration } from '@/lib/llm/interface'
 import type { LlmProfile, Prisma as PrismaTypes }            from '@prisma/client'
 import { BUILT_IN_PROFILES, loadActiveProfiles, dbRowToLlmProfileConfig } from './profiles'
 import { selectByTier, selectLlm } from './selector'
@@ -108,27 +109,139 @@ async function callAnthropic(
   const client = buildAnthropicClient(profile)
   const { system, userMessages } = splitMessages(messages)
 
-  const response = await client.messages.create(
-    {
-      model:      profile.model_string,
-      max_tokens: options.maxTokens ?? 4096,
-      ...(system ? { system } : {}),
-      messages: userMessages.map(m => ({
-        role:    m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-    },
-    { signal: options.signal },
-  )
+  // If no tools, use simple non-looping path (backward compat)
+  if (!options.tools?.length || !options.toolExecutor) {
+    const response = await client.messages.create(
+      {
+        model:      profile.model_string,
+        max_tokens: options.maxTokens ?? 4096,
+        ...(system ? { system } : {}),
+        messages: userMessages.map(m => ({
+          role:    m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      },
+      { signal: options.signal },
+    )
+    const textBlocks = response.content.filter(b => b.type === 'text')
+    const content    = textBlocks.map(b => ('text' in b ? b.text : '')).join('')
+    return {
+      content,
+      tokensIn:  response.usage.input_tokens,
+      tokensOut: response.usage.output_tokens,
+      costUsd:   0,
+      model:     response.model,
+    }
+  }
 
-  const textBlocks = response.content.filter(b => b.type === 'text')
-  const content    = textBlocks.map(b => ('text' in b ? b.text : '')).join('')
-  return {
-    content,
-    tokensIn:  response.usage.input_tokens,
-    tokensOut: response.usage.output_tokens,
-    costUsd:   0,
-    model:     response.model,
+  // ── Agentic tool_use loop (§2.2) ─────────────────────────────────────────
+  const anthropicTools = options.tools.map(t => ({
+    name:         t.name,
+    description:  t.description,
+    input_schema: t.input_schema as Anthropic.Tool['input_schema'],
+  }))
+
+  type AnthropicMsg = Anthropic.MessageParam
+  let currentMessages: AnthropicMsg[] = userMessages.map(m => ({
+    role:    m.role as 'user' | 'assistant',
+    content: m.content,
+  }))
+
+  let totalIn  = 0
+  let totalOut = 0
+  const trace: ToolCallIteration[] = []
+  const maxIter = Math.min(options.maxToolIterations ?? 5, 10)
+  const CONTEXT_BUDGET = options.maxTokens ? options.maxTokens * 10 : 80_000
+  let iteration = 0
+
+  while (true) {
+    if (totalIn > CONTEXT_BUDGET && iteration > 0) {
+      return {
+        content: '[context budget reached — partial result from previous iterations]',
+        tokensIn: totalIn, tokensOut: totalOut,
+        model:    profile.model_string,
+        costUsd:  0,
+        tool_calls_trace: trace.length > 0 ? trace : undefined,
+      }
+    }
+
+    const resp = await client.messages.create(
+      {
+        model:      profile.model_string,
+        max_tokens: options.maxTokens ?? 4096,
+        ...(system ? { system } : {}),
+        messages:   currentMessages,
+        tools:      anthropicTools,
+        tool_choice: { type: 'auto' },
+      },
+      { signal: options.signal },
+    )
+
+    totalIn  += resp.usage.input_tokens
+    totalOut += resp.usage.output_tokens
+
+    const toolUseBlocks = resp.content.filter(
+      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+    )
+    const textContent = resp.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('')
+
+    if (toolUseBlocks.length === 0) {
+      return {
+        content:  textContent,
+        tokensIn: totalIn, tokensOut: totalOut,
+        model:    resp.model,
+        costUsd:  0,
+        ...(trace.length > 0 ? { tool_calls_trace: trace } : {}),
+      }
+    }
+
+    if (iteration >= maxIter) {
+      return {
+        content:  textContent || '[tool iteration limit reached]',
+        tokensIn: totalIn, tokensOut: totalOut,
+        model:    resp.model,
+        costUsd:  0,
+        tool_calls_trace: trace,
+      }
+    }
+
+    const calls: ToolCall[] = toolUseBlocks.map(b => ({
+      id:    b.id,
+      name:  b.name,
+      input: b.input as Record<string, unknown>,
+    }))
+    const results: ToolResult[] = await options.toolExecutor(calls, options.signal)
+
+    trace.push({
+      iteration: iteration + 1,
+      tool_calls:   calls,
+      tool_results: results,
+      tokens_in:  resp.usage.input_tokens,
+      tokens_out: resp.usage.output_tokens,
+    })
+
+    // Append assistant turn (with tool_use blocks) + user turn (with tool_results)
+    currentMessages = [
+      ...currentMessages,
+      {
+        role:    'assistant',
+        content: resp.content as unknown as Anthropic.ContentBlockParam[],
+      },
+      {
+        role:    'user',
+        content: results.map(r => ({
+          type:        'tool_result' as const,
+          tool_use_id: r.tool_call_id,
+          content:     r.content,
+          ...(r.is_error ? { is_error: true } : {}),
+        })),
+      },
+    ]
+
+    iteration++
   }
 }
 
@@ -222,18 +335,134 @@ function toOpenAIMessages(messages: ChatMessage[]): OpenAI.Chat.ChatCompletionMe
   return messages.map(m => ({ role: m.role, content: m.content }))
 }
 
+/**
+ * runOpenAIToolLoop — shared agentic loop for all OpenAI-compatible providers.
+ * Used by callOpenAI() and LiteLLMClient.
+ */
+export async function runOpenAIToolLoop(
+  client:   OpenAI,
+  profile:  { model_string: string },
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  options:  ChatOptions,
+  signal?:  AbortSignal,
+): Promise<ChatResult> {
+  const oaiTools = options.tools?.length
+    ? options.tools.map(t => ({
+        type:     'function' as const,
+        function: {
+          name:        t.name,
+          description: t.description,
+          parameters:  t.input_schema as Record<string, unknown>,
+        },
+      }))
+    : undefined
+
+  let currentMessages = [...messages]
+  let totalIn  = 0
+  let totalOut = 0
+  const trace: ToolCallIteration[] = []
+  const maxIter = Math.min(options.maxToolIterations ?? 5, 10)
+  let iteration = 0
+  let lastModel = profile.model_string
+
+  while (true) {
+    const resp = await client.chat.completions.create(
+      {
+        model:      profile.model_string,
+        max_tokens: options.maxTokens ?? 4096,
+        messages:   currentMessages,
+        ...(oaiTools ? { tools: oaiTools, tool_choice: 'auto' as const } : {}),
+      },
+      { signal },
+    )
+
+    const msg  = resp.choices[0]?.message
+    if (resp.model) lastModel = resp.model
+    totalIn  += resp.usage?.prompt_tokens     ?? 0
+    totalOut += resp.usage?.completion_tokens ?? 0
+
+    if (!msg?.tool_calls?.length || !options.toolExecutor) {
+      return {
+        content:  msg?.content ?? '',
+        tokensIn: totalIn, tokensOut: totalOut,
+        model:    lastModel,
+        costUsd:  0,
+        ...(trace.length > 0 ? { tool_calls_trace: trace } : {}),
+      }
+    }
+
+    if (iteration >= maxIter) {
+      return {
+        content:  msg.content ?? '[tool iteration limit reached]',
+        tokensIn: totalIn, tokensOut: totalOut,
+        model:    lastModel,
+        costUsd:  0,
+        tool_calls_trace: trace,
+      }
+    }
+
+    const calls: ToolCall[] = msg.tool_calls
+      .filter((tc): tc is OpenAI.Chat.ChatCompletionMessageFunctionToolCall => tc.type === 'function')
+      .map(tc => {
+        let parsedInput: Record<string, unknown> = {}
+        try {
+          parsedInput = JSON.parse(tc.function.arguments) as Record<string, unknown>
+        } catch {
+          // Open-source model: malformed JSON arguments — don't throw, signal error
+          return {
+            id:    tc.id,
+            name:  tc.function.name,
+            input: { __parse_error: tc.function.arguments },
+          }
+        }
+        return { id: tc.id, name: tc.function.name, input: parsedInput }
+      })
+    const results: ToolResult[] = await options.toolExecutor(calls, signal)
+
+    trace.push({
+      iteration: iteration + 1,
+      tool_calls:   calls,
+      tool_results: results,
+      tokens_in:  resp.usage?.prompt_tokens     ?? 0,
+      tokens_out: resp.usage?.completion_tokens ?? 0,
+    })
+
+    currentMessages = [
+      ...currentMessages,
+      {
+        role:       'assistant' as const,
+        content:    msg.content ?? null,
+        tool_calls: msg.tool_calls,
+      },
+      ...results.map(r => ({
+        role:         'tool' as const,
+        tool_call_id: r.tool_call_id,
+        content:      r.content,
+      })),
+    ]
+
+    iteration++
+  }
+}
+
 async function callOpenAI(
   profile:  LlmProfileConfig,
   messages: ChatMessage[],
   options:  ChatOptions,
 ): Promise<ChatResult> {
   const client = await buildOpenAIClient(profile)
+  const oaiMessages = toOpenAIMessages(messages)
+
+  // If tools present, use the agentic loop
+  if (options.tools?.length && options.toolExecutor) {
+    return runOpenAIToolLoop(client, profile, oaiMessages, options, options.signal)
+  }
 
   const completion = await client.chat.completions.create(
     {
       model:      profile.model_string,
       max_tokens: options.maxTokens ?? 4096,
-      messages:   toOpenAIMessages(messages),
+      messages:   oaiMessages,
     },
     { signal: options.signal },
   )
@@ -321,24 +550,114 @@ async function callGemini(
 
   const genAI = new GoogleGenerativeAI(apiKey)
   const { system } = splitMessages(messages)
-  const model = genAI.getGenerativeModel({
+
+  // If no tools, use simple non-looping path (backward compat)
+  if (!options.tools?.length || !options.toolExecutor) {
+    const model = genAI.getGenerativeModel({
+      model: profile.model_string,
+      ...(system ? { systemInstruction: system } : {}),
+      generationConfig: { maxOutputTokens: options.maxTokens ?? 4096 },
+    })
+    if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const result   = await model.generateContent({ contents: toGeminiContents(messages) })
+    const response = result.response
+    const content  = response.text()
+    return {
+      content,
+      tokensIn:  response.usageMetadata?.promptTokenCount      ?? 0,
+      tokensOut: response.usageMetadata?.candidatesTokenCount   ?? 0,
+      model:     profile.model_string,
+      costUsd:   0,
+    }
+  }
+
+  // ── Agentic function_calling loop (§2.4) ─────────────────────────────────
+  const functionDeclarations = options.tools.map(t => ({
+    name:        t.name,
+    description: t.description,
+    parameters:  t.input_schema as unknown as FunctionDeclarationSchema,
+  }))
+
+  const geminiModel = genAI.getGenerativeModel({
     model: profile.model_string,
     ...(system ? { systemInstruction: system } : {}),
+    tools: [{ functionDeclarations }],
     generationConfig: { maxOutputTokens: options.maxTokens ?? 4096 },
   })
 
-  if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  let contents = toGeminiContents(messages)
+  let totalIn  = 0
+  let totalOut = 0
+  const trace: ToolCallIteration[] = []
+  const maxIter = Math.min(options.maxToolIterations ?? 5, 10)
+  let iteration = 0
 
-  const result = await model.generateContent({ contents: toGeminiContents(messages) })
-  const response = result.response
-  const content  = response.text()
+  while (true) {
+    if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const resp = await geminiModel.generateContent({ contents })
 
-  return {
-    content,
-    tokensIn:  response.usageMetadata?.promptTokenCount      ?? 0,
-    tokensOut: response.usageMetadata?.candidatesTokenCount   ?? 0,
-    model:     profile.model_string,
-    costUsd:   0,
+    totalIn  += resp.response.usageMetadata?.promptTokenCount      ?? 0
+    totalOut += resp.response.usageMetadata?.candidatesTokenCount  ?? 0
+
+    const parts     = resp.response.candidates?.[0]?.content?.parts ?? []
+    const funcCalls = parts.filter(p => p.functionCall)
+    const textContent = parts.filter(p => p.text).map(p => p.text ?? '').join('')
+
+    if (funcCalls.length === 0) {
+      return {
+        content:  textContent,
+        tokensIn: totalIn, tokensOut: totalOut,
+        model:    profile.model_string,
+        costUsd:  0,
+        ...(trace.length > 0 ? { tool_calls_trace: trace } : {}),
+      }
+    }
+
+    if (iteration >= maxIter) {
+      return {
+        content:  textContent || '[tool iteration limit reached]',
+        tokensIn: totalIn, tokensOut: totalOut,
+        model:    profile.model_string,
+        costUsd:  0,
+        tool_calls_trace: trace,
+      }
+    }
+
+    const calls: ToolCall[] = funcCalls.map((p, i) => ({
+      // Gemini doesn't expose per-functionCall IDs — generate stable unique IDs
+      id:    `gemini_${Date.now()}_${iteration}_${i}`,
+      name:  p.functionCall!.name,
+      input: p.functionCall!.args as Record<string, unknown>,
+    }))
+    const results: ToolResult[] = await options.toolExecutor(calls, options.signal)
+
+    trace.push({
+      iteration: iteration + 1,
+      tool_calls:   calls,
+      tool_results: results,
+      tokens_in:  resp.response.usageMetadata?.promptTokenCount     ?? 0,
+      tokens_out: resp.response.usageMetadata?.candidatesTokenCount ?? 0,
+    })
+
+    // Append model turn (functionCall) + user turn (functionResponse)
+    contents = [
+      ...contents,
+      {
+        role:  'model',
+        parts: funcCalls.map(p => ({ functionCall: p.functionCall })),
+      },
+      {
+        role:  'user',
+        parts: results.map((r, i) => ({
+          functionResponse: {
+            name:     calls[i]?.name ?? r.tool_call_id,
+            response: { content: r.content, is_error: r.is_error ?? false },
+          },
+        })),
+      },
+    ] as GeminiContent[]
+
+    iteration++
   }
 }
 
@@ -465,8 +784,18 @@ export class DirectLLMClient implements ILLMClient {
   ): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const profile = this.resolveProfile(options.model, options.selectionContext)
-    // Fire before the stream starts so the UI can display the model while still RUNNING.
     onModelResolved?.(profile.model_string ?? profile.id)
+
+    // §2.5 — "loop then stream": when tools are present, run the full agentic
+    // chat() loop (no streaming per-iteration), then emit the final content as
+    // a single chunk. The latency is dominated by tool execution (e.g. HTTP
+    // search calls), not by token generation.
+    if (options.tools?.length) {
+      const result = await this.dispatchChat(profile, messages, options)
+      if (result.content) onChunk(result.content)
+      return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
+    }
+
     const result  = await this.dispatchStream(profile, messages, options, onChunk)
     return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
   }

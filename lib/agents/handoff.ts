@@ -22,15 +22,6 @@ const ProfileId = z.enum([
 
 const Complexity = z.enum(['low', 'medium', 'high'])
 
-// ─── DesiredOutput (MF-Phase1) ───────────────────────────────────────────────
-
-export const DesiredOutputSchema = z.object({
-  format:      z.enum(['txt', 'csv', 'json', 'yaml', 'html', 'md', 'py', 'ts', 'js', 'sh', 'docx', 'pdf']),
-  description: z.string(),
-  produced_by: z.enum(['writer', 'python']),
-})
-export type DesiredOutput = z.infer<typeof DesiredOutputSchema>
-
 // ─── Classifier → Planner ────────────────────────────────────────────────────
 
 export const ClassifierHandoffSchema = z.object({
@@ -45,7 +36,6 @@ export const ClassifierHandoffSchema = z.object({
   fallback_profile:        ProfileId,
   user_confirmation_text:  z.string(),
   requires_clarification:  z.boolean(),
-  desired_outputs:         z.array(DesiredOutputSchema).optional(),
 })
 
 export type ClassifierHandoff = z.infer<typeof ClassifierHandoffSchema>
@@ -62,11 +52,6 @@ const PlannerNodeSchema = z.object({
   timeout_minutes:      z.number().positive(),
   inputs:               z.array(z.string()),
   expected_output_type: z.string(),
-  output_file_format:   z.enum([
-    'txt', 'csv', 'json', 'yaml', 'html', 'md',
-    'py', 'ts', 'js', 'sh',
-    'docx', 'pdf',
-  ]).optional(),
 })
 
 const PlannerMetaSchema = z.object({
