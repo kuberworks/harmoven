@@ -129,6 +129,14 @@ export class InMemoryRunStore implements ExecutorDb {
       }
       return { count }
     },
+    deleteMany: async ({ where }: { where: { run_id: string; node_id: { in: string[] } } }) => {
+      const list = this._nodes.get(where.run_id) ?? []
+      const toDelete = new Set(where.node_id.in)
+      const newList = list.filter(n => !toDelete.has(n['node_id'] as string))
+      const count = list.length - newList.length
+      this._nodes.set(where.run_id, newList)
+      return { count }
+    },
   }
 
   handoff = {

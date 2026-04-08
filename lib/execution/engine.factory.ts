@@ -74,6 +74,7 @@ class PrismaExecutorDb implements ExecutorDb {
       update:       (args) => (_prismaDb.node.update     as Function)(args),
       updateMany:   (args) => (_prismaDb.node.updateMany as Function)(args),
       createMany:   (args) => (_prismaDb.node.createMany as Function)(args),
+      deleteMany:   (args) => (_prismaDb.node.deleteMany   as Function)(args),
       /** Return all RUNNING nodes with last_heartbeat before the given threshold. */
       findOrphaned: ({ before }: { before: Date }) =>
         (_prismaDb.node.findMany as Function)({

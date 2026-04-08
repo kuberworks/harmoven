@@ -110,6 +110,8 @@ export interface ExecutorDb {
     update(args: { where: { id: string }; data: Partial<NodeRow> }): Promise<NodeRow>
     updateMany(args: { where: { id?: string | { in: string[] }; run_id?: string; node_id?: string | { in: string[] }; status?: string | { in: string[] } }; data: Partial<NodeRow> }): Promise<{ count: number }>
     createMany(args: { data: Array<SpawnNodeData> }): Promise<{ count: number }>
+    /** Delete node rows matching a run + node_id list. Used when a PLANNER is replayed. */
+    deleteMany(args: { where: { run_id: string; node_id: { in: string[] } } }): Promise<{ count: number }>
   }
   handoff: {
     create(args: { data: unknown }): Promise<unknown>
