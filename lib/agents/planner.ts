@@ -136,9 +136,10 @@ OUTPUT FORMATTING — applies to every WRITER node that generates prose or data 
 
 PYTHON_EXECUTOR — two distinct patterns (choose based on the task goal):
 
-PATTERN A — FILE GENERATION (task = "create / produce a downloadable file"):
+PATTERN A — FILE GENERATION (task = "create / produce a downloadable file, no written explanation needed"):
 - TRIGGER: request for a spreadsheet, Excel, .xlsx, .xls, CSV, PDF, chart, graph, image,
-  PNG, SVG, or any file the user can download.
+  PNG, SVG, or any file the user can download — and the task does NOT ask for a written
+  explanation, analysis, or markdown summary of those files (use PATTERN C in that case).
 - NEVER output a text/JSON description of what a file should contain; the file must be created
   by Python code. A WRITER saying "here is the Excel content" with no PYTHON_EXECUTOR is WRONG.
 - WRITER nodes produce ONLY raw Python source code (no prose, no Markdown fences);
@@ -177,7 +178,41 @@ PATTERN B — DATA ANALYSIS (task = "read / inspect / analyze / summarize an exi
   → n5=WRITER(document: synthesises stdout into ## Sheets / ## Columns / ## Data sample Markdown)
   → n6=REVIEWER. Depth=5.
 - BAD (FORBIDDEN): n3=WRITER(python_code) → n4=PYTHON_EXECUTOR → n5=REVIEWER.
-  The REVIEWER receives raw stdout and has no WriterOutput to review → broken output.`
+  The REVIEWER receives raw stdout and has no WriterOutput to review → broken output.
+
+PATTERN C — FILE GENERATION + MARKDOWN REPORT (task = "create files AND explain / document them"):
+- TRIGGER: task asks to generate downloadable files (Excel, CSV, PDF, image, etc.) AND also
+  produce a written explanation, summary, methodology, or documentation of what was created.
+  Examples: "create a sales dashboard Excel + write an analysis report",
+  "generate the graphs and write a summary of the results",
+  "build the dataset and provide documentation on its structure".
+- NEVER use PATTERN A when the user also wants a written document — it skips the explanation.
+- NEVER use PATTERN B (which reads an existing file) when the task is to CREATE new files.
+- Pattern:
+  WRITER(python_code, creates files AND prints a summary of what was created to stdout)
+    → PYTHON_EXECUTOR (runs the code; files are collected; stdout = creation summary)
+    → WRITER(document, expected_output_type="document", receives stdout + file listing,
+              writes a Markdown document explaining the generated files, methodology,
+              key findings or structure, and how to use/interpret each file)
+    → REVIEWER.
+- The python_code WRITER MUST:
+  1. Save all files to disk (workbook.save('...'), df.to_csv('...'), plt.savefig('...'), etc.)
+  2. Also print a structured summary to stdout describing each file created, key stats,
+     or any computed values — this becomes the input for the document WRITER.
+- The document WRITER receives { stdout: "...", files: [...] } as upstream_inputs;
+  it must produce a structured Markdown document with headings, tables, and explanations.
+- GOOD example — generate Excel budget + write analysis:
+  n3=WRITER(python_code: creates budget.xlsx, prints sheet names + key totals to stdout)
+  → n4=PYTHON_EXECUTOR
+  → n5=WRITER(document: summarises budget structure and key figures in Markdown)
+  → n6=REVIEWER. Depth=5.
+- GOOD example — generate multiple charts + summary report:
+  n3=WRITER(python_code: creates chart1.png + chart2.png, prints axis labels and insights)
+  → n4=PYTHON_EXECUTOR
+  → n5=WRITER(document: describes what each chart shows, methodology, conclusions)
+  → n6=REVIEWER. Depth=5.
+- BAD (FORBIDDEN): use PATTERN A (no document WRITER) when the user explicitly wants a report.
+- BAD (FORBIDDEN): use PATTERN B (reads existing file) when creating new files from scratch.\``
 
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
