@@ -61,6 +61,7 @@ interface Props {
   } | null
   permissions: Set<Permission>
   uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'
+  imageArtifacts: Array<{ id: string; node_id: string | null; filename: string; mime_type: string }>
 }
 
 type Decision = 'approve' | 'abort' | 'modify'
@@ -75,6 +76,7 @@ export function GateClient({
   writerContent,
   writerSummary,
   writerType,
+  imageArtifacts,
   plannerPlan,
   reviewerEscalation,
   nodes,
@@ -361,11 +363,33 @@ export function GateClient({
                     <span className="text-xs text-muted-foreground/60 font-mono ml-auto">{writerType}</span>
                   )}
                 </div>
-                <div className="max-h-72 overflow-y-auto p-4 bg-surface-1 rounded-md border border-surface-border/50">
-                  <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">
-                    {writerContent}
-                  </pre>
-                </div>
+                {/* Image artifacts (PYTHON_EXECUTOR output) take priority over raw source */}
+                {writerType === 'python_code' && imageArtifacts.length > 0 ? (
+                  <div className="space-y-4">
+                    {imageArtifacts.map(a => (
+                      <div key={a.id} className="rounded-md border border-surface-border/50 overflow-hidden bg-surface-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`/api/runs/${runId}/artifacts/${a.id}/preview`}
+                          alt={a.filename}
+                          className="max-w-full h-auto block"
+                          style={{ maxHeight: 520 }}
+                        />
+                        <p className="text-xs text-muted-foreground/60 font-mono px-3 py-1.5 border-t border-surface-border/40">{a.filename}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : writerType === 'python_code' ? (
+                  <div className="p-4 bg-surface-1 rounded-md border border-surface-border/50">
+                    <p className="text-xs text-muted-foreground/60 italic">Image generation in progress — no preview available yet.</p>
+                  </div>
+                ) : (
+                  <div className="max-h-72 overflow-y-auto p-4 bg-surface-1 rounded-md border border-surface-border/50">
+                    <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground leading-relaxed">
+                      {writerContent}
+                    </pre>
+                  </div>
+                )}
                 {writerSummary && (
                   <p className="text-xs text-muted-foreground mt-3 italic">{writerSummary}</p>
                 )}
