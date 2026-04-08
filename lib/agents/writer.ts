@@ -223,9 +223,12 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
   at best and may emit warnings.
   reportlab: canvas.save()  or  doc.build(story)
   project files: os.makedirs('path/to/dir', exist_ok=True) then open('path/to/file.ext', 'w').write(content)
-- IMPORTANT — for project scaffolds (source code projects with multiple files):
-  Save EACH FILE INDIVIDUALLY (pom.xml, Application.java, etc.). Do NOT bundle into a zip.
-  The platform automatically provides a "Download as ZIP" button — do not duplicate this with zipfile.
+- CRITICAL — for project scaffolds (source code projects with multiple files):
+  Save EACH FILE INDIVIDUALLY using open() + write(). Do NOT use Python's zipfile module.
+  CONSEQUENCE: any .zip file created by your code is SILENTLY DISCARDED by the platform
+  collector — the run will complete with artifact_count=0, the Reviewer will see no output,
+  and the run will be escalated to a human gate. The platform itself builds the ZIP for the
+  user via a "Download as ZIP" button. You must not duplicate this.
 - File names must use only letters, digits, dots, hyphens, underscores, and forward slashes
   for subdirectory paths (e.g. 'src/main/java/App.java'). No spaces, no accents.
 - The code runs in Pyodide (Python 3.11 WASM). All standard library modules are available.
