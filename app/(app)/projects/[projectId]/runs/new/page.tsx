@@ -218,12 +218,15 @@ export default function NewRunPage({ params }: Props) {
 
               <div className="space-y-1.5">
                 <Label htmlFor="output_file_format">Output format (optional)</Label>
-                <Select value={outputFileFormat} onValueChange={setOutputFileFormat}>
+                <Select
+                  value={outputFileFormat === '' ? '__auto__' : outputFileFormat}
+                  onValueChange={(v) => setOutputFileFormat(v === '__auto__' ? '' : v)}
+                >
                   <SelectTrigger id="output_file_format">
                     <SelectValue placeholder="Let agents decide" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Let agents decide</SelectItem>
+                    <SelectItem value="__auto__">Let agents decide</SelectItem>
                     <SelectItem value="docx">📄 Document Word (.docx)</SelectItem>
                     <SelectItem value="csv">📊 CSV spreadsheet</SelectItem>
                     <SelectItem value="json">&#123;&#125; JSON data</SelectItem>
