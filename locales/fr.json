@@ -757,6 +757,21 @@
       },
       "restart": "Redémarrer",
       "rerun": "Relancer"
+    },
+    "result": {
+      "banner": {
+        "document": "✅ Terminé — votre document est prêt",
+        "spreadsheet": "✅ Terminé — votre tableur est prêt",
+        "script": "✅ Terminé — votre script est prêt",
+        "file": "✅ Terminé — votre fichier est prêt"
+      },
+      "download": "Télécharger",
+      "artifacts": {
+        "title": "Fichiers générés"
+      },
+      "artifact": {
+        "expires": "Disponible jusqu'au {date}"
+      }
     }
   }
 }

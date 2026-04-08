@@ -40,10 +40,11 @@ export default function NewRunPage({ params }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const [taskInput, setTaskInput]         = useState('')
-  const [schemaInput, setSchemaInput]     = useState('')
-  const [domainProfile, setDomainProfile] = useState('generic')
-  const [budgetUsd, setBudgetUsd]         = useState('')
+  const [taskInput, setTaskInput]               = useState('')
+  const [schemaInput, setSchemaInput]           = useState('')
+  const [domainProfile, setDomainProfile]       = useState('generic')
+  const [outputFileFormat, setOutputFileFormat] = useState('')
+  const [budgetUsd, setBudgetUsd]               = useState('')
   const [error, setError]                 = useState<string | null>(null)
   const [loading, setLoading]             = useState(false)
   const [parentRunIds, setParentRunIds]   = useState<string[]>([])
@@ -105,6 +106,9 @@ export default function NewRunPage({ params }: Props) {
       }
       if (effectiveParentIds.length > 0) {
         body['parent_run_ids'] = effectiveParentIds
+      }
+      if (outputFileFormat) {
+        body['output_file_format'] = outputFileFormat
       }
       if (budgetUsd) {
         const v = parseFloat(budgetUsd)
@@ -208,6 +212,26 @@ export default function NewRunPage({ params }: Props) {
                 </Select>
               </div>
 
+              <div className="space-y-1.5">
+                <Label htmlFor="output_file_format">Output format (optional)</Label>
+                <Select value={outputFileFormat} onValueChange={setOutputFileFormat}>
+                  <SelectTrigger id="output_file_format">
+                    <SelectValue placeholder="Let agents decide" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Let agents decide</SelectItem>
+                    <SelectItem value="docx">📄 Document Word (.docx)</SelectItem>
+                    <SelectItem value="csv">📊 CSV spreadsheet</SelectItem>
+                    <SelectItem value="json">&#123;&#125; JSON data</SelectItem>
+                    <SelectItem value="py">⚙️ Python script</SelectItem>
+                    <SelectItem value="html">&lt;/&gt; HTML page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">You can always download the result as Markdown.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="budget_usd">Budget (USD, optional)</Label>
                 <Input

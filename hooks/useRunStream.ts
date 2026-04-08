@@ -46,6 +46,7 @@ type StreamEvent =
   | { type: 'run_finished'; status: string }
   | { type: 'error'; node_id: string; message: string }
   | { type: 'artifacts_ready'; node_id: string; artifact_count: number; filenames: string[] }
+  | { type: 'artifact_ready'; artifact_id: string; filename: string; mime_type: string; node_id: string; artifact_role: 'pending_review' | 'primary' | 'supplementary' }
   | { type: 'spawned_followup_runs'; node_id: string; runs: Array<{ run_id: string; label: string }> }
 
 export interface StreamState {
