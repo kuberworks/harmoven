@@ -750,6 +750,17 @@
         "title": "Generated files",
         "downloadZip": "Download as ZIP"
       },
+      "python_executor": {
+        "skipped_files": {
+          "summary": "{count} file(s) could not be collected",
+          "title": "Files not collected by the platform",
+          "reason": {
+            "unknown_ext": "unsupported extension",
+            "too_large": "exceeds 10 MB limit",
+            "total_exceeded": "run total exceeded 50 MB"
+          }
+        }
+      },
       "reviewer": {
         "followupRuns": {
           "title": "Follow-up pipelines"
@@ -778,6 +789,10 @@
       "download": "Download",
       "artifacts": {
         "title": "Generated files"
+      },
+      "skipped_files": {
+        "title": "{count} file(s) were not collected",
+        "description": "These files were written by the script but could not be saved — either their extension is not supported, they exceed the 10 MB per-file limit, or the 50 MB run budget was exhausted."
       },
       "artifact": {
         "expires": "Available until {date}"

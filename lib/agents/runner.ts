@@ -741,6 +741,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
             truncated:      result.truncated,
             error:          result.error,
             artifact_count: result.files.length,
+            ...(result.skipped_files.length > 0 && { skipped_files: result.skipped_files }),
           },
           costUsd:   0,
           tokensIn:  0,

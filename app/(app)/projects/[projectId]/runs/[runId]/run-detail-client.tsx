@@ -415,6 +415,10 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
   const pythonStderr     = node.agent_type === 'PYTHON_EXECUTOR'
     ? ((handoff?.['stderr'] as string | undefined) ?? null) || null
     : null
+  // PYTHON_EXECUTOR — files written by the script but excluded from collection (persisted in handoff_out)
+  const pythonSkippedFiles = node.agent_type === 'PYTHON_EXECUTOR' && node.status === 'COMPLETED'
+    ? ((handoff?.['skipped_files'] as Array<{ name: string; reason: string }> | undefined) ?? [])
+    : []
   const hasOutput     = !!outputContent || !!node.partial_output || !!stdout || !!pythonExecError || !!pythonStderr
   // The settled text shown in the expanded panel (not stdout, not streaming)
   const outputText    = outputContent
@@ -503,6 +507,12 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
           {!node.error && pythonExecError && node.status === 'COMPLETED' && (
             <p className="text-xs text-red-400 mt-1 line-clamp-2 font-mono">{pythonExecError}</p>
           )}
+          {/* PYTHON_EXECUTOR: skipped files warning — always visible in header */}
+          {pythonSkippedFiles.length > 0 && (
+            <p className="text-xs text-amber-400 mt-1">
+              ⚠ {t('run.node.python_executor.skipped_files.summary', { count: String(pythonSkippedFiles.length) })}
+            </p>
+          )}
           {outputSummary && !expanded && (
             <p className="text-xs text-muted-foreground mt-1 italic line-clamp-1">{outputSummary}</p>
           )}
@@ -558,6 +568,24 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
                   </pre>
                 </details>
               )}
+            </div>
+          )}
+          {/* PYTHON_EXECUTOR: skipped files detail list — shown in expanded panel */}
+          {pythonSkippedFiles.length > 0 && (
+            <div className="border-t border-amber-500/20 bg-amber-950/10 px-4 py-3">
+              <p className="text-xs text-amber-400 font-medium mb-1.5">
+                ⚠ {t('run.node.python_executor.skipped_files.title')}
+              </p>
+              <ul className="space-y-0.5">
+                {pythonSkippedFiles.map((f, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs text-amber-400/70 font-mono">
+                    <span className="truncate">{f.name}</span>
+                    <span className="shrink-0 text-amber-400/40">
+                      — {t(`run.node.python_executor.skipped_files.reason.${f.reason}`)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -896,9 +924,20 @@ function ResultTab({
     : terminalOutputs.length  > 0 ? terminalOutputs
     : fallbackOutputs()
 
-  // Only show "no output" when there are truly no artifacts either — a PYTHON_EXECUTOR
-  // run with outputs.length === 0 still has a downloadable artifact to display.
-  if (outputs.length === 0 && runArtifacts.length === 0) {
+  // Collect skipped files from all COMPLETED PYTHON_EXECUTOR nodes in the run.
+  // Persisted in handoff_out.skipped_files — survives page reload.
+  type SkippedEntry = { name: string; reason: string }
+  const allSkippedFiles: SkippedEntry[] = dag.nodes
+    .filter(dn => dn.agent_type === 'PYTHON_EXECUTOR')
+    .flatMap(dn => {
+      const node = nodes.find(n => n.node_id === dn.id && n.status === 'COMPLETED')
+      if (!node) return []
+      const handoff = (node.handoff_out as Record<string, unknown> | null) ?? null
+      return (handoff?.['skipped_files'] as SkippedEntry[] | undefined) ?? []
+    })
+
+  // Only show "no output" when there are truly no artifacts and no skipped-file warnings either.
+  if (outputs.length === 0 && runArtifacts.length === 0 && allSkippedFiles.length === 0) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
@@ -1046,6 +1085,30 @@ function ResultTab({
                 )}
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+      {/* Skipped files warning — shown when the Python executor silently dropped files */}
+      {allSkippedFiles.length > 0 && runStatus === 'COMPLETED' && (
+        <Card className="border-amber-500/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-amber-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {t('run.result.skipped_files.title', { count: String(allSkippedFiles.length) })}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground mb-2">{t('run.result.skipped_files.description')}</p>
+            <ul className="space-y-1">
+              {allSkippedFiles.map((f, i) => (
+                <li key={i} className="flex items-center gap-2 text-xs font-mono text-amber-400/80">
+                  <span className="truncate">{f.name}</span>
+                  <span className="shrink-0 text-muted-foreground">
+                    — {t(`run.node.python_executor.skipped_files.reason.${f.reason}`)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}
