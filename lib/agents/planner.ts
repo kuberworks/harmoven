@@ -134,26 +134,50 @@ OUTPUT FORMATTING — applies to every WRITER node that generates prose or data 
 - For WRITER nodes that are NOT python_code nodes, set expected_output_type = "document" so the
   UI renders the output as Markdown instead of raw text.
 
-MANDATORY — PYTHON_EXECUTOR for downloadable binary files:
-- TRIGGER KEYWORDS: spreadsheet, Excel, .xlsx, .xls, CSV, PDF, chart, graph, image, PNG, SVG,
-  or any request for a file the user can download → you MUST add a PYTHON_EXECUTOR node.
+PYTHON_EXECUTOR — two distinct patterns (choose based on the task goal):
+
+PATTERN A — FILE GENERATION (task = "create / produce a downloadable file"):
+- TRIGGER: request for a spreadsheet, Excel, .xlsx, .xls, CSV, PDF, chart, graph, image,
+  PNG, SVG, or any file the user can download.
 - NEVER output a text/JSON description of what a file should contain; the file must be created
   by Python code. A WRITER saying "here is the Excel content" with no PYTHON_EXECUTOR is WRONG.
-- Pattern: WRITER nodes produce ONLY raw Python source code (no prose, no Markdown fences);
-  a single PYTHON_EXECUTOR node executes all that code in a sandboxed Pyodide environment;
-  files saved to disk by the Python code are automatically collected and made downloadable.
+- WRITER nodes produce ONLY raw Python source code (no prose, no Markdown fences);
+  PYTHON_EXECUTOR runs all that code in a sandboxed Pyodide environment;
+  files saved to disk are automatically collected and made downloadable.
 - Python code MUST write files with workbook.save('name.xlsx'), df.to_csv('name.csv'),
   plt.savefig('name.png'), or open('name.ext', 'wb'). File names: alphanumeric + dots/hyphens.
-- One PYTHON_EXECUTOR receives all WRITER code outputs as input, combines, and runs them.
 - WRITER nodes feeding PYTHON_EXECUTOR: expected_output_type = "python_code".
 - PYTHON_EXECUTOR node: expected_output_type = "python_files", complexity = "medium".
-- GOOD example — multi-sheet Excel:
-  n3=WRITER(sheet 1 code) + n4=WRITER(sheet 2 code) → n5=PYTHON_EXECUTOR → n6=REVIEWER.
-  Full chain: n1=CLASSIFIER→n2=PLANNER→{n3,n4}→n5→n6. Depth=4.
+- Chain: {WRITER(s)} → PYTHON_EXECUTOR → REVIEWER.
 - GOOD example — single file:
   n3=WRITER(python_code) → n4=PYTHON_EXECUTOR → n5=REVIEWER. Depth=4.
-- BAD example (FORBIDDEN): n3=WRITER outputs {"sheet":"Budget","rows":[...]} and no
-  PYTHON_EXECUTOR exists → the file is never created, the user gets nothing to download.`
+- GOOD example — multi-sheet Excel:
+  n3=WRITER(sheet 1 code) + n4=WRITER(sheet 2 code) → n5=PYTHON_EXECUTOR → n6=REVIEWER.
+- BAD (FORBIDDEN): WRITER outputs JSON describing file contents with no PYTHON_EXECUTOR.
+
+PATTERN B — DATA ANALYSIS (task = "read / inspect / analyze / summarize an existing file"):
+- TRIGGER: task asks to analyze, inspect, describe, explain, summarize, explore, or report
+  on the contents of an uploaded file (Excel, CSV, JSON, text, etc.) — the goal is a
+  human-readable document, NOT a new downloadable file.
+- You MUST use a final WRITER(document) node after PYTHON_EXECUTOR to turn the Python
+  output (stdout) into a structured Markdown report. NEVER send PYTHON_EXECUTOR output
+  directly to REVIEWER — it only contains raw stdout/stderr, not a formatted document.
+- Pattern:
+  WRITER(python_code, reads file and prints findings as text/JSON to stdout)
+    → PYTHON_EXECUTOR (runs the code; stdout = analysis data)
+    → WRITER(document, expected_output_type="document", receives stdout, writes Markdown report)
+    → REVIEWER.
+- The python_code WRITER must print all findings to stdout (print(), not file.write()).
+  It must NOT save any file to disk — its only output is stdout.
+- The document WRITER receives { stdout: "...", exit_code: 0, ... } as upstream_inputs;
+  it must synthesise that data into a well-structured Markdown document.
+- GOOD example — analyze Excel contents:
+  n3=WRITER(python_code: reads file, prints sheet names, column headers, row counts, sample rows)
+  → n4=PYTHON_EXECUTOR
+  → n5=WRITER(document: synthesises stdout into ## Sheets / ## Columns / ## Data sample Markdown)
+  → n6=REVIEWER. Depth=5.
+- BAD (FORBIDDEN): n3=WRITER(python_code) → n4=PYTHON_EXECUTOR → n5=REVIEWER.
+  The REVIEWER receives raw stdout and has no WriterOutput to review → broken output.`
 
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
