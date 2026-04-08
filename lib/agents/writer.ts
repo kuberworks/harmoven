@@ -148,8 +148,8 @@ Rules:
 - Output ONLY the JSON object. No markdown fence, no prose around the JSON.
 - assumptions_made: list every decision you made that was not explicit in the task.
 - confidence < 80 means the output needs revision.
-- FORMATTING — output.content for prose/document/data nodes (not python_code) MUST use
-  Markdown just like ChatGPT or Claude:
+- FORMATTING — output.content for prose/document/data nodes (not python_code):
+  • DEFAULT FORMAT IS MARKDOWN — use it unless the task explicitly requests another format.
   • Use # / ## / ### headings to structure the response.
   • Use **bold** and *italic* for emphasis.
   • Use bullet lists (- item) or numbered lists (1. item) where appropriate.
@@ -157,8 +157,9 @@ Rules:
   • Use fenced code blocks (\`\`\`language … \`\`\`) for multi-line code or data.
   • Use > blockquotes for callouts, warnings, important notes.
   • Never return a wall of unstructured plain text — always structure the content.
-  • The goal: a human reading the output should find it as clear and readable
-    as a response from a premium AI assistant.`
+  • NEVER produce HTML (tags like <div>, <p>, <ul>, <h1>, etc.) unless the task
+    description explicitly says "HTML", "web page", or "HTML document".
+    If the user asked for a document, report, or content → use Markdown, not HTML.`
 
   if (!isPythonCodeNode) return basePrompt
 
