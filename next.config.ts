@@ -103,11 +103,15 @@ const nextConfig: NextConfig = {
   // prevents webpack from trying to bundle them and emitting spurious warnings.
   //   • electron  — only used in DEPLOYMENT_MODE=electron (lib/config-git/paths.ts)
   //   • puppeteer — optional screenshots fallback (lib/agents/scaffolding/preview-cascade.ts)
+  //   • pyodide   — spawned via worker_threads in python-executor.ts; its internal
+  //                 require() calls use dynamic expressions that webpack cannot
+  //                 statically analyse, generating "Critical dependency" warnings.
   webpack(config) {
     config.externals = [
       ...(Array.isArray(config.externals) ? config.externals : config.externals ? [config.externals] : []),
       'electron',
       'puppeteer',
+      'pyodide',
     ]
     return config
   },
