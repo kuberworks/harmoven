@@ -124,7 +124,12 @@ Universal checklist:
 - No hallucinated data, figures, or unsourced claims
 ${languageRule}${parallelSheetsRule}
 Profile-specific rules:
-- app_scaffolding: flag if ESLint/tsc/docker-compose issues mentioned in output
+- app_scaffolding: the writer output will be a file manifest listing generated source files.
+  Review whether the stated files cover the requested technology stack and project structure.
+  Flag if key files are obviously missing (e.g. no entry point, no build descriptor).
+  Do NOT flag the absence of a ZIP — individual files are the correct format; a ZIP download
+  button is provided automatically by the platform.
+  Flag if ESLint/tsc/docker-compose issues are mentioned in the script output.
 - legal_compliance: must flag if "consult a lawyer" reminder is absent
 - finance_modeling: flag any figures not traceable to input data
 - data_reporting: flag statistics without source references
