@@ -872,9 +872,14 @@ function ResultTab({
   // Priority 3 (fallback): completed WRITER nodes only, in DAG order.
   // Excludes non-terminal and non-WRITER nodes (e.g. PYTHON_EXECUTOR, CLASSIFIER) so
   // we never surface intermediate code or raw execution metadata as the final result.
+  // Also excludes WRITER nodes whose direct successor is PYTHON_EXECUTOR — those are
+  // intermediate python_code generators, not final output.
   const fallbackOutputs = (): OutputEntry[] => {
+    // Collect IDs of PYTHON_EXECUTOR nodes, then find WRITER nodes that feed directly into them.
+    const pythonExecIds = new Set(dag.nodes.filter(n => n.agent_type === 'PYTHON_EXECUTOR').map(n => n.id))
+    const pythonCodeWriterIds = new Set(dag.edges.filter(e => pythonExecIds.has(e.to)).map(e => e.from))
     return dag.nodes
-      .filter((dn) => dn.agent_type === 'WRITER')
+      .filter((dn) => dn.agent_type === 'WRITER' && !pythonCodeWriterIds.has(dn.id))
       .flatMap((dn) => {
         const node = nodes.find((n) => n.node_id === dn.id && n.status === 'COMPLETED')
         if (!node) return []
@@ -891,7 +896,9 @@ function ResultTab({
     : terminalOutputs.length  > 0 ? terminalOutputs
     : fallbackOutputs()
 
-  if (outputs.length === 0) {
+  // Only show "no output" when there are truly no artifacts either — a PYTHON_EXECUTOR
+  // run with outputs.length === 0 still has a downloadable artifact to display.
+  if (outputs.length === 0 && runArtifacts.length === 0) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
