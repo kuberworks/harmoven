@@ -41,9 +41,19 @@ export async function GET(
   }
 
   // ─── List artifacts (metadata only — no binary data) ──────────────────────
+  const includeDiscarded = req.nextUrl.searchParams.get('include_discarded') === 'true'
+
+  // Only instance admins may view discarded artifacts
+  if (includeDiscarded && !perms.has('admin:instance')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const artifacts = await db.runArtifact.findMany({
-    where:   { run_id: runId },
-    select:  { id: true, node_id: true, filename: true, mime_type: true, size_bytes: true, created_at: true },
+    where:   {
+      run_id: runId,
+      ...(includeDiscarded ? {} : { artifact_role: { not: 'discarded' } }),
+    },
+    select:  { id: true, node_id: true, filename: true, mime_type: true, size_bytes: true, created_at: true, artifact_role: true },
     orderBy: { created_at: 'asc' },
   })
 

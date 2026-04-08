@@ -3320,6 +3320,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: include_discarded
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: "When `true`, include artifacts with role `discarded`. Requires `admin:instance` permission."
       responses:
         '200':
           description: Array of artifact metadata (no binary content)
@@ -3329,7 +3335,7 @@ paths:
                 type: array
                 items:
                   type: object
-                  required: [id, node_id, filename, mime_type, size_bytes, created_at]
+                  required: [id, node_id, filename, mime_type, size_bytes, created_at, artifact_role]
                   properties:
                     id:
                       type: string

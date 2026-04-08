@@ -33,7 +33,7 @@ import { PlannerExhaustionError } from '@/lib/agents/planner'
 import type { PlannerHandoff }     from '@/lib/agents/planner'
 import { gateTimeoutAt }          from '@/lib/execution/gate-timeout'
 import { AgentCostError }         from '@/lib/agents/agent-cost-error'
-import { promoteOrphanArtifacts } from '@/lib/agents/runner'
+import { promoteOrphanArtifacts, promoteArtifactsAfterApprove, discardPendingArtifacts } from '@/lib/agents/runner'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1383,6 +1383,21 @@ export class CustomExecutor implements IExecutionEngine {
           } catch (gateErr) {
             console.error(`[executor] Failed to open human gate for ESCALATE_HUMAN (run ${runId}):`, gateErr)
           }
+        }
+
+        // ── REVIEWER artifact role promotion ──────────────────────────────────
+        // APPROVE → pending_review artifacts promoted to 'primary', primary_artifact_id set.
+        // REQUEST_REVISION → pending_review artifacts marked 'discarded'.
+        // ESCALATE_HUMAN / SPAWN_FOLLOWUP → no change (human decides, or run continues).
+        const verdict = reviewerHandoff['verdict'] as string | undefined
+        if (verdict === 'APPROVE') {
+          await promoteArtifactsAfterApprove(runId).catch(err =>
+            console.error(`[executor] REVIEWER artifact promotion failed for run ${runId}:`, err),
+          )
+        } else if (verdict === 'REQUEST_REVISION') {
+          await discardPendingArtifacts(runId).catch(err =>
+            console.error(`[executor] REVIEWER artifact discard failed for run ${runId}:`, err),
+          )
         }
       }
 
