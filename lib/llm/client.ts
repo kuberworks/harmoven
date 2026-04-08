@@ -238,7 +238,7 @@ async function callOpenAI(
     { signal: options.signal },
   )
 
-  const choice  = completion.choices[0]
+  const choice  = completion.choices?.[0]
   const content = choice?.message?.content ?? ''
   return {
     content,
