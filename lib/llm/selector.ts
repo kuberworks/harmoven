@@ -11,8 +11,13 @@
 //     → full multi-criteria scorer — used by the DAG executor for production routing
 //     → applies hard constraints (confidentiality, jurisdiction, context window)
 //       then scores remaining candidates and returns the best
+//
+//   selectImageModel(ctx?)
+//     → find enabled profiles with modality='image', apply jurisdiction/confidentiality,
+//       return the first match or throw if none configured
 
 import type { LlmProfileConfig } from './profiles'
+import { db } from '@/lib/db/client'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -209,4 +214,61 @@ export function selectLlm(input: SelectLlmInput): LlmProfileConfig | null {
   scored.sort((a, b) => b.score - a.score)
 
   return scored[0]?.profile ?? null
+}
+
+// ─── Image model selector ──────────────────────────────────────────────────
+
+/**
+ * Find an enabled LlmProfile with modality='image'.
+ * Applies the same jurisdiction / confidentiality hard-constraints as selectLlm().
+ * Returns the first match by cost (cheapest first).
+ * Throws 'No image generation model configured' when none passes filtering.
+ */
+export async function selectImageModel(
+  ctx?: {
+    confidentiality?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+    jurisdictionTags?: string[]
+  },
+): Promise<LlmProfileConfig & { modality: string }> {
+  // Fetch all enabled modality=image profiles from DB
+  const rows = await db.llmProfile.findMany({
+    where: { enabled: true, modality: 'image' },
+  })
+
+  if (rows.length === 0) {
+    throw new Error('No image generation model configured')
+  }
+
+  // Map Prisma rows to LlmProfileConfig shape
+  const profiles: Array<LlmProfileConfig & { modality: string }> = rows.map(r => ({
+    id:                       r.id,
+    provider:                 r.provider,
+    model_string:             r.model_string,
+    tier:                     r.tier as 'fast' | 'balanced' | 'powerful',
+    context_window:           r.context_window,
+    cost_per_1m_input_tokens:  Number(r.cost_per_1m_input_tokens),
+    cost_per_1m_output_tokens: Number(r.cost_per_1m_output_tokens),
+    jurisdiction:             r.jurisdiction as 'us' | 'eu' | 'cn' | 'local',
+    trust_tier:               r.trust_tier as 1 | 2 | 3,
+    task_type_affinity:       r.task_type_affinity,
+    config:                   r.config as Record<string, unknown>,
+    modality:                 r.modality,
+  }))
+
+  // Apply hard constraints
+  const confidentiality = ctx?.confidentiality ?? 'LOW'
+  const jurisdictionTags = ctx?.jurisdictionTags ?? []
+
+  const eligible = profiles.filter(p =>
+    meetsConfidentialityConstraint(p, confidentiality) &&
+    meetsJurisdictionConstraint(p, jurisdictionTags),
+  )
+
+  if (eligible.length === 0) {
+    throw new Error('No image generation model configured')
+  }
+
+  // Cheapest first as tie-breaker
+  eligible.sort((a, b) => a.cost_per_1m_input_tokens - b.cost_per_1m_input_tokens)
+  return eligible[0]!
 }

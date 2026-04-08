@@ -535,6 +535,7 @@ model LlmProfile {
   jurisdiction              String   // us | eu | cn | local
   trust_tier                Int      // 1 | 2 | 3
   enabled                   Boolean  @default(true)
+  modality                  String   @default("text")  // "text" | "image" | "multimodal"
   task_type_affinity        String[] // task types this model excels at
   config                    Json     @default("{}")
 }

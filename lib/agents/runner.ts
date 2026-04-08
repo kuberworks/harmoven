@@ -39,6 +39,9 @@ import { parseRunConfig } from '@/lib/execution/run-config'
 import { WEB_SEARCH_TOOL } from '@/lib/agents/tools/registry'
 import { makeWebSearchExecutor, type WebSearchDb } from '@/lib/agents/tools/web-search'
 import { ToolInjectionLLMClient } from '@/lib/llm/tool-injection-client'
+import { DirectImageClient, createImageClient } from '@/lib/llm/image-client'
+import { selectImageModel } from '@/lib/llm/selector'
+import { buildFilename } from '@/lib/execution/converters/sanitize'
 import { db } from '@/lib/db/client'
 import { projectEventBus } from '@/lib/events/project-event-bus.factory'
 
@@ -55,7 +58,7 @@ const VALID_PROFILES = new Set<string>([
 // an unintended code path via a case-folding variant.
 const ALLOWED_AGENT_TYPES = new Set([
   'CLASSIFIER', 'PLANNER', 'WRITER', 'REVIEWER',
-  'SMOKE_TEST', 'REPAIR', 'CRITICAL_REVIEW', 'PYTHON_EXECUTOR',
+  'SMOKE_TEST', 'REPAIR', 'CRITICAL_REVIEW', 'PYTHON_EXECUTOR', 'IMAGE_GEN',
 ])
 
 function asProfileId(v: unknown): ProfileId {
@@ -743,6 +746,108 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           tokensIn:  0,
           tokensOut: 0,
           llm_model: undefined,
+        }
+      }
+
+      // ── IMAGE_GEN ─────────────────────────────────────────────────────────
+      case 'IMAGE_GEN': {
+        // Extract prompt from handoffIn (string or structured {prompt} / {output.content})
+        function extractImagePrompt(hin: unknown): string | null {
+          if (typeof hin === 'string' && hin.trim()) return hin.trim()
+          const r = hin as Record<string, unknown> | null
+          if (!r) return null
+          if (typeof r['prompt'] === 'string') return r['prompt'] as string
+          const out = r['output'] as Record<string, unknown> | undefined
+          if (typeof out?.['content'] === 'string') return out['content'] as string
+          return null
+        }
+
+        const prompt = extractImagePrompt(handoffIn)
+        if (!prompt) {
+          throw new Error('[IMAGE_GEN] No prompt found in handoffIn')
+        }
+
+        // Build selection context from node metadata (confidentiality, jurisdiction)
+        const imageSelContext = {
+          confidentiality: (meta['confidentiality'] as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined),
+          jurisdictionTags: Array.isArray(meta['jurisdiction_tags']) ? (meta['jurisdiction_tags'] as string[]) : [],
+        }
+
+        let imageProfile: Awaited<ReturnType<typeof selectImageModel>>
+        try {
+          imageProfile = await selectImageModel(imageSelContext)
+        } catch {
+          throw new Error('No image generation provider is configured.')
+        }
+
+        const imageClient = createImageClient(imageProfile)
+        const result = await imageClient.generateImage(prompt, {
+          model:  imageProfile.model_string,
+          width:  typeof meta['width']  === 'number' ? (meta['width']  as number) : 1024,
+          height: typeof meta['height'] === 'number' ? (meta['height'] as number) : 1024,
+          signal,
+        })
+
+        const ext       = result.mimeType.split('/')[1] ?? 'png'
+        const filename  = buildFilename('image', ext)
+        const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+
+        const artifact = await db.runArtifact.create({
+          data: {
+            run_id:        node.run_id,
+            node_id:       node.node_id,
+            filename,
+            mime_type:     result.mimeType,
+            artifact_role: 'primary',
+            data:          result.bytes as unknown as Uint8Array<ArrayBuffer>,
+            size_bytes:    result.bytes.byteLength,
+            expires_at:    expiresAt,
+          },
+        })
+
+        // Set primary_artifact_id on the run
+        await db.run.update({
+          where: { id: node.run_id },
+          data:  { primary_artifact_id: artifact.id },
+        })
+
+        console.log(`[agentRunner] IMAGE_GEN artifact created: ${filename} (id=${artifact.id}, ${result.bytes.byteLength} bytes)`)
+
+        // Emit SSE events
+        const imageRunData = await db.run.findUnique({ where: { id: node.run_id }, select: { project_id: true } })
+        if (imageRunData) {
+          void projectEventBus.emit({
+            project_id: imageRunData.project_id,
+            run_id:     node.run_id,
+            event: {
+              type:          'artifact_ready',
+              artifact_id:   artifact.id,
+              filename,
+              mime_type:     result.mimeType,
+              node_id:       node.node_id,
+              artifact_role: 'primary',
+            },
+            emitted_at: new Date(),
+          })
+          void projectEventBus.emit({
+            project_id: imageRunData.project_id,
+            run_id:     node.run_id,
+            event: {
+              type:           'artifacts_ready',
+              node_id:        node.node_id,
+              artifact_count: 1,
+              filenames:      [filename],
+            },
+            emitted_at: new Date(),
+          })
+        }
+
+        return {
+          handoffOut: { artifact_id: artifact.id, mime_type: result.mimeType, filename },
+          costUsd:    result.costUsd,
+          tokensIn:   0,
+          tokensOut:  0,
+          llm_model:  result.model,
         }
       }
 
