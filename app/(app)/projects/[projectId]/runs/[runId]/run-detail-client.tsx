@@ -414,7 +414,10 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
     ?? null
   const renderAsMarkdown = !!outputText && looksLikeMarkdown(outputText)
 
-  const durationMs = node.started_at && node.completed_at
+  // Only compute a settled duration when the node is not RUNNING.
+  // When a node is restarted, completed_at is the timestamp from the *previous* run;
+  // using it produces a near-zero (or negative) delta → "<1s" while the node is live.
+  const durationMs = node.started_at && node.completed_at && node.status !== 'RUNNING'
     ? new Date(node.completed_at).getTime() - new Date(node.started_at).getTime()
     : null
   const durationSec = durationMs !== null ? Math.round(durationMs / 1000) : null
