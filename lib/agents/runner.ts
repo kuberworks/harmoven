@@ -90,6 +90,46 @@ export async function promoteOrphanArtifacts(runId: string): Promise<void> {
 }
 
 /**
+ * C3-REVIEWER-APPROVE — Promote all pending_review artifacts for a run to 'primary'.
+ * Sets Run.primary_artifact_id to the oldest promoted artifact.
+ *
+ * Called by the executor after a REVIEWER node completes with verdict APPROVE.
+ * Spec: multi-format-artifact-output.feature.md Phase 5 §3b
+ */
+export async function promoteArtifactsAfterApprove(runId: string): Promise<void> {
+  const updated = await db.runArtifact.updateMany({
+    where: { run_id: runId, artifact_role: 'pending_review' },
+    data:  { artifact_role: 'primary' },
+  })
+  if (updated.count > 0) {
+    const first = await db.runArtifact.findFirst({
+      where:   { run_id: runId, artifact_role: 'primary' },
+      orderBy: { created_at: 'asc' },
+      select:  { id: true },
+    })
+    if (first) {
+      await db.run.update({
+        where: { id: runId },
+        data:  { primary_artifact_id: first.id },
+      })
+    }
+  }
+}
+
+/**
+ * C3-REVIEWER-REJECT — Discard all pending_review artifacts for a run.
+ *
+ * Called by the executor after a REVIEWER node completes with verdict REQUEST_REVISION.
+ * Spec: multi-format-artifact-output.feature.md Phase 5 §3c
+ */
+export async function discardPendingArtifacts(runId: string): Promise<void> {
+  await db.runArtifact.updateMany({
+    where: { run_id: runId, artifact_role: 'pending_review' },
+    data:  { artifact_role: 'discarded' },
+  })
+}
+
+/**
  * Sanitize a user-supplied task description before passing it to a Planner or Classifier.
  *
  * Context: task_input is authored by an authenticated user (not an external attacker), so the
@@ -383,6 +423,19 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           // SSE so the UI download section updates without polling
           const runForProject = await db.run.findUnique({ where: { id: node.run_id }, select: { project_id: true } })
           if (runForProject) {
+            void projectEventBus.emit({
+              project_id: runForProject.project_id,
+              run_id:     node.run_id,
+              event: {
+                type:           'artifact_ready',
+                artifact_id:    artifact.id,
+                filename,
+                mime_type:      mimeType,
+                node_id:        node.node_id,
+                artifact_role:  artifact.artifact_role,
+              },
+              emitted_at: new Date(),
+            })
             void projectEventBus.emit({
               project_id: runForProject.project_id,
               run_id:     node.run_id,

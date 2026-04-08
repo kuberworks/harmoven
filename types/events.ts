@@ -93,6 +93,20 @@ export type RunSSEEventSpawnedFollowupRuns = {
 }
 
 /**
+ * Emitted after each individual artifact is persisted (singular, per-artifact).
+ * Different from 'artifacts_ready' (plural batch) — carries the artifact ID so
+ * clients can immediately fetch/display the artifact without an extra list call.
+ */
+export type RunSSEEventArtifactReady = {
+  type:          'artifact_ready'
+  artifact_id:   string
+  filename:      string
+  mime_type:     string
+  node_id:       string
+  artifact_role: 'pending_review' | 'primary' | 'supplementary'
+}
+
+/**
  * Full discriminated union of all SSE event payloads.
  * Parsed from the `data` field of each `text/event-stream` message.
  *
@@ -119,6 +133,7 @@ export type RunSSEEvent =
   | RunSSEEventCompleted
   | RunSSEEventError
   | RunSSEEventArtifactsReady
+  | RunSSEEventArtifactReady
   | RunSSEEventSpawnedFollowupRuns
 
 /** Project-level lifecycle events (emitted on /api/projects/:id/stream). */
