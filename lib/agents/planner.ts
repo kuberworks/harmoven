@@ -14,6 +14,8 @@ import type { ILLMClient } from '@/lib/llm/interface'
 import type { ClassifierResult, ProfileId } from '@/lib/agents/classifier'
 import { withRetry } from '@/lib/utils/retry'
 import { PlannerHandoffSchema } from '@/lib/agents/handoff'
+import { parseRunConfig } from '@/lib/execution/run-config'
+import { db } from '@/lib/db/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,8 +31,8 @@ export interface PlannerNode {
   timeout_minutes: number
   /** References to outputs of prior nodes, e.g. "output:n1". */
   inputs: string[]
-  expected_output_type: string
-}
+  expected_output_type: string  /** When set, the WRITER node targets this file format (spec §1.5). */
+  output_file_format?: string}
 
 export interface PlannerEdge {
   from: string
@@ -212,7 +214,19 @@ PATTERN C — FILE GENERATION + MARKDOWN REPORT (task = "create files AND explai
   → n5=WRITER(document: describes what each chart shows, methodology, conclusions)
   → n6=REVIEWER. Depth=5.
 - BAD (FORBIDDEN): use PATTERN A (no document WRITER) when the user explicitly wants a report.
-- BAD (FORBIDDEN): use PATTERN B (reads existing file) when creating new files from scratch.\``
+- BAD (FORBIDDEN): use PATTERN B (reads existing file) when creating new files from scratch.
+
+FORMAT ROUTING:
+If the classifier input contains desired_outputs:
+- For each entry with produced_by = "writer": set output_file_format on the corresponding
+  WRITER node config (use the format value exactly as-is, e.g. "csv", "json", "md").
+- For each entry with produced_by = "python": ensure a PYTHON_EXECUTOR node is present
+  after the WRITER(python_code) node.
+
+OUTPUT FILE FORMAT PRIORITY (C2 rule):
+If run_config.output_file_format is set (the user selected a format in the UI form),
+it ALWAYS takes priority over desired_outputs from the CLASSIFIER.
+Use run_config.output_file_format for ALL WRITER nodes when it is present.`
 
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
@@ -355,6 +369,10 @@ export class Planner {
                     confidence:              profile.confidence,
                     input_summary:           profile.input_summary,
                     clarification_questions: profile.clarification_questions,
+                    // Pass desired_outputs so the LLM can set output_file_format on nodes
+                    ...(profile.desired_outputs?.length
+                      ? { desired_outputs: profile.desired_outputs }
+                      : {}),
                   },
                 }),
               },
@@ -420,7 +438,36 @@ export class Planner {
           )
         }
 
-        return zodResult.data
+        // ── C2 rule: output_file_format post-processing ─────────────────────
+        // After DAG validation, apply format overrides:
+        //   1. run_config.output_file_format (form selector) takes ABSOLUTE priority
+        //   2. Fallback: desired_outputs from classifier
+        const plannerResult = zodResult.data
+        const runRow = await db.run.findUnique({ where: { id: run_id }, select: { run_config: true } }).catch(() => null)
+        const runConfig = parseRunConfig(runRow?.run_config ?? {})
+
+        if (runConfig.output_file_format) {
+          // C2: override output_file_format on ALL WRITER nodes
+          for (const n of plannerResult.dag.nodes) {
+            if (n.agent === 'WRITER') {
+              (n as Record<string, unknown>)['output_file_format'] = runConfig.output_file_format
+            }
+          }
+        } else if (profile.desired_outputs?.length) {
+          // Propagate desired_outputs to WRITER nodes (one entry per WRITER in sequence)
+          const writerNodes = plannerResult.dag.nodes.filter(n => n.agent === 'WRITER')
+          const writerDesired = profile.desired_outputs.filter(d => d.produced_by === 'writer')
+          for (let i = 0; i < Math.min(writerNodes.length, writerDesired.length); i++) {
+            const w = writerNodes[i]!
+            const d = writerDesired[i]!
+            if (!w.output_file_format) {
+              // Only set if the LLM didn't already set it
+              ;(w as Record<string, unknown>)['output_file_format'] = d.format
+            }
+          }
+        }
+
+        return plannerResult
       } catch (err) {
         // Never retry on abort — it's an intentional cancellation.
         if (err instanceof DOMException && err.name === 'AbortError') throw err
