@@ -90,13 +90,19 @@ describe('convertToFile', () => {
     expect(bytes.toString('utf-8')).toBe('echo hello')
   })
 
-  // ─── Phase B stubs ─────────────────────────────────────────────────────────
-  it('docx: throws Phase B not implemented error', async () => {
-    await expect(convertToFile('content', 'docx', 'doc')).rejects.toThrow(/Phase B/)
+  // ─── Phase B formats ───────────────────────────────────────────────────────
+  // docx is implemented (mf-phase7); pdf is still a stub (Phase B-2).
+  it('docx: resolves with a valid OOXML buffer', async () => {
+    const { bytes, mimeType, filename } = await convertToFile('# Hello\n\nWorld', 'docx', 'doc')
+    // OOXML .docx files begin with the PK zip magic bytes (0x50 0x4B 0x03 0x04)
+    expect(bytes[0]).toBe(0x50)
+    expect(bytes[1]).toBe(0x4B)
+    expect(mimeType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    expect(filename).toBe('doc.docx')
   })
 
-  it('pdf: throws Phase B not implemented error', async () => {
-    await expect(convertToFile('content', 'pdf', 'doc')).rejects.toThrow(/Phase B/)
+  it('pdf: throws not implemented error', async () => {
+    await expect(convertToFile('content', 'pdf', 'doc')).rejects.toThrow(/not yet implemented/)
   })
 
   // ─── Size check (validateArtifact enforces this; convertToFile does not) ───

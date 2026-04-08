@@ -61,6 +61,16 @@ function validLLMResponse(fileName = 'prisma/schema.prisma', content = 'model Us
 
 // ─── Shared setup ─────────────────────────────────────────────────────────────
 
+// LLMDirectExecutor requires WORKTREE_BASE_DIR to enforce the path-traversal guard.
+// Set it to the parent of the fixture worktree_path used in makeInput().
+beforeAll(() => {
+  process.env.WORKTREE_BASE_DIR = '/tmp/harmoven-worktrees'
+})
+
+afterAll(() => {
+  delete process.env.WORKTREE_BASE_DIR
+})
+
 beforeEach(() => {
   mockReadFileSync.mockReset()
   mockWriteFileSync.mockReset()
