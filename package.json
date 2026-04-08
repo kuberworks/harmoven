@@ -71,10 +71,14 @@
     "react-dom": "^18.3.0",
     "react-markdown": "^10.1.0",
     "rehype-sanitize": "^6.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-docx": "^0.3.26",
+    "remark-parse": "^11.0.0",
     "smol-toml": "^1.6.1",
     "tailwind-merge": "^2.5.5",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.0",
+    "unified": "^11.0.5",
     "zod": "^3.23.0"
   },
   "devDependencies": {
