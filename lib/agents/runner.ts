@@ -35,6 +35,10 @@ import { PromptSummaryCaptureClient } from '@/lib/agents/prompt-summary'
 import { executePython } from '@/lib/agents/python-executor'
 import { convertToFile, type OutputFileFormat } from '@/lib/execution/converters/text-to-file'
 import { validateArtifact } from '@/lib/execution/converters/validate'
+import { parseRunConfig } from '@/lib/execution/run-config'
+import { WEB_SEARCH_TOOL } from '@/lib/agents/tools/registry'
+import { makeWebSearchExecutor, type WebSearchDb } from '@/lib/agents/tools/web-search'
+import { ToolInjectionLLMClient } from '@/lib/llm/tool-injection-client'
 import { db } from '@/lib/db/client'
 import { projectEventBus } from '@/lib/events/project-event-bus.factory'
 
@@ -379,6 +383,48 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           ? (meta['output_file_format'] as OutputFileFormat)
           : undefined
 
+        // Fetch run_config + project_id once — used for web search injection and SSE
+        const runData = await db.run.findUnique({
+          where:  { id: node.run_id },
+          select: { run_config: true, project_id: true },
+        })
+        const runConfig  = parseRunConfig(runData?.run_config)
+        const projectId  = runData?.project_id ?? ''
+
+        // Conditionally inject web search tools when run_config.enable_web_search is set
+        let tools:        import('@/lib/llm/interface').ChatOptions['tools']        = undefined
+        let toolExecutor: import('@/lib/llm/interface').ChatOptions['toolExecutor'] = undefined
+
+        if (runConfig.enable_web_search === true) {
+          tools = [WEB_SEARCH_TOOL]
+          toolExecutor = makeWebSearchExecutor(
+            runConfig,
+            db as unknown as WebSearchDb,
+            { project_id: projectId, run_id: node.run_id, node_id: node.node_id ?? node.id },
+            (query, resultCount, iteration, isError) => {
+              void projectEventBus.emit({
+                project_id: projectId,
+                run_id:     node.run_id,
+                event: {
+                  type:         'tool_call_progress',
+                  node_id:      node.node_id ?? node.id,
+                  tool_name:    'web_search',
+                  iteration,
+                  query,
+                  result_count: resultCount,
+                  is_error:     isError,
+                },
+                emitted_at: new Date(),
+              }).catch(() => {}) // non-blocking
+            },
+          )
+        }
+
+        // Wrap with ToolInjectionLLMClient when tools are available; otherwise use raw captureClient
+        const writerClient = (tools && toolExecutor)
+          ? new ToolInjectionLLMClient(captureClient, tools, toolExecutor)
+          : captureClient
+
         const nodeInput: WriterNodeInput = {
           node_id:              node.node_id,
           description:          (meta['description'] as string | undefined) ?? '',
@@ -395,7 +441,23 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           output_file_format:  outputFileFormat,
         }
 
-        const result = await new Writer(captureClient).execute(nodeInput, signal, onChunk)
+        const result = await new Writer(writerClient).execute(nodeInput, signal, onChunk)
+
+        // Persist tool_calls_trace in Node.metadata for observability (spec §4.4)
+        if (result.execution_meta?.tool_calls_trace?.length) {
+          const existingMeta = (typeof node.metadata === 'object' && node.metadata !== null
+            ? node.metadata
+            : {}) as Record<string, unknown>
+          const updatedMeta = {
+            ...existingMeta,
+            tool_calls_trace: result.execution_meta.tool_calls_trace,
+          }
+          // JSON round-trip ensures Prisma's InputJsonValue constraint is satisfied
+          await db.node.update({
+            where: { id: node.id },
+            data:  { metadata: JSON.parse(JSON.stringify(updatedMeta)) },
+          })
+        }
 
         // NEW: convert raw LLM output into a downloadable file when output_file_format
         // is explicitly set on the node (spec §1.6).
@@ -421,10 +483,9 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
             },
           })
           // SSE so the UI download section updates without polling
-          const runForProject = await db.run.findUnique({ where: { id: node.run_id }, select: { project_id: true } })
-          if (runForProject) {
+          if (projectId) {
             void projectEventBus.emit({
-              project_id: runForProject.project_id,
+              project_id: projectId,
               run_id:     node.run_id,
               event: {
                 type:           'artifact_ready',
@@ -437,7 +498,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
               emitted_at: new Date(),
             })
             void projectEventBus.emit({
-              project_id: runForProject.project_id,
+              project_id: projectId,
               run_id:     node.run_id,
               event: {
                 type:           'artifacts_ready',

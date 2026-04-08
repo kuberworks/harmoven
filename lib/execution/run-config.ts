@@ -10,7 +10,9 @@ const OUTPUT_FILE_FORMAT = z.enum([
 ])
 
 export const RunConfigSchema = z.object({
-  enable_web_search:  z.boolean().optional().default(false),
+  enable_web_search:       z.boolean().optional().default(false),
+  web_search_provider:     z.enum(['brave', 'tavily', 'duckduckgo']).optional(),
+  web_search_max_results:  z.number().int().min(1).max(10).optional(),
   /**
    * C2 rule: when set, overrides any desired_outputs from the CLASSIFIER.
    * This is the explicit "form selector" value chosen by the user before run creation.

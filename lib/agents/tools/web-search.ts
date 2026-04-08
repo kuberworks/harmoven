@@ -217,7 +217,7 @@ export interface WebSearchNodeCtx {
 }
 
 // DB interface (only what web-search needs from db)
-interface WebSearchDb {
+export interface WebSearchDb {
   sourceTrustEvent: {
     createMany: (args: {
       data: Array<{
@@ -241,6 +241,7 @@ interface WebSearchDb {
  * @param runConfig  Parsed RunConfig (contains enable_web_search, etc.)
  * @param db         Prisma (or compatible) client for sourceTrustEvent logging
  * @param nodeCtx    Context (project_id, run_id, node_id) for rate limiting and logging
+ * @param emitSse    Optional callback — called after each search with (query, resultCount, iteration, isError)
  *
  * Spec: §3.3 — toolExecutor factory
  */
@@ -248,8 +249,10 @@ export function makeWebSearchExecutor(
   runConfig: RunConfig,
   db: WebSearchDb,
   nodeCtx: WebSearchNodeCtx,
+  emitSse?: (query: string, resultCount: number, iteration: number, isError: boolean) => void,
 ): NonNullable<import('@/lib/llm/interface').ChatOptions['toolExecutor']> {
   const provider = (process.env['WEB_SEARCH_PROVIDER'] ?? 'brave').toLowerCase()
+  let iteration = 0
 
   return async (calls: ToolCall[]): Promise<ToolResult[]> => {
     const results: ToolResult[] = []
@@ -281,15 +284,16 @@ export function makeWebSearchExecutor(
       const query      = String(call.input['query'] ?? '')
       const maxResults = typeof call.input['max_results'] === 'number'
         ? Math.min(Math.max(1, Math.floor(call.input['max_results'] as number)), 10)
-        : 5
+        : (runConfig.web_search_max_results ?? 5)
 
       let searchResponse: WebSearchResponse | null = null
       let searchError: string | null = null
 
       try {
+        const activeProvider = runConfig.web_search_provider ?? provider
         const doSearch = () => {
-          if (provider === 'tavily')     return searchTavily(query, maxResults)
-          if (provider === 'duckduckgo') return searchDuckDuckGo(query, maxResults)
+          if (activeProvider === 'tavily')     return searchTavily(query, maxResults)
+          if (activeProvider === 'duckduckgo') return searchDuckDuckGo(query, maxResults)
           return searchBrave(query, maxResults) // default: brave
         }
         searchResponse = await withRetry(doSearch)
@@ -313,6 +317,8 @@ export function makeWebSearchExecutor(
       )
 
       if (searchError || !searchResponse) {
+        iteration++
+        emitSse?.(query, 0, iteration, true)
         results.push({
           tool_call_id: call.id,
           content:      wrapResultContent(searchError ?? 'No results available.'),
@@ -323,6 +329,8 @@ export function makeWebSearchExecutor(
 
       // Format results
       if (searchResponse.results.length === 0) {
+        iteration++
+        emitSse?.(query, 0, iteration, false)
         results.push({
           tool_call_id: call.id,
           content:      wrapResultContent(`No results found for: "${query}"`),
@@ -333,6 +341,9 @@ export function makeWebSearchExecutor(
       const formatted = searchResponse.results
         .map((r, i) => `${i + 1}. **${r.title}**\n   URL: ${r.url}\n   ${r.snippet}`)
         .join('\n\n')
+
+      iteration++
+      emitSse?.(query, searchResponse.results.length, iteration, false)
 
       results.push({
         tool_call_id: call.id,

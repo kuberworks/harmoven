@@ -752,6 +752,18 @@ components:
               type: array
               items:
                 type: string
+            enable_web_search:
+              type: boolean
+              description: "When `true`, WRITER nodes can invoke the web search tool to retrieve current information during generation."
+            web_search_provider:
+              type: string
+              enum: [brave, tavily, duckduckgo]
+              description: "Override the web search provider for this run. Defaults to the instance-level `WEB_SEARCH_PROVIDER` env variable."
+            web_search_max_results:
+              type: integer
+              minimum: 1
+              maximum: 10
+              description: "Maximum number of web search results per query for this run. Defaults to 5."
         confidentiality:
           $ref: '#/components/schemas/Confidentiality'
           description: "Data sensitivity level applied to LLM routing. Determines which providers are eligible. See `Confidentiality` schema."

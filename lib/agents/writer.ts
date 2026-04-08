@@ -60,6 +60,7 @@ export interface WriterOutput {
     tokens_output: number
     duration_seconds: number
     retries: number
+    tool_calls_trace?: import('@/lib/llm/interface').ToolCallIteration[]
   }
   lateral_delegation_request: null
 }
@@ -298,6 +299,7 @@ export class Writer {
     let tokensOut: number
     let costUsd = 0
     let modelUsed: string
+    let toolCallsTrace: import('@/lib/llm/interface').ToolCallIteration[] | undefined
 
     if (onChunk) {
       // Streaming does not retry (chunks already emitted to client)
@@ -307,6 +309,7 @@ export class Writer {
       tokensOut = result.tokensOut
       costUsd = result.costUsd ?? 0
       modelUsed = result.model
+      toolCallsTrace = result.tool_calls_trace
     } else {
       const result = await withRetry(
         () => this.llm.chat(messages, { model: tier, maxTokens: maxTokensFor(node.complexity, node.domain_profile), signal }),
@@ -323,6 +326,7 @@ export class Writer {
       tokensOut = result.tokensOut
       costUsd = result.costUsd ?? 0
       modelUsed = result.model
+      toolCallsTrace = result.tool_calls_trace
     }
 
     let parsed: unknown
@@ -416,6 +420,7 @@ export class Writer {
         tokens_output: tokensOut,
         duration_seconds: durationSeconds,
         retries,
+        ...(toolCallsTrace?.length ? { tool_calls_trace: toolCallsTrace } : {}),
       },
       lateral_delegation_request: null,
     }

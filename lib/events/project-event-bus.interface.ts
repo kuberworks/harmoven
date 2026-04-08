@@ -20,6 +20,7 @@ export type RunSSEEvent =
   | { type: 'error';            node_id: string; message: string }
   | { type: 'artifacts_ready';           node_id: string; artifact_count: number; filenames: string[] }
   | { type: 'artifact_ready';            artifact_id: string; filename: string; mime_type: string; node_id: string; artifact_role: string }
+  | { type: 'tool_call_progress';        node_id: string; tool_name: string; iteration: number; query?: string; result_count?: number; is_error: boolean }
   | { type: 'spawned_followup_runs';      node_id: string; runs: Array<{ run_id: string; label: string }> }
 
 export type ProjectLifecycleEvent =
