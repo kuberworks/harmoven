@@ -735,15 +735,18 @@ function ResultTab({
   // We try for any completed run — not just when PYTHON_EXECUTOR is present — because
   // WRITER nodes that produce HTML are also stored as RunArtifact rows via detectArtifactFormat.
   const [runArtifacts, setRunArtifacts] = useState<ArtifactMeta[]>([])
-  const hasAnyCompleted = nodes.some(n => n.status === 'COMPLETED')
+  // Use count so the effect re-runs each time a new node completes.
+  // A boolean would stay `true` after the PLANNER finishes and never
+  // re-trigger when the WRITER (the actual artifact producer) completes.
+  const completedCount = nodes.filter(n => n.status === 'COMPLETED').length
   useEffect(() => {
-    if (!hasAnyCompleted) return
+    if (completedCount === 0) return
     fetch(`/api/runs/${runId}/artifacts`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((all: ArtifactMeta[]) => setRunArtifacts(all))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, hasAnyCompleted])
+  }, [runId, completedCount])
 
   function handlePrint() {
     const container = printRef.current
