@@ -472,27 +472,53 @@ export class CustomExecutor implements IExecutionEngine {
             await new Promise(resolve => setTimeout(resolve, 50))
           }
 
-          // Reset all downstream nodes to PENDING
-          await this.db.node.updateMany({
-            where: { run_id: runId, node_id: { in: [...downstreamIds] } },
-            data: {
-              status:             'PENDING',
-              started_at:         null,
-              completed_at:       null,
-              interrupted_at:     null,
-              interrupted_by:     null,
-              partial_output:     null,
-              partial_updated_at: null,
-              error:              null,
-              handoff_out:        null,
-              cost_usd:           0,
-              tokens_in:          0,
-              tokens_out:         0,
-            },
-          })
-
-          for (const did of downstreamIds) {
-            this._emit(runId, { type: 'state_change', entity_type: 'node', id: did, status: 'PENDING' })
+          if (node.agent_type === 'PLANNER') {
+            // PLANNER restart: delete the previous plan's nodes entirely and prune the run DAG.
+            // The PLANNER will produce a brand-new plan with fresh node IDs on re-run.
+            // Keeping stale WRITER/REVIEWER rows would cause them to compete with the new plan.
+            await this.db.node.deleteMany({
+              where: { run_id: runId, node_id: { in: [...downstreamIds] } },
+            })
+            // Strip downstream nodes + any edges touching them from the persisted DAG.
+            const prunedDag = {
+              nodes: dag.nodes.filter(n => !downstreamIds.has(n.id)),
+              edges: dag.edges.filter(e => !downstreamIds.has(e.from) && !downstreamIds.has(e.to)),
+            }
+            await this.db.run.update({ where: { id: runId }, data: { dag: prunedDag } })
+            // Broadcast refreshed node list so the UI removes the stale cards immediately.
+            const remainingNodes = await this.db.node.findMany({ where: { run_id: runId } })
+            this._emit(runId, {
+              type: 'nodes_refresh',
+              nodes: remainingNodes.map(n => ({
+                ...n,
+                cost_usd: Number(n.cost_usd),
+                started_at: n.started_at?.toISOString() ?? null,
+                completed_at: n.completed_at?.toISOString() ?? null,
+              })),
+              dag: prunedDag,
+            })
+          } else {
+            // Non-PLANNER restart: reset downstream nodes to PENDING so they re-execute.
+            await this.db.node.updateMany({
+              where: { run_id: runId, node_id: { in: [...downstreamIds] } },
+              data: {
+                status:             'PENDING',
+                started_at:         null,
+                completed_at:       null,
+                interrupted_at:     null,
+                interrupted_by:     null,
+                partial_output:     null,
+                partial_updated_at: null,
+                error:              null,
+                handoff_out:        null,
+                cost_usd:           0,
+                tokens_in:          0,
+                tokens_out:         0,
+              },
+            })
+            for (const did of downstreamIds) {
+              this._emit(runId, { type: 'state_change', entity_type: 'node', id: did, status: 'PENDING' })
+            }
           }
         }
 
