@@ -560,7 +560,8 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
 
         const result = await executePython({ code, timeout_ms: timeoutMs, packages }, signal)
 
-        // Persist generated files as RunArtifact rows
+        // Persist generated files as RunArtifact rows — done before the exit_code
+        // check so partial artifacts (files saved before a crash) are still accessible.
         if (result.files.length > 0) {
           const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
           await db.runArtifact.createMany({
@@ -590,6 +591,13 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
               emitted_at: new Date(),
             })
           }
+        }
+
+        // Python runtime error — throw so the executor marks the node FAILED,
+        // blocks downstream nodes, and surfaces the error in the run detail UI.
+        if (result.exit_code === 1) {
+          const pythonError = result.error ?? result.stderr.slice(0, 500) ?? 'Python execution failed'
+          throw new Error(`[PYTHON_EXECUTOR] ${pythonError}`)
         }
 
         return {
