@@ -18,7 +18,7 @@ import { ContextInjectionPanel } from '@/components/run/ContextInjectionPanel'
 import { DagView } from '@/components/run/DagView'
 import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { useT } from '@/lib/i18n/client'
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText, Printer, Download } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText, Printer, Download, Globe } from 'lucide-react'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
@@ -352,7 +352,7 @@ const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
 
 // ─── Node card ──────────────────────────────────────────────────────────────
 
-function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, artifactsTick = 0, followupRuns = [] }: { node: InitialNode | NodeState; runId: string; projectId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number; followupRuns?: Array<{ run_id: string; label: string }> }) {
+function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, artifactsTick = 0, followupRuns = [], webSearchProgress = null }: { node: InitialNode | NodeState; runId: string; projectId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number; followupRuns?: Array<{ run_id: string; label: string }>; webSearchProgress?: { query?: string; result_count?: number; iteration: number } | null }) {
   const t = useT()
   const [expanded, setExpanded] = useState(false)
   const streamEndRef = useRef<HTMLPreElement>(null)
@@ -578,6 +578,23 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
             {extractStreamingContent(node.partial_output)}
             <span className="inline-block w-1.5 h-3 bg-foreground/60 animate-pulse ml-0.5 align-middle" />
           </pre>
+        </div>
+      )}
+
+      {/* RUNNING: web search progress */}
+      {node.status === 'RUNNING' && webSearchProgress && (
+        <div className="border-t border-surface-border/50 bg-surface-raised px-4 py-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <Globe className="h-3 w-3 animate-pulse shrink-0" />
+          <span>
+            {webSearchProgress.query
+              ? t('run.node.web_search.searching', { query: webSearchProgress.query })
+              : t('run.node.web_search.in_progress')}
+          </span>
+          {webSearchProgress.result_count != null && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
+              {webSearchProgress.result_count} {t('run.node.web_search.results')}
+            </Badge>
+          )}
         </div>
       )}
 
@@ -1293,6 +1310,11 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                       onRestart={reconnect}
                       uiLevel={uiLevel}
                       artifactsTick={stream.events.filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length}
+                      webSearchProgress={(() => {
+                        const last = stream.events.findLast?.(e => e.type === 'tool_call_progress' && e.node_id === node.node_id)
+                          ?? stream.events.filter(e => e.type === 'tool_call_progress' && e.node_id === node.node_id).at(-1)
+                        return last && last.type === 'tool_call_progress' ? { query: last.query, result_count: last.result_count, iteration: last.iteration } : null
+                      })()}
                       followupRuns={(
                         stream.events
                           .filter(e => e.type === 'spawned_followup_runs' && e.node_id === node.node_id)

@@ -755,6 +755,11 @@
           "title": "Pipelines complémentaires"
         }
       },
+      "web_search": {
+        "searching": "\uD83C\uDF10 Recherche : \"{query}\"",
+        "in_progress": "\uD83C\uDF10 Recherche sur internet\u2026",
+        "results": "résultats"
+      },
       "restart": "Redémarrer",
       "rerun": "Relancer"
     },

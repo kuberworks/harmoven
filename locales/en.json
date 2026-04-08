@@ -755,6 +755,11 @@
           "title": "Follow-up pipelines"
         }
       },
+      "web_search": {
+        "searching": "\uD83C\uDF10 Searching: \"{query}\"",
+        "in_progress": "\uD83C\uDF10 Searching the web\u2026",
+        "results": "results"
+      },
       "restart": "Restart",
       "rerun": "Re-run"
     },

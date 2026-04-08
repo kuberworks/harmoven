@@ -2627,6 +2627,10 @@ paths:
                   items:
                     type: string
                     format: uuid
+                enable_web_search:
+                  type: boolean
+                  default: false
+                  description: "When `true`, WRITER nodes can invoke the web search tool during generation. Requires BRAVE_SEARCH_API_KEY or TAVILY_API_KEY to be configured, or DuckDuckGo is used as fallback. Stored in `run_config.enable_web_search`."
       responses:
         '201':
           description: "Run accepted by the orchestrator and placed in PENDING state. The executor picks it up within seconds. Subscribe to `stream_url` for live progress. `estimated_cost_usd` and `estimated_duration_minutes` may be null immediately — they are populated once the Planner generates the DAG."
