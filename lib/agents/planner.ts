@@ -140,23 +140,30 @@ PYTHON_EXECUTOR — two distinct patterns (choose based on the task goal):
 
 PATTERN A — FILE GENERATION (task = "create / produce a downloadable file, no written explanation needed"):
 - TRIGGER: request for a spreadsheet, Excel, .xlsx, .xls, CSV, PDF, chart, graph, image,
-  PNG, SVG, zip archive, project scaffold (app skeleton, source code project with multiple files),
+  PNG, SVG, project scaffold (app skeleton, source code project with multiple files),
   or any file the user can download — and the task does NOT ask for a written explanation,
   analysis, or markdown summary of those files (use PATTERN C in that case).
 - CRITICAL — project scaffolding rule: if the user asks to "create a project", "scaffold an app",
   "generate a [Spring Boot / Node / Django / React / ...] project", "create a boilerplate", or any
   request that implies generating multiple source code files → you MUST use PYTHON_EXECUTOR.
-  The Python code creates all files (open('path', 'w').write(...)), packages them into a zip
-  (import zipfile), and saves the zip to disk. A WRITER node that just DESCRIBES a project
-  structure in Markdown (without PYTHON_EXECUTOR) is STRICTLY FORBIDDEN for this type of request.
+  The Python code creates EACH FILE INDIVIDUALLY with open('relative/path/filename.ext', 'w').write(...)
+  (using os.makedirs for subdirectories). DO NOT package files into a zip — the platform
+  automatically provides a "Download as ZIP" button that bundles all individual files.
+  Saving each file individually means the user sees every file listed in the UI and can
+  download them one by one or as a zip bundle.
+  A WRITER node that just DESCRIBES a project structure in Markdown (without PYTHON_EXECUTOR)
+  is STRICTLY FORBIDDEN for this type of request.
 - NEVER output a text/JSON description of what a file should contain; the file must be created
   by Python code. A WRITER saying "here is the Excel content" with no PYTHON_EXECUTOR is WRONG.
 - WRITER nodes produce ONLY raw Python source code (no prose, no Markdown fences);
   PYTHON_EXECUTOR runs all that code in a sandboxed Pyodide environment;
   files saved to disk are automatically collected and made downloadable.
 - Python code MUST write files with workbook.save('name.xlsx'), df.to_csv('name.csv'),
-  plt.savefig('name.png'), open('name.ext', 'wb').write(...), or zipfile.ZipFile('name.zip').
-  File names: alphanumeric + dots/hyphens.
+  plt.savefig('name.png'), or open('name.ext', 'wb').write(...).
+  File names: alphanumeric + dots/hyphens. For project files, use the natural filename
+  (e.g. 'pom.xml', 'Application.java', 'application.properties').
+- NEVER use zipfile.ZipFile for project scaffolds — individual files only.
+  (zipfile is only acceptable for non-project tasks like archiving binary assets.)
 - WRITER nodes feeding PYTHON_EXECUTOR: expected_output_type = "python_code".
 - PYTHON_EXECUTOR node: expected_output_type = "python_files", complexity = "medium".
 - Chain: {WRITER(s)} → PYTHON_EXECUTOR → REVIEWER.
@@ -164,16 +171,18 @@ PATTERN A — FILE GENERATION (task = "create / produce a downloadable file, no 
   n3=WRITER(python_code) → n4=PYTHON_EXECUTOR → n5=REVIEWER. Depth=4.
 - GOOD example — multi-sheet Excel:
   n3=WRITER(sheet 1 code) + n4=WRITER(sheet 2 code) → n5=PYTHON_EXECUTOR → n6=REVIEWER.
-- GOOD example — Spring Boot / Maven project scaffold (ZIP):
-  n3=WRITER(python_code: uses os.makedirs to create directory tree, open().write() for each
-    file (pom.xml, Application.java, application.properties, etc.), then zipfile.ZipFile to
-    package everything into "spring-boot-hello-world.zip" and print a summary to stdout)
+- GOOD example — Spring Boot / Maven project scaffold (individual files):
+  n3=WRITER(python_code: uses os.makedirs to create directory tree, then open().write()
+    for each individual file — pom.xml, src/main/java/.../Application.java,
+    src/main/java/.../HelloController.java, src/main/resources/application.properties,
+    README.md — all saved individually; prints a summary listing every file to stdout)
   → n4=PYTHON_EXECUTOR
   → n5=REVIEWER. Depth=4.
   SAME pattern applies to any project scaffold: Node.js, Django, React, etc.
 - BAD (FORBIDDEN): WRITER outputs JSON describing file contents with no PYTHON_EXECUTOR.
 - BAD (FORBIDDEN): WRITER writes a Markdown README describing a project structure with no
   PYTHON_EXECUTOR — this gives the user zero downloadable files.
+- BAD (FORBIDDEN): WRITER creates a zip archive instead of individual files for a project scaffold.
 
 PATTERN B — DATA ANALYSIS (task = "read / inspect / analyze / summarize an existing file"):
 - TRIGGER: task asks to analyze, inspect, describe, explain, summarize, explore, or report
@@ -233,8 +242,9 @@ PATTERN C — FILE GENERATION + MARKDOWN REPORT (task = "create files AND explai
   → n5=WRITER(document: describes what each chart shows, methodology, conclusions)
   → n6=REVIEWER. Depth=5.
 - GOOD example — scaffold a project + explain it:
-  n3=WRITER(python_code: creates all project files, zips to "project-name.zip",
-    prints list of created files + architecture summary to stdout)
+  n3=WRITER(python_code: creates ALL project files individually with open().write() —
+    pom.xml, Application.java, HelloController.java, application.properties, README.md, etc.
+    Never creates a zip. Prints a list of created files + architecture summary to stdout)
   → n4=PYTHON_EXECUTOR
   → n5=WRITER(document: synthesises stdout into a Markdown README explaining the
     project structure, each file's purpose, and how to run/deploy the app)
@@ -252,7 +262,8 @@ If the classifier input contains desired_outputs:
 PROFILE ROUTING (override rules based on classifier detected_profile):
 - app_scaffolding: the user wants to CREATE a runnable app, project, or codebase.
   ALWAYS use PYTHON_EXECUTOR (PATTERN A or C). A WRITER-only plan is WRONG for this profile.
-  The Python code MUST create all files and package them into a downloadable zip.
+  The Python code MUST save each source file individually — NEVER create a zip.
+  The platform provides a built-in "Download as ZIP" button that bundles all individual files.
   NEVER produce a Markdown description of what the project would look like — that is NOT a project.
 
 OUTPUT FILE FORMAT PRIORITY (C2 rule):

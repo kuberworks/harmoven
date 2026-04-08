@@ -219,7 +219,12 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
   pandas:   df.to_csv('filename.csv', index=False)  or  df.to_excel('filename.xlsx', index=False)
   matplotlib: plt.savefig('filename.png', dpi=150, bbox_inches='tight')
   reportlab: canvas.save()  or  doc.build(story)
-- File names must use only letters, digits, dots, and hyphens (no spaces, no accents).
+  project files: os.makedirs('path/to/dir', exist_ok=True) then open('path/to/file.ext', 'w').write(content)
+- IMPORTANT — for project scaffolds (source code projects with multiple files):
+  Save EACH FILE INDIVIDUALLY (pom.xml, Application.java, etc.). Do NOT bundle into a zip.
+  The platform automatically provides a "Download as ZIP" button — do not duplicate this with zipfile.
+- File names must use only letters, digits, dots, hyphens, underscores, and forward slashes
+  for subdirectory paths (e.g. 'src/main/java/App.java'). No spaces, no accents.
 - The code runs in Pyodide (Python 3.11 WASM). All standard library modules are available.
   Popular packages (openpyxl, pandas, matplotlib, reportlab) are auto-installed.
 - Do not include any top-level async code; use synchronous code only.
