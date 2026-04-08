@@ -668,6 +668,10 @@ components:
           description: "Node-level configuration passed verbatim to the agent at invocation time. Schema is agent-type-specific and unvalidated by the executor. Use to pass prompt templates, output format preferences, or skill-specific options."
           type: object
           additionalProperties: true
+        output_file_format:
+          type: string
+          description: "Requested output file format for this node's artifact. Set by the Planner when the node is expected to produce a file. Used by WRITER and PYTHON_EXECUTOR nodes to determine the appropriate serialisation format."
+          enum: [txt, csv, json, yaml, html, md, py, ts, js, sh, docx, pdf]
 
     DagEdge:
       type: object
@@ -804,6 +808,10 @@ components:
         estimated_hours_saved:
           type: [number, 'null']
           description: "User-declared estimate of manual work hours saved by this run. Submitted via the feedback endpoint after completion. Used for ROI analytics."
+        primary_artifact_id:
+          type: [string, 'null']
+          format: uuid
+          description: "ID of the artifact designated as the primary deliverable for this run. Set by the reviewer agent or by the user after completion. Null until a primary artifact is selected."
 
     RunNode:
       type: object
@@ -3335,6 +3343,10 @@ paths:
                       type: string
                     size_bytes:
                       type: integer
+                    artifact_role:
+                      type: string
+                      enum: [primary, supplementary, pending_review, discarded]
+                      description: "Role of this artifact within the run. `primary` = main deliverable selected by the reviewer. `supplementary` = attached for context. `pending_review` = default until reviewer assigns a role. `discarded` = rejected — not available for download."
                     created_at:
                       type: string
                       format: date-time
