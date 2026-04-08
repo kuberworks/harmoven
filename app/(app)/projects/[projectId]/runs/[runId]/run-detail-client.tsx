@@ -406,8 +406,15 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
   const confidence    = output?.['confidence'] as number | undefined
   const llmUsed       = (execMeta?.['llm_used'] ?? node.llm_profile_id) as string | undefined
   // PYTHON_EXECUTOR stores output in handoff.stdout rather than handoff.output.content
-  const stdout        = (handoff?.['stdout'] as string | undefined) ?? null
-  const hasOutput     = !!outputContent || !!node.partial_output || !!stdout
+  const stdout           = (handoff?.['stdout'] as string | undefined) ?? null
+  // PYTHON_EXECUTOR — extract error/stderr from handoff for display (exit_code=1 case)
+  const pythonExecError  = node.agent_type === 'PYTHON_EXECUTOR'
+    ? ((handoff?.['error'] as string | undefined) ?? null)
+    : null
+  const pythonStderr     = node.agent_type === 'PYTHON_EXECUTOR'
+    ? ((handoff?.['stderr'] as string | undefined) ?? null) || null
+    : null
+  const hasOutput     = !!outputContent || !!node.partial_output || !!stdout || !!pythonExecError || !!pythonStderr
   // The settled text shown in the expanded panel (not stdout, not streaming)
   const outputText    = outputContent
     ?? (node.partial_output ? extractStreamingContent(node.partial_output) : null)
@@ -491,6 +498,10 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
           {node.error && (node.status === 'FAILED' || node.status === 'INTERRUPTED') && (
             <p className="text-xs text-red-400 mt-1 line-clamp-3 font-mono">{node.error}</p>
           )}
+          {/* PYTHON_EXECUTOR: show Python exception from handoff on COMPLETED nodes (legacy/compat) */}
+          {!node.error && pythonExecError && node.status === 'COMPLETED' && (
+            <p className="text-xs text-red-400 mt-1 line-clamp-2 font-mono">{pythonExecError}</p>
+          )}
           {outputSummary && !expanded && (
             <p className="text-xs text-muted-foreground mt-1 italic line-clamp-1">{outputSummary}</p>
           )}
@@ -527,6 +538,26 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
             <pre className="p-4 text-xs text-foreground/90 font-mono whitespace-pre-wrap break-words leading-relaxed">
               {stdout}
             </pre>
+          )}
+          {/* PYTHON_EXECUTOR: error + stderr panel */}
+          {(pythonExecError || (pythonStderr && pythonStderr.trim())) && (
+            <div className="border-t border-red-500/20 bg-red-950/20 p-4 space-y-2">
+              {pythonExecError && (
+                <pre className="text-xs text-red-400 font-mono whitespace-pre-wrap break-words leading-relaxed">
+                  {pythonExecError}
+                </pre>
+              )}
+              {pythonStderr && pythonStderr.trim() && pythonStderr !== pythonExecError && (
+                <details className="group">
+                  <summary className="text-xs text-red-400/60 cursor-pointer select-none hover:text-red-400/80 mb-1">
+                    Traceback
+                  </summary>
+                  <pre className="text-xs text-red-400/50 font-mono whitespace-pre-wrap break-words leading-relaxed max-h-64 overflow-y-auto">
+                    {pythonStderr}
+                  </pre>
+                </details>
+              )}
+            </div>
           )}
         </div>
       )}
