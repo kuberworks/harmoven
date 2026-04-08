@@ -412,7 +412,17 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
   const outputText    = outputContent
     ?? (node.partial_output ? extractStreamingContent(node.partial_output) : null)
     ?? null
-  const renderAsMarkdown = !!outputText && looksLikeMarkdown(outputText)
+  // Rendering mode — driven by the planner-set output.type first; heuristic only as fallback.
+  // document           → ReactMarkdown
+  // python_code / code / python_files → monospace pre (code block)
+  // absent type        → looksLikeMarkdown() heuristic
+  const renderAsMarkdown = !!outputText && (
+    outputType === 'document' ||
+    (!outputType && looksLikeMarkdown(outputText))
+  )
+  const renderAsCode = !!outputText && !renderAsMarkdown && (
+    outputType === 'python_code' || outputType === 'code' || outputType === 'python_files'
+  )
 
   // Only compute a settled duration when the node is not RUNNING.
   // When a node is restarted, completed_at is the timestamp from the *previous* run;
@@ -503,7 +513,12 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
               </ReactMarkdown>
             </div>
           )}
-          {outputText && !renderAsMarkdown && (
+          {outputText && renderAsCode && (
+            <pre className="p-4 text-xs text-foreground/90 font-mono whitespace-pre-wrap break-words leading-relaxed">
+              {outputText}
+            </pre>
+          )}
+          {outputText && !renderAsMarkdown && !renderAsCode && (
             <pre className="p-4 text-xs text-foreground/90 whitespace-pre-wrap break-words leading-relaxed">
               {outputText}
             </pre>
@@ -609,7 +624,9 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
  * avoid rendering plain prose through the Markdown pipeline.
  */
 function looksLikeMarkdown(text: string): boolean {
-  return /^#{1,6}\s|^[-*+]\s|^\d+\.\s|^>\s|```|\|.+\||\*\*.+\*\*|__.+__|\[.+\]\(/.test(text)
+  // Use multiline flag so ^ matches the start of ANY line, not just the string.
+  // Writers often open with a plain-text intro sentence before the first heading.
+  return /^#{1,6}\s|^[-*+]\s|^\d+\.\s|^>\s|```|\|.+\||\*\*.+\*\*|__.+__|\[.+\]\(/m.test(text)
 }
 
 // rehype-sanitize schema: default allowlist, no iframes, no forms, no scripts.
