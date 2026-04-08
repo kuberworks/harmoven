@@ -122,6 +122,13 @@ Rules:
 - GOOD example for a 10-section course: n1=CLASSIFIER→n2=PLANNER→n3..n12 (10×WRITER, all depend on n2)→n13=REVIEWER (depends on n3..n12). Depth=3, width=10.
 - BAD example: n1→n2→n3→n4→n5→n6→n7 (7 sequential nodes). Only do this if each section genuinely requires the previous one as input.
 
+OUTPUT FORMATTING — applies to every WRITER node that generates prose or data (NOT python_code nodes):
+- WRITER nodes MUST produce Markdown-formatted content in output.content, like ChatGPT or Claude:
+  use # / ## headings, **bold**, lists, fenced code blocks (\`\`\`lang\`\`\`), blockquotes.
+- Never produce a wall of plain unstructured text.
+- For WRITER nodes that are NOT python_code nodes, set expected_output_type = "document" so the
+  UI renders the output as Markdown instead of raw text.
+
 MANDATORY — PYTHON_EXECUTOR for downloadable binary files:
 - TRIGGER KEYWORDS: spreadsheet, Excel, .xlsx, .xls, CSV, PDF, chart, graph, image, PNG, SVG,
   or any request for a file the user can download → you MUST add a PYTHON_EXECUTOR node.

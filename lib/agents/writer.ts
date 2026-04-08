@@ -145,9 +145,20 @@ Produce the requested output and respond ONLY with valid JSON matching this sche
 }
 
 Rules:
-- Output ONLY the JSON object. No markdown fence, no prose.
+- Output ONLY the JSON object. No markdown fence, no prose around the JSON.
 - assumptions_made: list every decision you made that was not explicit in the task.
-- confidence < 80 means the output needs revision.`
+- confidence < 80 means the output needs revision.
+- FORMATTING — output.content for prose/document/data nodes (not python_code) MUST use
+  Markdown just like ChatGPT or Claude:
+  • Use # / ## / ### headings to structure the response.
+  • Use **bold** and *italic* for emphasis.
+  • Use bullet lists (- item) or numbered lists (1. item) where appropriate.
+  • Use \`inline code\` for short code snippets, file names, values.
+  • Use fenced code blocks (\`\`\`language … \`\`\`) for multi-line code or data.
+  • Use > blockquotes for callouts, warnings, important notes.
+  • Never return a wall of unstructured plain text — always structure the content.
+  • The goal: a human reading the output should find it as clear and readable
+    as a response from a premium AI assistant.`
 
   if (!isPythonCodeNode) return basePrompt
 
