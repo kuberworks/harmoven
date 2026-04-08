@@ -1,7 +1,7 @@
 // lib/execution/converters/text-to-file.ts
-// Phase A text-to-file converters: transforms WRITER LLM output into downloadable
-// file bytes for formats txt, csv, json, yaml, html, md, and code (py/ts/js/sh).
-// Phase B formats (docx, pdf) are stubs — implemented in mf-phase7.
+// Text-to-file converters: transforms WRITER LLM output into downloadable
+// file bytes for formats txt, csv, json, yaml, html, md, code (py/ts/js/sh),
+// and docx (mf-phase7 implemented). pdf is a Phase B-2 stub (not yet implemented).
 //
 // Spec: multi-format-artifact-output.feature.md Part 1 §1.6
 
@@ -18,8 +18,8 @@ export type OutputFileFormat =
   | 'ts'
   | 'js'
   | 'sh'
-  | 'docx'  // Phase B — implemented in mf-phase7
-  | 'pdf'   // Phase B — implemented in mf-phase7
+  | 'docx'  // implemented in mf-phase7
+  | 'pdf'   // Phase B-2 stub — not yet implemented server-side
 
 export const MAX_ARTIFACT_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 
@@ -60,7 +60,7 @@ const MIME_MAP: Record<Exclude<OutputFileFormat, 'docx' | 'pdf'>, string> = {
  * @param format   Target OutputFileFormat.
  * @param slug     Human-readable slug for filename generation (e.g. node description).
  * @returns        { bytes, filename, mimeType } ready for RunArtifact persistence.
- * @throws         Error for Phase B formats (docx/pdf) that are not yet implemented.
+ * @throws         Error for pdf (Phase B-2 stub, not yet implemented server-side).
  * @throws         Error if bytes exceed MAX_ARTIFACT_SIZE_BYTES (checked by validateArtifact).
  */
 export async function convertToFile(
