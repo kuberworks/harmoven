@@ -181,4 +181,12 @@ export class InMemoryRunStore implements ExecutorDb {
     create: async (_args: unknown) => ({}),
     findMany: async (_args: unknown) => [] as Array<{ parent_run: { id: string; status: string } }>,
   }
+
+  runArtifact = {
+    // No-op stubs — tests that exercise artifact logic should use a real DB or
+    // a more specific mock. These stubs prevent "Cannot read properties of undefined"
+    // errors in tests that exercise node-reset paths (replay_from_scratch, replayNode).
+    updateMany: async (_args: unknown) => ({ count: 0 }),
+    deleteMany: async (_args: unknown) => ({ count: 0 }),
+  }
 }

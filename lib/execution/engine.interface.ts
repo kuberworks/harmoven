@@ -141,6 +141,14 @@ export interface ExecutorDb {
       parent_run: { id: string; status: string }
     }>>
   }
+  runArtifact: {
+    /** Bulk-update artifact_role. Used to mark stale artifacts as discarded when
+     *  nodes are reset to PENDING for re-execution (prevents duplicate files in UI). */
+    updateMany(args: { where: { run_id: string; node_id: string | { in: string[] } }; data: { artifact_role: string } }): Promise<{ count: number }>
+    /** Delete artifact rows. Used when PLANNER-downstream nodes are physically deleted
+     *  (RunArtifact.node_id has no FK cascade, so orphans must be removed explicitly). */
+    deleteMany(args: { where: { run_id: string; node_id: { in: string[] } } }): Promise<{ count: number }>
+  }
 }
 
 /** Minimal run row shape used by the executor (subset of Prisma Run model). */

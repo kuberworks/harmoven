@@ -82,6 +82,13 @@ class PrismaExecutorDb implements ExecutorDb {
         }),
     }
   }
+
+  get runArtifact(): ExecutorDb['runArtifact'] {
+    return {
+      updateMany: (args) => (_prismaDb.runArtifact.updateMany as Function)(args),
+      deleteMany: (args) => (_prismaDb.runArtifact.deleteMany as Function)(args),
+    }
+  }
 }
 
 // ─── Orchestrator config loader ───────────────────────────────────────────────
