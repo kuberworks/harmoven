@@ -472,6 +472,13 @@ export class CustomExecutor implements IExecutionEngine {
           },
         })
 
+        // Discard artifacts produced by the previous execution of this node so
+        // the re-run does not show duplicate files in the UI (spec mf-phase5).
+        await this.db.runArtifact.updateMany({
+          where: { run_id: runId, node_id: nodeId },
+          data:  { artifact_role: 'discarded' },
+        })
+
         // ── Cascade downstream for COMPLETED node restart ──────────────────
         // If the target node was COMPLETED, collect downstream nodes and reset
         // them too. For any downstream node currently RUNNING (in-process),
@@ -512,6 +519,11 @@ export class CustomExecutor implements IExecutionEngine {
             // PLANNER restart: delete the previous plan's nodes entirely and prune the run DAG.
             // The PLANNER will produce a brand-new plan with fresh node IDs on re-run.
             // Keeping stale WRITER/REVIEWER rows would cause them to compete with the new plan.
+            // Delete artifacts first — RunArtifact.node_id has no FK cascade, so they
+            // would become orphaned (still visible in the UI) if not removed here.
+            await this.db.runArtifact.deleteMany({
+              where: { run_id: runId, node_id: { in: [...downstreamIds] } },
+            })
             await this.db.node.deleteMany({
               where: { run_id: runId, node_id: { in: [...downstreamIds] } },
             })
@@ -535,6 +547,12 @@ export class CustomExecutor implements IExecutionEngine {
             })
           } else {
             // Non-PLANNER restart: reset downstream nodes to PENDING so they re-execute.
+            // Discard artifacts from previous executions first — otherwise re-running
+            // downstream nodes creates duplicates that both appear in the UI.
+            await this.db.runArtifact.updateMany({
+              where: { run_id: runId, node_id: { in: [...downstreamIds] } },
+              data:  { artifact_role: 'discarded' },
+            })
             await this.db.node.updateMany({
               where: { run_id: runId, node_id: { in: [...downstreamIds] } },
               data: {
@@ -676,6 +694,14 @@ export class CustomExecutor implements IExecutionEngine {
         }
       }
     }
+
+    // Discard artifacts from previous executions before resetting nodes.
+    // Without this, re-running nodes would create duplicate artifacts that both
+    // appear in the UI (the old ones never get cleaned up otherwise).
+    await this.db.runArtifact.updateMany({
+      where: { run_id: runId, node_id: { in: [...downstreamIds] } },
+      data:  { artifact_role: 'discarded' },
+    })
 
     // Reset all collected nodes to PENDING (bypasses state machine — this is an
     // explicit admin/user action, not an automated transition).
