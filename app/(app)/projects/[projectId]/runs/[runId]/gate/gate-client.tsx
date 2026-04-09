@@ -154,8 +154,7 @@ export function GateClient({
         const body = await res.json().catch(() => ({ error: 'Unknown error' })) as { error?: string }
         throw new Error(body.error ?? `HTTP ${res.status}`)
       }
-      router.push(`/projects/${projectId}/runs/${runId}`)
-      router.refresh()
+      router.replace(`/projects/${projectId}/runs/${runId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
