@@ -41,7 +41,7 @@ export default async function RunPage({ params }: Props) {
           orderBy: { node_id: 'asc' },
           select: {
             id: true, node_id: true, agent_type: true, status: true,
-            llm_profile_id: true, started_at: true, completed_at: true,
+            llm_profile_id: true, started_at: true, completed_at: true, metadata: true,
             error: true, cost_usd: true, tokens_in: true, tokens_out: true,
             handoff_out: true, partial_output: true,
           },
@@ -147,6 +147,7 @@ export default async function RunPage({ params }: Props) {
     tokens_out: permissions.has('stream:costs') ? n.tokens_out : 0,
     partial_output: n.partial_output ?? null,
     handoff_out: n.handoff_out ?? null,
+    metadata: (n.metadata ?? {}) as Record<string, unknown>,
   }))
 
   return (

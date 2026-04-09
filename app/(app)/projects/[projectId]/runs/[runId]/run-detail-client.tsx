@@ -5,7 +5,7 @@
 // Receives initial state from Server Component, wires up useRunStream for updates.
 // UX spec §3.5 — ExecutingView (Level 1–4), CompletedView, ProblemView.
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useRunStream, type RunState, type NodeState } from '@/hooks/useRunStream'
 import { Badge } from '@/components/ui/badge'
@@ -77,6 +77,8 @@ interface InitialNode {
   tokens_out: number
   partial_output: string | null
   handoff_out: unknown
+  /** Stored at node creation time; preferred_llm key signals a user-forced override. */
+  metadata?: Record<string, unknown>
 }
 
 interface AuditEntry {
@@ -352,7 +354,7 @@ const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
 
 // ─── Node card ──────────────────────────────────────────────────────────────
 
-function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, artifactsTick = 0, followupRuns = [], webSearchProgress = null }: { node: InitialNode | NodeState; runId: string; projectId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number; followupRuns?: Array<{ run_id: string; label: string }>; webSearchProgress?: { query?: string; result_count?: number; iteration: number } | null }) {
+function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, artifactsTick = 0, followupRuns = [], webSearchProgress = null, preferredLlm }: { node: InitialNode | NodeState; runId: string; projectId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number; followupRuns?: Array<{ run_id: string; label: string }>; webSearchProgress?: { query?: string; result_count?: number; iteration: number } | null; preferredLlm?: string }) {
   const t = useT()
   const [expanded, setExpanded] = useState(false)
   const streamEndRef = useRef<HTMLPreElement>(null)
@@ -492,6 +494,14 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
             )}
             {llmUsed && (
               <span className="text-xs text-muted-foreground/60 font-mono truncate max-w-[120px]">{llmUsed}</span>
+            )}
+            {preferredLlm && (
+              <span
+                title={`Forced model: ${preferredLlm}`}
+                className="inline-flex items-center rounded border border-amber-500/40 bg-amber-500/10 px-1 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+              >
+                forced
+              </span>
             )}
             {typeof confidence === 'number' && uiLevel === 'ADVANCED' && (
               <span className={`text-xs font-mono ${confidence >= 80 ? 'text-emerald-400' : confidence >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
@@ -1225,6 +1235,17 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
   const nodes: (InitialNode | NodeState)[] = lastNodesRef.current.length > 0 ? lastNodesRef.current : initialNodes
 
+  // Map node_id → preferred_llm from the initial DB load (static; set at node creation).
+  // NodeState (SSE) doesn't include metadata, so we keep this map from initialNodes.
+  const nodeMetaMap = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const n of initialNodes) {
+      const pl = n.metadata?.['preferred_llm']
+      if (typeof pl === 'string' && pl) m.set(n.node_id, pl)
+    }
+    return m
+  }, [initialNodes])
+
   // SUSPENDED is also "live" — the run is awaiting human approval and will resume.
   const isLive = run.status === 'RUNNING' || run.status === 'PAUSED' || run.status === 'SUSPENDED'
   const isTerminal = run.status === 'COMPLETED' || run.status === 'FAILED'
@@ -1390,6 +1411,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                       canRestart={permissions.has('runs:replay')}
                       onRestart={reconnect}
                       uiLevel={uiLevel}
+                      preferredLlm={nodeMetaMap.get(node.node_id)}
                       artifactsTick={stream.events.filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length}
                       webSearchProgress={(() => {
                         const last = stream.events.findLast?.(e => e.type === 'tool_call_progress' && e.node_id === node.node_id)
