@@ -371,7 +371,7 @@ export class Writer {
 
     if (onChunk) {
       // Streaming does not retry (chunks already emitted to client)
-      const result = await this.llm.stream(messages, { model: tier, maxTokens: effectiveMaxTokens, signal }, onChunk)
+      const result = await this.llm.stream(messages, { model: tier, maxTokens: effectiveMaxTokens, signal, anthropicNativeWebSearch: node.enable_web_search === true }, onChunk)
       raw = result.content
       tokensIn = result.tokensIn
       tokensOut = result.tokensOut
@@ -380,7 +380,7 @@ export class Writer {
       toolCallsTrace = result.tool_calls_trace
     } else {
       const result = await withRetry(
-        () => this.llm.chat(messages, { model: tier, maxTokens: effectiveMaxTokens, signal }),
+        () => this.llm.chat(messages, { model: tier, maxTokens: effectiveMaxTokens, signal, anthropicNativeWebSearch: node.enable_web_search === true }),
         {
           signal,
           onRetry: (err, attempt) => {
