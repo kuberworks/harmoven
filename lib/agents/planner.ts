@@ -271,6 +271,50 @@ If run_config.output_file_format is set (the user selected a format in the UI fo
 it ALWAYS takes priority over desired_outputs from the CLASSIFIER.
 Use run_config.output_file_format for ALL WRITER nodes when it is present.`
 
+// ─── LLM output normalization ─────────────────────────────────────────────────
+// Runs BEFORE Zod validation to silently fix predictable LLM hallucinations so
+// they don't burn full retry attempts on recoverable formatting mistakes.
+
+const VALID_LLM_STRATEGIES = new Set(['dynamic', 'fast', 'balanced', 'powerful'])
+
+/**
+ * Mutates each node in the raw parsed dag to:
+ * - Coerce `inputs` entries that are objects into strings (the LLM often emits
+ *   `{"from": "n1"}` instead of the required `"output:n1"` string).
+ * - Clamp unknown `llm_strategy` values (e.g. "static") to "dynamic".
+ */
+function normalizePlannerNodes(dag: unknown): void {
+  if (!dag || typeof dag !== 'object') return
+  const nodes = (dag as Record<string, unknown>)['nodes']
+  if (!Array.isArray(nodes)) return
+
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object') continue
+    const n = node as Record<string, unknown>
+
+    // inputs: coerce object entries to strings
+    if (Array.isArray(n['inputs'])) {
+      n['inputs'] = (n['inputs'] as unknown[]).map((inp): string => {
+        if (typeof inp === 'string') return inp
+        if (inp && typeof inp === 'object') {
+          const obj = inp as Record<string, unknown>
+          // Handle common shapes: {from: "n1"}, {node_id: "n1"}, {source: "n1"}, {node: "n1"}
+          const ref = obj['from'] ?? obj['node_id'] ?? obj['node'] ?? obj['source']
+          if (typeof ref === 'string') return `output:${ref}`
+          return JSON.stringify(inp)
+        }
+        return String(inp)
+      })
+    }
+
+    // llm_strategy: clamp unknown values to "dynamic"
+    if (typeof n['llm_strategy'] === 'string' && !VALID_LLM_STRATEGIES.has(n['llm_strategy'])) {
+      console.warn(`[Planner] unknown llm_strategy "${n['llm_strategy']}" on node ${String(n['node_id'])} — clamped to "dynamic"`)
+      n['llm_strategy'] = 'dynamic'
+    }
+  }
+}
+
 // ─── DAG validation ───────────────────────────────────────────────────────────
 
 function validateDag(dag: PlannerHandoff['dag']): void {
@@ -473,6 +517,11 @@ export class Planner {
 
         const dag = raw['dag'] as PlannerHandoff['dag']
         validateDag(dag)
+
+        // Normalize LLM output quirks before strict Zod validation so that
+        // recoverable formatting errors (object in inputs, unknown llm_strategy)
+        // don't consume a full retry attempt.
+        normalizePlannerNodes(raw['dag'])
 
         // Full Zod schema validation — catches invalid agent types (e.g. "PLANNER"),
         // bad enum values, missing required fields. Must run AFTER validateDag so that
