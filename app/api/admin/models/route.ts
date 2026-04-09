@@ -14,9 +14,10 @@ import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
-import { assertNotPrivateHost }      from '@/lib/security/ssrf-protection'
-import { encryptLlmKey }             from '@/lib/utils/llm-key-crypto'
-import { uuidv7 }                    from '@/lib/utils/uuidv7'
+import { assertNotPrivateHost }          from '@/lib/security/ssrf-protection'
+import { encryptLlmKey }                 from '@/lib/utils/llm-key-crypto'
+import { uuidv7 }                        from '@/lib/utils/uuidv7'
+import { resetExecutionEngineSingleton } from '@/lib/execution/engine.factory'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -150,6 +151,9 @@ export async function POST(req: NextRequest) {
       payload: { model_id: id, provider, tier },
     },
   })
+
+  // Rebuild the execution engine singleton so the new profile is available immediately.
+  resetExecutionEngineSingleton()
 
   return NextResponse.json({ model }, { status: 201 })
 }

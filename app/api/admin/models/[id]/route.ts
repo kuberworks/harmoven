@@ -17,9 +17,10 @@ import { db }                        from '@/lib/db/client'
 import { resolveCaller }             from '@/lib/auth/resolve-caller'
 import { assertInstanceAdmin, UnauthorizedError } from '@/lib/auth/rbac'
 import type { SessionCaller }        from '@/lib/auth/rbac'
-import { assertNotPrivateHost }      from '@/lib/security/ssrf-protection'
-import { encryptLlmKey }             from '@/lib/utils/llm-key-crypto'
-import { uuidv7 }                    from '@/lib/utils/uuidv7'
+import { assertNotPrivateHost }            from '@/lib/security/ssrf-protection'
+import { encryptLlmKey }                   from '@/lib/utils/llm-key-crypto'
+import { uuidv7 }                          from '@/lib/utils/uuidv7'
+import { resetExecutionEngineSingleton }   from '@/lib/execution/engine.factory'
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
@@ -138,6 +139,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     },
   })
 
+  // Rebuild the execution engine singleton on next run so any profile changes
+  // (enabled toggle, model_string, config, etc.) take effect immediately.
+  resetExecutionEngineSingleton()
+
   return NextResponse.json({ model })
 }
 
@@ -180,6 +185,9 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       payload:     { model_id: id, provider: existing.provider, model_string: existing.model_string },
     },
   })
+
+  // Rebuild the execution engine singleton so the deleted profile is no longer used.
+  resetExecutionEngineSingleton()
 
   return new NextResponse(null, { status: 204 })
 }
