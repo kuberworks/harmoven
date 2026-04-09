@@ -38,6 +38,8 @@ export interface WriterNodeInput {
   run_id: string
   /** When set, the Writer is instructed to output raw format content (no fences/prose). */
   output_file_format?: string
+  /** When true, a live web_search tool is injected — instruct the model to use it. */
+  enable_web_search?: boolean
 }
 
 export interface WriterOutput {
@@ -173,7 +175,10 @@ export function buildWriterSystemPrompt(format?: string): string {
   )
 }
 
-function buildSystemPrompt(profile: ProfileId, isPythonCodeNode: boolean): string {
+function buildSystemPrompt(profile: ProfileId, isPythonCodeNode: boolean, enableWebSearch?: boolean): string {
+  const webSearchInstruction = enableWebSearch
+    ? '\n\nWEB SEARCH: You have a live web_search tool. When the task requires current or real-time information, call the tool instead of saying you lack internet access. Always search before writing content that depends on up-to-date facts.'
+    : ''
   const basePrompt = `\
 You are a Harmoven Writer agent executing a single task node for a "${profile}" project.
 Produce the requested output and respond ONLY with valid JSON matching this schema:
@@ -206,7 +211,7 @@ Rules:
     description explicitly says "HTML", "web page", or "HTML document".
     If the user asked for a document, report, or content → use Markdown, not HTML.`
 
-  if (!isPythonCodeNode) return basePrompt
+  if (!isPythonCodeNode) return basePrompt + webSearchInstruction
 
   return basePrompt + `
 
@@ -307,7 +312,7 @@ export class Writer {
     let retries = 0
 
     const messages = [
-      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code') + buildWriterSystemPrompt(node.output_file_format) },
+      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code', node.enable_web_search) + buildWriterSystemPrompt(node.output_file_format) },
       {
         role: 'user' as const,
         content: JSON.stringify({
