@@ -247,6 +247,41 @@ export class CustomExecutor implements IExecutionEngine {
       await this.db.run.update({ where: { id: runId }, data: { suspended_reason: null } })
     }
 
+    // Special case: reviewer_escalation → the REVIEWER node completed but decided the
+    // output needed human review (verdict=ESCALATE_HUMAN). On gate approval the human
+    // has confirmed the content is acceptable — reset the REVIEWER to PENDING so the
+    // execution loop re-runs it, this time with the correct upstream artifacts (e.g.
+    // files extracted from a scaffold ZIP by the auto-extract preamble). Without this
+    // reset the REVIEWER stays COMPLETED, allNodesTerminal() returns true immediately,
+    // and the loop exits without re-evaluating the output.
+    if (run.suspended_reason === 'reviewer_escalation') {
+      const nodes = await this.db.node.findMany({ where: { run_id: runId } })
+      const escalatedReviewer = nodes.find(
+        n => n.agent_type === 'REVIEWER' && n.status === 'COMPLETED' &&
+             (n.handoff_out as Record<string, unknown> | null)?.['verdict'] === 'ESCALATE_HUMAN',
+      )
+      if (escalatedReviewer) {
+        await this.db.node.update({
+          where: { id: escalatedReviewer.id },
+          data: {
+            status:             'PENDING',
+            handoff_out:        null,
+            handoff_in:         null,
+            error:              null,
+            started_at:         null,
+            completed_at:       null,
+            interrupted_at:     null,
+            interrupted_by:     null,
+            retries:            0,
+            partial_output:     null,
+            partial_updated_at: null,
+          },
+        })
+        this._emit(runId, { type: 'state_change', entity_type: 'node', id: escalatedReviewer.node_id, status: 'PENDING' })
+      }
+      await this.db.run.update({ where: { id: runId }, data: { suspended_reason: null } })
+    }
+
     // The execution loop exited cleanly when it detected PAUSED/SUSPENDED status.
     // Fire executeRun in the background — same pattern as the initial run creation
     // (POST /api/runs uses `void engine.executeRun()`).
