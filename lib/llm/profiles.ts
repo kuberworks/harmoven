@@ -37,6 +37,8 @@ export interface LlmProfileConfig {
   api_key_env?: string
   /** Encrypted API key stored in DB (AES-256-GCM via encryptLlmKey). Takes priority over api_key_env. */
   api_key_enc?: string
+  /** Hard cap on output tokens for this model (provider-specific limit). LLM client clamps max_tokens to this value. */
+  max_output_tokens?: number
 }
 
 // ─── Built-in catalog ──────────────────────────────────────────────────────────
@@ -57,6 +59,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     trust_tier:               1,
     task_type_affinity:       ['intent_classification', 'context_distillation', 'simple_coding_tasks', 'high_volume_coding'],
     api_key_env:              'ANTHROPIC_API_KEY',
+    max_output_tokens:        64_000,
   },
   {
     // claude-sonnet-4-6: balanced Claude 4 — PLANNER, WRITER (2025)

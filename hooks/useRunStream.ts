@@ -90,7 +90,9 @@ function reducer(state: StreamState, action: Action): StreamState {
           // Match on either field for robustness.
           nodes = nodes.map(n =>
             (n.id === e.id || n.node_id === e.id)
-              ? { ...n, status: e.status as NodeStatus, error: e.status === 'PENDING' ? null : n.error }
+              ? e.status === 'PENDING'
+                ? { ...n, status: 'PENDING' as NodeStatus, error: null, handoff_out: null, partial_output: null, started_at: null, completed_at: null }
+                : { ...n, status: e.status as NodeStatus, error: n.error }
               : n,
           )
         }
