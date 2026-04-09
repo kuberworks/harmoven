@@ -93,7 +93,10 @@ function buildSystemPrompt(
   words are acceptable regardless of their origin language. Do NOT flag them as language
   inconsistencies. Only flag genuine narrative prose written in an unintended language.`
 
+  const today = new Date().toISOString().slice(0, 10)
   return `\
+Today's date is ${today}. You MUST treat this as the real current date — do not consider any date on or before ${today} as a future date.
+
 You are a Harmoven Reviewer agent performing a quality gate review for a "${profile}" project.
 You will receive the outputs from all Writer nodes. Review them against the universal checklist
 and any profile-specific rules, then respond ONLY with valid JSON matching this schema:

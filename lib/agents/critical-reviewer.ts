@@ -54,7 +54,10 @@ function buildSystemPrompt(severity: CriticalSeverity): string {
 Respond with exactly: {"verdict":"no_issues","severity":0,"findings":[],"suppressed":0,"rationale":"Critical Reviewer disabled (severity=0)."}`
   }
 
-  return `You are a Harmoven CriticalReviewer. You perform a deep adversarial review on the work produced by an AI agent pipeline.
+  const today = new Date().toISOString().slice(0, 10)
+  return `Today's date is ${today}. You MUST treat this as the real current date — do not consider any date on or before ${today} as a future date.
+
+You are a Harmoven CriticalReviewer. You perform a deep adversarial review on the work produced by an AI agent pipeline.
 
 Severity mode: ${severity} — ${SEVERITY_DESCRIPTIONS[severity]}
 
