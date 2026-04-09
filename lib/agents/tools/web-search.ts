@@ -182,49 +182,72 @@ export async function searchTavily(query: string, maxResults = 5): Promise<WebSe
 }
 
 /**
- * DuckDuckGo Lite HTML scraping (no API key required).
- * POST https://lite.duckduckgo.com/lite/
- * User-Agent does not reveal the hostname (§7.3 — no user-agent disclosure).
+ * DuckDuckGo Instant Answer JSON API (no API key required).
+ * GET https://api.duckduckgo.com/?q=...&format=json&no_html=1&skip_disambig=1
+ *
+ * Note: this is DDG's structured-answer endpoint — it returns AbstractText,
+ * Results, and RelatedTopics. Not a full web-search index but covers most
+ * informational queries without any API key or bot-detection issues.
+ * DDG Lite HTML scraping was removed because DDG now returns bot-challenge
+ * pages for automated POST requests (0 results).
  */
 export async function searchDuckDuckGo(query: string, maxResults = 5): Promise<WebSearchResponse> {
-  const response = await fetch('https://lite.duckduckgo.com/lite/', {
-    method:  'POST',
+  const url = new URL('https://api.duckduckgo.com/')
+  url.searchParams.set('q', query)
+  url.searchParams.set('format', 'json')
+  url.searchParams.set('no_html', '1')
+  url.searchParams.set('skip_disambig', '1')
+  url.searchParams.set('t', 'harmoven')
+
+  const response = await fetch(url.toString(), {
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent':   'Mozilla/5.0 (compatible; research-assistant/1.0)',
+      'Accept':     'application/json',
+      'User-Agent': 'Mozilla/5.0 (compatible; research-assistant/1.0)',
     },
-    body: `q=${encodeURIComponent(query)}`,
   })
 
   if (!response.ok) {
-    throw new Error(`DuckDuckGo Lite error: ${response.status} ${response.statusText}`)
+    throw new Error(`DuckDuckGo API error: ${response.status} ${response.statusText}`)
   }
 
-  const html = await response.text()
+  const data  = await response.json() as Record<string, unknown>
   const items: WebSearchResultItem[] = []
 
-  // Parse result links: <a class="result-link" href="...">Title</a>
-  // and snippets: <td class="result-snippet">...</td>
-  const linkRe   = /<a[^>]+class="result-link"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/gi
-  const snippetRe = /<td[^>]+class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi
-
-  const links:   [string, string][] = []
-  const snippets: string[]          = []
-
-  let m: RegExpExecArray | null
-  while ((m = linkRe.exec(html)) !== null) {
-    links.push([m[1]!, m[2]!.trim()])
-  }
-  while ((m = snippetRe.exec(html)) !== null) {
-    snippets.push(m[1]!.replace(/<[^>]+>/g, '').trim())
+  // 1. Top Abstract (e.g. Wikipedia summary)
+  const abstractText = typeof data['AbstractText'] === 'string' ? data['AbstractText'] : ''
+  const abstractUrl  = typeof data['AbstractURL']  === 'string' ? data['AbstractURL']  : ''
+  const abstractSrc  = typeof data['AbstractSource'] === 'string' ? data['AbstractSource'] : 'DuckDuckGo'
+  if (abstractText && abstractUrl) {
+    items.push({ title: abstractSrc, url: abstractUrl, snippet: abstractText })
   }
 
-  for (let i = 0; i < Math.min(links.length, maxResults); i++) {
-    const [url, title] = links[i]!
-    items.push({ title, url, snippet: snippets[i] ?? '' })
+  // 2. Direct Results (usually 0–2 items)
+  type DdgResult = { FirstURL?: string; Text?: string }
+  const directResults = Array.isArray(data['Results']) ? (data['Results'] as DdgResult[]) : []
+  for (const r of directResults) {
+    if (typeof r.FirstURL === 'string' && typeof r.Text === 'string' && r.FirstURL) {
+      items.push({ title: r.Text.slice(0, 120), url: r.FirstURL, snippet: r.Text })
+    }
   }
 
-  return { query, results: await filterSafeResults(items) }
+  // 3. RelatedTopics — may contain nested groups (Topics[]) or flat items
+  type DdgTopic = { FirstURL?: string; Text?: string; Topics?: DdgTopic[] }
+  const relatedTopics = Array.isArray(data['RelatedTopics']) ? (data['RelatedTopics'] as DdgTopic[]) : []
+  for (const t of relatedTopics) {
+    if (t.Topics) {
+      // Nested group
+      for (const sub of t.Topics) {
+        if (typeof sub.FirstURL === 'string' && typeof sub.Text === 'string' && sub.FirstURL) {
+          items.push({ title: sub.Text.slice(0, 120), url: sub.FirstURL, snippet: sub.Text })
+        }
+      }
+    } else if (typeof t.FirstURL === 'string' && typeof t.Text === 'string' && t.FirstURL) {
+      items.push({ title: t.Text.slice(0, 120), url: t.FirstURL, snippet: t.Text })
+    }
+  }
+
+  const capped = items.slice(0, maxResults)
+  return { query, results: await filterSafeResults(capped) }
 }
 
 // ─── Context types ────────────────────────────────────────────────────────────
@@ -316,9 +339,23 @@ export function makeWebSearchExecutor(
           return searchBrave(query, maxResults) // default: brave
         }
         searchResponse = await withRetry(doSearch)
-      } catch (e) {
-        searchError = 'Search service is temporarily unavailable. Please try again later.'
-        console.error('[web-search] provider error:', e instanceof Error ? e.message : e)
+      } catch (primaryErr) {
+        // Runtime cascade: if the primary provider fails (key invalid, quota, outage),
+        // try DuckDuckGo as a last-resort fallback before giving up.
+        if (activeProvider !== 'duckduckgo') {
+          console.warn(
+            `[web-search] ${activeProvider} failed (${primaryErr instanceof Error ? primaryErr.message : primaryErr}) — falling back to duckduckgo`,
+          )
+          try {
+            searchResponse = await withRetry(() => searchDuckDuckGo(query, maxResults))
+          } catch (ddgErr) {
+            searchError = 'Search service is temporarily unavailable. Please try again later.'
+            console.error('[web-search] duckduckgo fallback also failed:', ddgErr instanceof Error ? ddgErr.message : ddgErr)
+          }
+        } else {
+          searchError = 'Search service is temporarily unavailable. Please try again later.'
+          console.error('[web-search] provider error:', primaryErr instanceof Error ? primaryErr.message : primaryErr)
+        }
       }
 
       // Log the search event to DB (non-blocking — failures are ignored)
