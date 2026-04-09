@@ -3,7 +3,7 @@
 // Spec: AGENTS-01-CORE.md Sections 2 and 5.1.
 //
 // Rules:
-// - Uses the fast/cheap LLM tier (max 500 tokens output).
+// - Uses the fast/cheap LLM tier (max 2048 tokens output).
 // - confidence ≥ 80 → no clarification needed.
 // - confidence < 80 → requires_clarification = true, LLM populates clarification_questions.
 // - All LLM response fields validated before returning (no blind cast).
@@ -121,7 +121,7 @@ Rules:
 - If confidence >= 80: clarification_questions = []
 - If confidence < 80: include 2–3 targeted clarification questions
 - Output ONLY the JSON object. No markdown fence, no prose.
-- Be concise — the full response must fit in 1024 tokens.
+- Be concise — the full response must fit in 2048 tokens.
 
 OPTIONAL OUTPUT FORMAT DETECTION:
 If the user explicitly requests a specific file format or document type, add a
@@ -224,7 +224,7 @@ export class IntentClassifier {
           { role: 'system', content: CLASSIFIER_SYSTEM_PROMPT },
           { role: 'user', content: input },
         ],
-        { model: 'fast', maxTokens: 1024, signal },
+        { model: 'fast', maxTokens: 2048, signal },
       ),
       {
         signal,
