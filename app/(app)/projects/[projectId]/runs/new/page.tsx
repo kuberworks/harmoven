@@ -6,7 +6,8 @@
 import { useState, use, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronDown, ChevronLeft } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,6 +16,15 @@ import { TaskInput } from '@/components/task/TaskInput'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+
+type LlmPreset = 'auto' | 'economy' | 'standard' | 'power' | 'custom'
+
+/** Minimal shape returned by GET /api/models/available (safe; no key/config). */
+interface AvailableProfile {
+  id: string
+  model_string: string
+  tier: string
+}
 
 // Values match the DomainProfile enum in openapi/v1.yaml
 const DOMAIN_OPTIONS = [
@@ -51,6 +61,22 @@ export default function NewRunPage({ params }: Props) {
   const [parentRunIds, setParentRunIds]   = useState<string[]>([])
   const [parentLabels, setParentLabels]   = useState<Record<string, string>>({})
 
+  // LLM override section
+  const [llmPreset, setLlmPreset]           = useState<LlmPreset>('auto')
+  const [customOverrides, setCustomOverrides] = useState<Record<string, string>>({})
+  const [availableProfiles, setAvailableProfiles] = useState<AvailableProfile[]>([])
+  const [llmSectionOpen, setLlmSectionOpen] = useState(false)
+
+  // Fetch enabled LLM profiles so preset tiers can be resolved to profile IDs.
+  useEffect(() => {
+    fetch('/api/models/available')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { profiles?: AvailableProfile[] } | null) => {
+        if (data?.profiles) setAvailableProfiles(data.profiles)
+      })
+      .catch(() => { /* ignore — auto preset still works, custom shows empty */ })
+  }, [])
+
   // Parse ?from=id1,id2,... and fetch the task_input for each parent to show in the banner
   useEffect(() => {
     const from = searchParams.get('from')
@@ -71,6 +97,22 @@ export default function NewRunPage({ params }: Props) {
         .catch(() => { /* ignore */ })
     })
   }, [searchParams])
+
+  function computeLlmOverrides(): Record<string, string> | undefined {
+    if (llmPreset === 'auto') return undefined
+    if (llmPreset === 'custom') {
+      const result: Record<string, string> = {}
+      for (const agent of ['PLANNER', 'WRITER', 'REVIEWER']) {
+        if (customOverrides[agent]) result[agent] = customOverrides[agent]
+      }
+      return Object.keys(result).length > 0 ? result : undefined
+    }
+    const tierMap: Record<string, string> = { economy: 'fast', standard: 'balanced', power: 'powerful' }
+    const targetTier = tierMap[llmPreset]
+    const profile = availableProfiles.find(p => p.tier === targetTier)
+    if (!profile) return undefined
+    return { PLANNER: profile.id, WRITER: profile.id, REVIEWER: profile.id }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -114,6 +156,8 @@ export default function NewRunPage({ params }: Props) {
       if (enableWebSearch) {
         body['enable_web_search'] = true
       }
+      const llmOverrides = computeLlmOverrides()
+      if (llmOverrides) body['llm_overrides'] = llmOverrides
       if (budgetUsd) {
         const v = parseFloat(budgetUsd)
         if (isNaN(v) || v <= 0) {
@@ -274,6 +318,78 @@ export default function NewRunPage({ params }: Props) {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* LLM model selection */}
+            <div className="rounded-md border border-border">
+              <button
+                type="button"
+                onClick={() => setLlmSectionOpen(o => !o)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
+              >
+                <div className="space-y-0.5">
+                  <span className="text-sm font-medium">🤖 Model selection</span>
+                  <p className="text-xs text-muted-foreground">
+                    {llmPreset === 'auto' ? 'Auto (system decides)' : `Preset: ${llmPreset}`}
+                  </p>
+                </div>
+                <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', llmSectionOpen && 'rotate-180')} />
+              </button>
+              {llmSectionOpen && (
+                <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="llm_preset">Quality preset</Label>
+                    <Select value={llmPreset} onValueChange={(v) => setLlmPreset(v as LlmPreset)}>
+                      <SelectTrigger id="llm_preset">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">Auto — system picks (recommended)</SelectItem>
+                        <SelectItem value="economy">Economy — fastest, lowest cost</SelectItem>
+                        <SelectItem value="standard">Standard — balanced quality</SelectItem>
+                        <SelectItem value="power">Power — highest quality</SelectItem>
+                        <SelectItem value="custom">Custom — pick per agent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {llmPreset !== 'auto' && llmPreset !== 'custom' && availableProfiles.find(p => p.tier === { economy: 'fast', standard: 'balanced', power: 'powerful' }[llmPreset]) && (
+                      <p className="text-xs text-muted-foreground">
+                        Will use: {availableProfiles.find(p => p.tier === { economy: 'fast', standard: 'balanced', power: 'powerful' }[llmPreset])!.model_string}
+                      </p>
+                    )}
+                  </div>
+
+                  {llmPreset === 'custom' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {(['PLANNER', 'WRITER', 'REVIEWER'] as const).map(agent => (
+                        <div key={agent} className="space-y-1.5">
+                          <Label htmlFor={`llm_${agent}`}>
+                            {agent.charAt(0) + agent.slice(1).toLowerCase()}
+                          </Label>
+                          <Select
+                            value={customOverrides[agent] ?? '__auto__'}
+                            onValueChange={(v) =>
+                              setCustomOverrides(prev => ({ ...prev, [agent]: v === '__auto__' ? '' : v }))
+                            }
+                          >
+                            <SelectTrigger id={`llm_${agent}`}>
+                              <SelectValue placeholder="Auto" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__auto__">Auto</SelectItem>
+                              {availableProfiles.map(p => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.model_string}
+                                  <span className="ml-1 text-xs text-muted-foreground">({p.tier})</span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {error && (
