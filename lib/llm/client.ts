@@ -876,8 +876,9 @@ async function seedMissingProfilesToDb(
           // Store provider-specific config (base_url, api_key_env) in JSON column
           // so the admin API can override them without a schema migration.
           config: {
-            ...(built.base_url    ? { base_url:    built.base_url    } : {}),
-            ...(built.api_key_env ? { api_key_env: built.api_key_env } : {}),
+            ...(built.base_url         ? { base_url:         built.base_url         } : {}),
+            ...(built.api_key_env      ? { api_key_env:      built.api_key_env      } : {}),
+            ...(built.max_output_tokens != null ? { max_output_tokens: built.max_output_tokens } : {}),
           },
         },
       })
