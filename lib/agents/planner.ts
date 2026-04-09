@@ -483,7 +483,9 @@ export class Planner {
         const result = await withRetry(
           () => this.llm.chat(
             [
-              { role: 'system', content: PLANNER_SYSTEM_PROMPT },
+              { role: 'system', content: `Today's date is ${new Date().toISOString().slice(0, 10)}. You MUST treat this as the real current date.
+
+${PLANNER_SYSTEM_PROMPT}` },
               {
                 role: 'user',
                 content: JSON.stringify({

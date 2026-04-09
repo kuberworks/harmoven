@@ -230,7 +230,10 @@ function buildSystemPrompt(profile: ProfileId, isPythonCodeNode: boolean, enable
   const webSearchInstruction = enableWebSearch
     ? '\n\nWEB SEARCH: You have a live web_search tool. When the task requires current or real-time information, call the tool instead of saying you lack internet access. Always search before writing content that depends on up-to-date facts.'
     : ''
+  const today = new Date().toISOString().slice(0, 10)
   const basePrompt = `\
+Today's date is ${today}. You MUST treat this as the real current date — do not consider any date on or before ${today} as a future date.
+
 You are a Harmoven Writer agent executing a single task node for a "${profile}" project.
 Produce the requested output and respond ONLY with valid JSON matching this schema:
 
