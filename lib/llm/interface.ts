@@ -60,6 +60,18 @@ export interface ChatOptions {
    * Prevents infinite loops.
    */
   maxToolIterations?: number
+
+  /**
+   * When true, and the active profile is `anthropic`, use Anthropic's native
+   * server-side web search tool (`web_search_20250305`) instead of the external
+   * Brave/Tavily/DuckDuckGo provider.
+   *
+   * Anthropic's API executes the searches server-side and returns `end_turn`
+   * with the final answer — no `toolExecutor` callback is needed.
+   * Non-Anthropic providers ignore this flag; they use the `tools` +
+   * `toolExecutor` injected by ToolInjectionLLMClient as usual.
+   */
+  anthropicNativeWebSearch?: boolean
 }
 
 export interface ChatResult {

@@ -109,6 +109,43 @@ async function callAnthropic(
   const client = buildAnthropicClient(profile)
   const { system, userMessages } = splitMessages(messages)
 
+  // ── Native Anthropic server-side web search ───────────────────────────────
+  // When anthropicNativeWebSearch=true, use Anthropic's built-in web_search
+  // server tool. Anthropic's API executes the searches internally and returns
+  // a single end_turn response — no toolExecutor loop needed on our side.
+  // Any custom tools/toolExecutor injected by ToolInjectionLLMClient are
+  // intentionally ignored here; external providers (OpenAI, Gemini) use them.
+  if (options.anthropicNativeWebSearch) {
+    // Type cast: server tools use { type, name } not { name, description, input_schema }.
+    // The Anthropic SDK accepts them but the TS union type requires an explicit cast.
+    const serverTool = { type: 'web_search_20250305', name: 'web_search' } as unknown as Anthropic.Tool
+    const wsStream = await client.messages.stream(
+      {
+        model:      profile.model_string,
+        max_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
+        ...(system ? { system } : {}),
+        messages: userMessages.map(m => ({
+          role:    m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+        tools: [serverTool],
+      },
+      { signal: options.signal },
+    )
+    const wsResp = await wsStream.finalMessage()
+    // Collect all text blocks — citations are embedded in text by Claude,
+    // and web_search_tool_result / server_tool_use blocks are skipped here.
+    const wsTextBlocks = wsResp.content.filter(b => b.type === 'text')
+    const wsContent    = wsTextBlocks.map(b => ('text' in b ? (b as Anthropic.TextBlock).text : '')).join('')
+    return {
+      content:  wsContent,
+      tokensIn:  wsResp.usage.input_tokens,
+      tokensOut: wsResp.usage.output_tokens,
+      costUsd:   0,
+      model:     wsResp.model,
+    }
+  }
+
   // If no tools, use simple non-looping path (backward compat).
   // Use .stream()/.finalMessage() instead of .create() so Anthropic does not
   // reject requests that take > 10 minutes (streaming is required for those).
