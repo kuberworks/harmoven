@@ -330,3 +330,12 @@ export async function getExecutionEngine(): Promise<IExecutionEngine> {
   return globalThis.__harmoven_execution_engine
 }
 
+/**
+ * Clears the execution engine singleton so it is rebuilt on the next call to
+ * getExecutionEngine(). Call this whenever the LlmProfile table is mutated
+ * (create / update / delete) so the next run picks up the live DB state.
+ */
+export function resetExecutionEngineSingleton(): void {
+  globalThis.__harmoven_execution_engine = undefined
+}
+
