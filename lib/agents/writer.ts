@@ -131,6 +131,43 @@ function maxTokensFor(complexity: Complexity, profile: ProfileId): number {
   return CODE_PROFILES.has(profile) ? Math.min(base * 2, 131_072) : base
 }
 
+/**
+ * Build a token-budget directive injected into the system prompt.
+ * Tells the LLM its output cap and instructs it to produce minimum
+ * sufficient content — avoids over-production that leads to truncation.
+ *
+ * Tiers:
+ *   ≤ 16 384  tight  — strict conciseness, reserve ~10% for JSON envelope
+ *   ≤ 40 000  normal — quality over verbosity, no padding
+ *   > 40 000  large  — light reminder, avoid padding only
+ */
+export function buildBudgetDirective(maxOutputTokens: number): string {
+  const envelope = 400 // conservative estimate for JSON wrapper + metadata tokens
+  const contentBudget = Math.max(maxOutputTokens - envelope, maxOutputTokens * 0.9)
+
+  if (maxOutputTokens <= 16_384) {
+    return (
+      `\n\nTOKEN BUDGET: Your entire JSON response must fit in ~${maxOutputTokens} tokens. ` +
+      `Content budget ≈ ${Math.floor(contentBudget)} tokens. ` +
+      `Be maximally concise: dense, structured prose; no padding; no repetition. ` +
+      `Prefer bullet points over paragraphs. Stop as soon as the task is fully addressed.`
+    )
+  }
+  if (maxOutputTokens <= 40_000) {
+    return (
+      `\n\nTOKEN BUDGET: Your entire JSON response must fit in ~${maxOutputTokens} tokens. ` +
+      `Produce exactly what the task requires — no more. ` +
+      `Avoid verbose elaboration, filler phrases, and redundant summaries. ` +
+      `Stop as soon as the task is fully addressed.`
+    )
+  }
+  // > 40k: light reminder — LLM still needs to know not to pad
+  return (
+    `\n\nOUTPUT DISCIPLINE: Produce only the content needed to fully address the task. ` +
+    `Do not pad with filler prose or repeat information already stated.`
+  )
+}
+
 // ─── System prompt ────────────────────────────────────────────────────────────
 
 /**
@@ -189,14 +226,15 @@ Produce the requested output and respond ONLY with valid JSON matching this sche
     "summary": "<one sentence plain-language summary of what was produced>",
     "content": "<full output content as a string>",
     "confidence": <integer 0-100>,
-    "confidence_rationale": "<brief explanation>"
+    "confidence_rationale": "<ONE sentence — max 20 words>"
   },
-  "assumptions_made": ["<assumption 1>"]
+  "assumptions_made": ["<assumption 1 — max 3 items total>"]
 }
 
 Rules:
 - Output ONLY the JSON object. No markdown fence, no prose around the JSON.
-- assumptions_made: list every decision you made that was not explicit in the task.
+- assumptions_made: list ONLY non-obvious decisions not stated in the task. Maximum 3 items, each ≤ 12 words.
+- confidence_rationale: exactly ONE sentence, ≤ 20 words.
 - confidence < 80 means the output needs revision.
 - FORMATTING — output.content for prose/document/data nodes (not python_code):
   • DEFAULT FORMAT IS MARKDOWN — use it unless the task explicitly requests another format.
@@ -308,11 +346,12 @@ export class Writer {
     onChunk?: (chunk: string) => void,
   ): Promise<WriterOutput> {
     const tier = TIER[node.complexity]
+    const effectiveMaxTokens = maxTokensFor(node.complexity, node.domain_profile)
     const startMs = Date.now()
     let retries = 0
 
     const messages = [
-      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code', node.enable_web_search) + buildWriterSystemPrompt(node.output_file_format) },
+      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code', node.enable_web_search) + buildWriterSystemPrompt(node.output_file_format) + buildBudgetDirective(effectiveMaxTokens) },
       {
         role: 'user' as const,
         content: JSON.stringify({
@@ -332,7 +371,7 @@ export class Writer {
 
     if (onChunk) {
       // Streaming does not retry (chunks already emitted to client)
-      const result = await this.llm.stream(messages, { model: tier, maxTokens: maxTokensFor(node.complexity, node.domain_profile), signal }, onChunk)
+      const result = await this.llm.stream(messages, { model: tier, maxTokens: effectiveMaxTokens, signal }, onChunk)
       raw = result.content
       tokensIn = result.tokensIn
       tokensOut = result.tokensOut
@@ -341,7 +380,7 @@ export class Writer {
       toolCallsTrace = result.tool_calls_trace
     } else {
       const result = await withRetry(
-        () => this.llm.chat(messages, { model: tier, maxTokens: maxTokensFor(node.complexity, node.domain_profile), signal }),
+        () => this.llm.chat(messages, { model: tier, maxTokens: effectiveMaxTokens, signal }),
         {
           signal,
           onRetry: (err, attempt) => {
