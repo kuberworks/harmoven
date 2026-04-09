@@ -556,6 +556,15 @@ export class CustomExecutor implements IExecutionEngine {
               this._emit(runId, { type: 'state_change', entity_type: 'node', id: did, status: 'PENDING' })
             }
           }
+
+          // ── Close stale gates caused by upstream restart ────────────────
+          // Any OPEN gate for a downstream node is now stale because the
+          // pipeline is being re-executed from the restarted node upward.
+          // Resolve them automatically so the gate banner clears in the UI.
+          await this.db.humanGate.updateMany({
+            where: { run_id: runId, status: 'OPEN' },
+            data:  { status: 'RESOLVED', decision: 'upstream_restart', decided_by: actorId, decided_at: new Date() },
+          })
         }
 
         // Reset run to PENDING if it was FAILED or SUSPENDED (but NOT from RUNNING transition above)
@@ -711,6 +720,13 @@ export class CustomExecutor implements IExecutionEngine {
       this._emit(runId, { type: 'state_change', entity_type: 'node', id: nid, status: 'PENDING' })
     }
     this._emit(runId, { type: 'state_change', entity_type: 'run', id: runId, status: 'SUSPENDED' })
+
+    // Close any OPEN gates for this run — they are all stale when the reviewer
+    // (or any upstream node) is being replayed from scratch.
+    await this.db.humanGate.updateMany({
+      where: { run_id: runId, status: 'OPEN' },
+      data:  { status: 'RESOLVED', decision: 'upstream_restart', decided_by: actorId, decided_at: new Date() },
+    })
 
     // Fire executeRun in the background — same pattern as resumeRun().
     // NOT awaited: replayNode must return promptly so the HTTP response is sent

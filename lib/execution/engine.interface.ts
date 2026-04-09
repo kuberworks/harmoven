@@ -128,6 +128,7 @@ export interface ExecutorDb {
   }
   humanGate: {
     create(args: { data: unknown }): Promise<{ id: string }>
+    updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<unknown>
   }
   auditLog: {
     create(args: { data: unknown }): Promise<unknown>
