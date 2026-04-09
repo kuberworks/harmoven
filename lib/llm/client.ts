@@ -114,7 +114,7 @@ async function callAnthropic(
     const response = await client.messages.create(
       {
         model:      profile.model_string,
-        max_tokens: options.maxTokens ?? 4096,
+        max_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
         ...(system ? { system } : {}),
         messages: userMessages.map(m => ({
           role:    m.role as 'user' | 'assistant',
@@ -168,7 +168,7 @@ async function callAnthropic(
     const resp = await client.messages.create(
       {
         model:      profile.model_string,
-        max_tokens: options.maxTokens ?? 4096,
+        max_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
         ...(system ? { system } : {}),
         messages:   currentMessages,
         tools:      anthropicTools,
@@ -257,7 +257,7 @@ async function streamAnthropic(
   const stream = await client.messages.stream(
     {
       model:      profile.model_string,
-      max_tokens: options.maxTokens ?? 4096,
+      max_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
       ...(system ? { system } : {}),
       messages: userMessages.map(m => ({
         role:    m.role as 'user' | 'assistant',
