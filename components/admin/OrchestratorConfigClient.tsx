@@ -24,6 +24,7 @@ interface OrchestratorConfig {
   security?:         { rate_limit_provider?: string; allow_public_signup?: boolean }
   updates?:          { auto_install?: string; update_channel?: string; auto_check?: boolean; auto_download?: boolean }
   marketplace?:      { default_update_policy?: string; auto_check_updates?: boolean }
+  web_search?:       { default_provider?: string }
 }
 
 interface Warning { field: string; message: string }
@@ -131,6 +132,7 @@ export function OrchestratorConfigClient({ initial }: Props) {
   const marketplacePolicy = cfg.marketplace?.default_update_policy ?? 'notify'
   const maxRuns          = cfg.proactivity?.max_auto_runs_per_day ?? 20
   const maxCost          = cfg.proactivity?.max_cost_usd_per_day  ?? 10
+  const webSearchProvider = cfg.web_search?.default_provider ?? 'brave'
 
   return (
     <div className="space-y-6">
@@ -330,6 +332,36 @@ export function OrchestratorConfigClient({ initial }: Props) {
                 checked={cfg.marketplace?.auto_check_updates ?? true}
                 onChange={(v) => patch(['marketplace', 'auto_check_updates'], v)}
               />
+            </Row>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Web search ──────────────────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Web search</h3>
+        <Card>
+          <CardContent className="pt-4 pb-2 divide-y divide-surface-border">
+            <Row
+              label="Default provider"
+              description="Provider used when a run has enable_web_search: true. DuckDuckGo requires no API key. Brave and Tavily need their respective key in the environment."
+            >
+              <Select value={webSearchProvider} onValueChange={(v) => patch(['web_search', 'default_provider'], v)}>
+                <SelectTrigger className="w-36 h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="duckduckgo">DuckDuckGo (free)</SelectItem>
+                  <SelectItem value="brave">Brave Search</SelectItem>
+                  <SelectItem value="tavily">Tavily</SelectItem>
+                </SelectContent>
+              </Select>
+            </Row>
+            <Row label="API key status" description="Set BRAVE_SEARCH_API_KEY or TAVILY_API_KEY in the server environment to activate the corresponding provider.">
+              <div className="flex flex-col gap-1 text-xs text-muted-foreground font-mono">
+                <span>BRAVE_SEARCH_API_KEY</span>
+                <span>TAVILY_API_KEY</span>
+              </div>
             </Row>
           </CardContent>
         </Card>

@@ -58,6 +58,10 @@ export const OrchestratorPatchSchema = z.object({
     auto_check_updates:     z.boolean().optional(),
   }).optional(),
 
+  web_search: z.object({
+    default_provider: z.enum(['brave', 'tavily', 'duckduckgo']).optional(),
+  }).optional(),
+
   llm: z.object({
     default_provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama', 'cometapi', 'litellm']).optional(),
     profiles_active:  z.array(z.string()).optional(),

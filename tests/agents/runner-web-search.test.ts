@@ -243,3 +243,51 @@ describe('WRITER with enable_web_search: false (default)', () => {
     expect(execMeta['tool_calls_trace']).toBeUndefined()
   })
 })
+
+// ─── D5: anthropicNativeWebSearch flag ────────────────────────────────────────
+
+describe('WRITER with enable_web_search: true — anthropicNativeWebSearch flag', () => {
+  it('passes anthropicNativeWebSearch:true in ChatOptions when enable_web_search is set', async () => {
+    // This test verifies that Writer forwards the flag regardless of the underlying
+    // provider — the actual Anthropic native path is exercised in lib/llm/client.ts
+    // unit tests. Here we assert the contract at the runner/writer boundary.
+    mockDbState.runConfig = { enable_web_search: true }
+
+    const llm = new MockLLMClient()
+    llm.setNextResponse(makeWriterResponse())
+
+    const runner = makeAgentRunner(llm)
+    const node   = makeWriterNode()
+    const signal = new AbortController().signal
+
+    await runner(node, null, signal)
+
+    // MockLLMClient records all calls in llm.calls
+    expect(llm.calls.length).toBeGreaterThanOrEqual(1)
+    // At least one call must have anthropicNativeWebSearch: true
+    const hasNativeFlag = llm.calls.some(
+      (c) => (c.options as unknown as Record<string, unknown>)['anthropicNativeWebSearch'] === true,
+    )
+    expect(hasNativeFlag).toBe(true)
+  })
+
+  it('passes anthropicNativeWebSearch:false when enable_web_search is not set', async () => {
+    mockDbState.runConfig = {}
+
+    const llm = new MockLLMClient()
+    llm.setNextResponse(makeWriterResponse())
+
+    const runner = makeAgentRunner(llm)
+    const node   = makeWriterNode()
+    const signal = new AbortController().signal
+
+    await runner(node, null, signal)
+
+    // All calls must have anthropicNativeWebSearch: false (or absent)
+    const hasNativeFlag = llm.calls.some(
+      (c) => (c.options as unknown as Record<string, unknown>)['anthropicNativeWebSearch'] === true,
+    )
+    expect(hasNativeFlag).toBe(false)
+  })
+})
+
