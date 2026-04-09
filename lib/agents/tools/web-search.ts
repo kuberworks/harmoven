@@ -55,6 +55,25 @@ function wrapResultContent(content: string): string {
   return `<WEB_SEARCH_RESULT>\n${content}\n</WEB_SEARCH_RESULT>`
 }
 
+// ─── Provider resolver ──────────────────────────────────────────────────────────
+
+/**
+ * Return the effective search provider, falling back to duckduckgo when the
+ * requested provider requires an API key that is not set in the environment.
+ * Logs a warning once so operators can diagnose misconfiguration.
+ */
+function resolveProvider(requested: string): string {
+  if (requested === 'brave' && !process.env['BRAVE_SEARCH_API_KEY']) {
+    console.warn('[web-search] BRAVE_SEARCH_API_KEY is not set — falling back to duckduckgo')
+    return 'duckduckgo'
+  }
+  if (requested === 'tavily' && !process.env['TAVILY_API_KEY']) {
+    console.warn('[web-search] TAVILY_API_KEY is not set — falling back to duckduckgo')
+    return 'duckduckgo'
+  }
+  return requested
+}
+
 // ─── Retry helper ─────────────────────────────────────────────────────────────
 
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
@@ -251,7 +270,8 @@ export function makeWebSearchExecutor(
   nodeCtx: WebSearchNodeCtx,
   emitSse?: (query: string, resultCount: number, iteration: number, isError: boolean) => void,
 ): NonNullable<import('@/lib/llm/interface').ChatOptions['toolExecutor']> {
-  const provider = (process.env['WEB_SEARCH_PROVIDER'] ?? 'brave').toLowerCase()
+  const defaultProvider = (process.env['WEB_SEARCH_PROVIDER'] ?? 'brave').toLowerCase()
+  const activeProvider  = resolveProvider(runConfig.web_search_provider ?? defaultProvider)
   let iteration = 0
 
   return async (calls: ToolCall[]): Promise<ToolResult[]> => {
@@ -290,7 +310,6 @@ export function makeWebSearchExecutor(
       let searchError: string | null = null
 
       try {
-        const activeProvider = runConfig.web_search_provider ?? provider
         const doSearch = () => {
           if (activeProvider === 'tavily')     return searchTavily(query, maxResults)
           if (activeProvider === 'duckduckgo') return searchDuckDuckGo(query, maxResults)
