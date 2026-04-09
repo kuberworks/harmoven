@@ -296,9 +296,10 @@ export function dbRowToLlmProfileConfig(row: {
     jurisdiction:             row.jurisdiction as LlmProfileConfig['jurisdiction'],
     trust_tier:               row.trust_tier as LlmProfileConfig['trust_tier'],
     task_type_affinity:       row.task_type_affinity ?? [],
-    base_url:    typeof cfg['base_url']    === 'string' ? cfg['base_url']    : undefined,
-    api_key_env: typeof cfg['api_key_env'] === 'string' ? cfg['api_key_env'] : undefined,
-    api_key_enc: typeof cfg['api_key_enc'] === 'string' ? cfg['api_key_enc'] : undefined,
+    base_url:          typeof cfg['base_url']          === 'string' ? cfg['base_url']          : undefined,
+    api_key_env:       typeof cfg['api_key_env']       === 'string' ? cfg['api_key_env']       : undefined,
+    api_key_enc:       typeof cfg['api_key_enc']       === 'string' ? cfg['api_key_enc']       : undefined,
+    max_output_tokens: typeof cfg['max_output_tokens'] === 'number' ? cfg['max_output_tokens'] : undefined,
   }
 }
 
