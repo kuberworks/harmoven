@@ -110,6 +110,36 @@ interface WorkerResult {
   skipped_files?: Array<{ name: string; reason: string }>
 }
 
+// ─── Pre-execution sanitizer ─────────────────────────────────────────────────
+
+/**
+ * Strip leading zeros from decimal integer literals that Python 3 rejects.
+ * e.g. `09` → `9`, `007` → `7`, `01` → `1`, `datetime.time(09, 30)` → `datetime.time(9, 30)`.
+ *
+ * Strategy: split the code on string literals and # comments (captured), then apply
+ * the fix only to code-context segments so string contents are not altered.
+ */
+function fixLeadingZeroIntegers(code: string): string {
+  // Tokenize: match string literals (with r/b/f/u prefixes, triple or single quotes)
+  // and # comments; everything between matches is code.
+  const nonCodeRe =
+    /((?:[rRbBfFuU]{1,2})?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|#[^\n]*)/g
+  const parts = code.split(nonCodeRe)
+  return parts
+    .map((part, idx) => {
+      // split() with a capturing group: even indices = code, odd = matched non-code
+      if (idx % 2 !== 0) return part
+      // Fix 0-prefixed decimal integers: `0+([1-9][0-9]*)` → `$1`
+      // Lookbehind prevents matching digits inside larger numbers (e.g. `10` stays `10`).
+      // Negative lookahead prevents altering 0x/0o/0b/0. literals.
+      return part.replace(
+        /(?<![0-9.])0+([1-9][0-9]*)(?![.xXoObBaAcCdDeEfF_])/g,
+        (_, digits: string) => digits,
+      )
+    })
+    .join('')
+}
+
 // ─── Extract clean error message from Pyodide's verbose traceback ────────────
 
 /**
@@ -168,8 +198,10 @@ export async function executePython(
   return new Promise<PythonExecutorOutput>((resolve, reject) => {
     let settled = false
 
+    const code = fixLeadingZeroIntegers(input.code)
+
     const worker = new Worker(WORKER_PATH, {
-      workerData: { code: input.code, pyodidePath: PYODIDE_PATH, packages: input.packages ?? [] },
+      workerData: { code, pyodidePath: PYODIDE_PATH, packages: input.packages ?? [] },
       resourceLimits: {
         maxOldGenerationSizeMb: MEMORY_LIMIT_MB,
         maxYoungGenerationSizeMb: 32,

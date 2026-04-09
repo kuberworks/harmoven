@@ -281,6 +281,10 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
 - output.type MUST be "code".
 - output.content MUST be complete, self-contained, executable Python source code — nothing else.
 - Do NOT write prose, descriptions, JSON structures, or markdown in output.content.
+- PYTHON 3 INTEGER LITERALS: NEVER use leading zeros in decimal integers. Python 3 raises
+  SyntaxError for \`01\`, \`09\`, \`007\`, etc. Always write \`1\`, \`9\`, \`7\`. For time/date values
+  use bare integers: \`datetime.time(9, 30)\` not \`datetime.time(09, 30)\`. For octal use the
+  \`0o\` prefix: \`0o7\`, \`0o10\`. This applies everywhere: assignments, function args, dicts.
 - The Python code MUST save every file to disk using the appropriate library call:
   openpyxl: workbook.save('filename.xlsx')
   pandas:   df.to_csv('filename.csv', index=False)  or  df.to_excel('filename.xlsx', index=False)
