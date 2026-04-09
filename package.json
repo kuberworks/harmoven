@@ -73,6 +73,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-breaks": "^4.0.0",
     "remark-docx": "^0.3.26",
+    "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "smol-toml": "^1.6.1",
     "tailwind-merge": "^2.5.5",
