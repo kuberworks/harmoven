@@ -767,12 +767,12 @@
         }
       },
       "web_search": {
-        "searching": "\uD83C\uDF10 Searching: \"{query}\"",
-        "in_progress": "\uD83C\uDF10 Searching the web\u2026",
+        "searching": "Searching: \"{query}\"",
+        "in_progress": "Searching the web…",
         "results": "results"
       },
       "image_gen": {
-        "generating": "\uD83D\uDDBC\uFE0F Generating image\u2026",
+        "generating": "🖼️ Generating image…",
         "failed": "Image generation failed. Please try again.",
         "no_provider": "No image generation provider is configured."
       },
@@ -781,10 +781,10 @@
     },
     "result": {
       "banner": {
-        "document": "\u2705 Done — your document is ready",
-        "spreadsheet": "\u2705 Done — your spreadsheet is ready",
-        "script": "\u2705 Done — your script is ready",
-        "file": "\u2705 Done — your file is ready"
+        "document": "✅ Done — your document is ready",
+        "spreadsheet": "✅ Done — your spreadsheet is ready",
+        "script": "✅ Done — your script is ready",
+        "file": "✅ Done — your file is ready"
       },
       "download": "Download",
       "artifacts": {
@@ -805,11 +805,11 @@
       "section_desc_auto": "Auto (system decides)",
       "section_desc_preset": "Preset: {preset}",
       "preset_label": "Quality preset",
-      "preset_auto": "Auto \u2014 system picks (recommended)",
-      "preset_economy": "Economy \u2014 fastest, lowest cost",
-      "preset_standard": "Standard \u2014 balanced quality",
-      "preset_power": "Power \u2014 highest quality",
-      "preset_custom": "Custom \u2014 pick per agent",
+      "preset_auto": "Auto — system picks (recommended)",
+      "preset_economy": "Economy — fastest, lowest cost",
+      "preset_standard": "Standard — balanced quality",
+      "preset_power": "Power — highest quality",
+      "preset_custom": "Custom — pick per agent",
       "preset_will_use": "Will use: {model}",
       "agent_planner": "Planner",
       "agent_writer": "Writer",
