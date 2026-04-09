@@ -92,7 +92,7 @@ Output ONLY valid JSON matching this schema — no markdown, no prose:
         "llm_strategy": "dynamic",
         "complexity": "high",
         "timeout_minutes": 20,
-        "inputs": [],
+        "inputs": [],   // MUST be an array of PLAIN STRINGS like "output:n1" — NEVER objects
         "expected_output_type": "code"
       }
     ],
@@ -116,6 +116,12 @@ Rules:
   PLANNER, CLASSIFIER, and any other value are FORBIDDEN in dag.nodes — if you output
   a node with "agent": "PLANNER" or "agent": "CLASSIFIER" the entire plan is rejected.
   You are the one-and-only Planner; you do NOT recurse or spawn another Planner.
+- VALID "llm_strategy" values: "dynamic", "fast", "balanced", "powerful" only.
+  "static" and any other value are FORBIDDEN — use "dynamic" when uncertain.
+- "inputs" MUST be an array of plain strings of the form "output:<node_id>" — for example
+  ["output:n1", "output:n2"]. NEVER put objects or anything other than strings in "inputs".
+  If a node has no upstream inputs, use an empty array: []. If a node needs output from n1,
+  write ["output:n1"]. A node that needs output from n1 and n2 writes ["output:n1", "output:n2"].
 - Use WRITER for prose, text, and code generation — EXCEPT when the task requires
   downloadable binary files (Excel, CSV, PDF, image, etc.): in that case you MUST follow
   the PYTHON_EXECUTOR rule below. NEVER use WRITER to output a JSON description or text
