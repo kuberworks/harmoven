@@ -26,6 +26,7 @@ import {
 }                                    from '@/lib/auth/rbac'
 import { createRunRateLimitAsync }    from '@/lib/auth/rate-limit'
 import { getExecutionEngine }        from '@/lib/execution/engine.factory'
+import { LlmOverridesSchema }        from '@/lib/execution/run-config'
 import { uuidv7 }                    from '@/lib/utils/uuidv7'
 import { classifyConfidentiality }   from '@/lib/llm/confidentiality'
 import { EXCLUDE_PHANTOM_RUNS }      from '@/lib/db/run-filters'
@@ -60,6 +61,7 @@ const CreateRunBody = z.object({
   // Max 5 parents; each must be COMPLETED and belong to the same project.
   parent_run_ids:    z.array(z.string().uuid()).max(5).optional(),
   enable_web_search: z.boolean().optional().default(false),
+  llm_overrides:     LlmOverridesSchema.optional(),
 }).strict()
 
 export async function GET(req: NextRequest) {
@@ -182,6 +184,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  // Validate LLM override profile IDs against enabled profiles in the DB.
+  // We reject unknown / disabled profile IDs so the executor never tries to use a ghost profile.
+  if (body.llm_overrides) {
+    const overrideIds = Object.values(body.llm_overrides).filter(Boolean) as string[]
+    if (overrideIds.length > 0) {
+      const validProfiles = await db.llmProfile.findMany({
+        where: { id: { in: overrideIds }, enabled: true },
+        select: { id: true },
+      })
+      const validIds = new Set(validProfiles.map(p => p.id))
+      const invalid = overrideIds.filter(id => !validIds.has(id))
+      if (invalid.length > 0) {
+        return NextResponse.json(
+          { error: `Invalid or disabled LLM profile IDs: ${invalid.join(', ')}` },
+          { status: 422 },
+        )
+      }
+    }
+  }
+
   // H-04: store a meaningful actor for API key callers ("apikey:<keyId>") so
   // AuditLog is never null/system for programmatic run creation.
   const actorId = caller.type === 'session'
@@ -232,7 +254,11 @@ export async function POST(req: NextRequest) {
       domain_profile:   body.domain_profile,
       task_input:       body.task_input as Prisma.InputJsonValue,
       dag:              initialDag,
-      run_config:       { providers: [], ...(body.enable_web_search ? { enable_web_search: true } : {}) },
+      run_config:       {
+        providers: [],
+        ...(body.enable_web_search ? { enable_web_search: true } : {}),
+        ...(body.llm_overrides    ? { llm_overrides: body.llm_overrides } : {}),
+      },
       transparency_mode: body.transparency_mode ?? false,
       // Section 18: use the higher of the caller-supplied level and the local classifier result.
       confidentiality:  effectiveConfidentiality,
@@ -269,7 +295,11 @@ export async function POST(req: NextRequest) {
         id: uuidv7(), run_id: run.id, node_id: plannerNodeId,
         agent_type: 'PLANNER', status: 'PENDING',
         // Stash task_input and domain_profile as fallbacks.
-        metadata: { task_input: taskInputStr, domain_profile: body.domain_profile },
+        metadata: {
+          task_input:     taskInputStr,
+          domain_profile: body.domain_profile,
+          ...(body.llm_overrides?.PLANNER ? { preferred_llm: body.llm_overrides.PLANNER } : {}),
+        },
       },
     ],
   })

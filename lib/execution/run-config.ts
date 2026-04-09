@@ -9,6 +9,22 @@ const OUTPUT_FILE_FORMAT = z.enum([
   'docx', 'pdf',
 ])
 
+/**
+ * Per-agent LLM profile overrides.
+ * When a key is present, the executor injects preferred_llm into the node metadata
+ * so DirectLLMClient prioritises that profile via selectLlm(preferredLlmId).
+ * Absent / undefined key = Auto (system picks based on tier + task constraints).
+ * Only PLANNER, WRITER, REVIEWER are user-configurable; CLASSIFIER is always fast.
+ * .strict() rejects unknown agent keys (e.g. CLASSIFIER, PYTHON_EXECUTOR).
+ */
+export const LlmOverridesSchema = z.object({
+  PLANNER:  z.string().max(128).optional(),
+  WRITER:   z.string().max(128).optional(),
+  REVIEWER: z.string().max(128).optional(),
+}).strict()
+
+export type LlmOverrides = z.infer<typeof LlmOverridesSchema>
+
 export const RunConfigSchema = z.object({
   enable_web_search:       z.boolean().optional().default(false),
   web_search_provider:     z.enum(['brave', 'tavily', 'duckduckgo']).optional(),
@@ -18,6 +34,8 @@ export const RunConfigSchema = z.object({
    * This is the explicit "form selector" value chosen by the user before run creation.
    */
   output_file_format: OUTPUT_FILE_FORMAT.optional(),
+  /** Per-agent LLM override. See LlmOverridesSchema above. */
+  llm_overrides: LlmOverridesSchema.optional(),
 })
 
 export type RunConfig = z.infer<typeof RunConfigSchema>
