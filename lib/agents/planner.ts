@@ -389,6 +389,10 @@ export class Planner {
     const MAX_VALIDATION_ATTEMPTS = 3
     let lastErr: unknown
 
+    // Read run_config once before the retry loop (reused for LLM context AND C2 post-processing)
+    const runRowPre = await db.run.findUnique({ where: { id: run_id }, select: { run_config: true } }).catch(() => null)
+    const runConfigPre = parseRunConfig(runRowPre?.run_config ?? {})
+
     for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
       try {
         const result = await withRetry(
@@ -404,6 +408,8 @@ export class Planner {
                   // The Planner must reference these artefacts when building the child DAG
                   // instead of re-generating what was already produced.
                   ...(prior_context ? { prior_run_context: prior_context } : {}),
+                  // Signal web search availability so the Planner can note it in descriptions
+                  ...(runConfigPre.enable_web_search ? { enable_web_search: true } : {}),
                   // Full classifier context — not just profile id
                   classifier: {
                     domain_profile:          profile.detected_profile,
@@ -486,8 +492,8 @@ export class Planner {
         //   1. run_config.output_file_format (form selector) takes ABSOLUTE priority
         //   2. Fallback: desired_outputs from classifier
         const plannerResult = zodResult.data
-        const runRow = await db.run.findUnique({ where: { id: run_id }, select: { run_config: true } }).catch(() => null)
-        const runConfig = parseRunConfig(runRow?.run_config ?? {})
+        // Reuse run_config read before the loop (avoids a second DB round-trip per attempt)
+        const runConfig = runConfigPre
 
         if (runConfig.output_file_format) {
           // C2: override output_file_format on ALL WRITER nodes

@@ -442,6 +442,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           domain_profile:      asProfileId(meta['domain_profile']),
           run_id:              node.run_id,
           output_file_format:  outputFileFormat,
+          enable_web_search:   runConfig.enable_web_search === true,
         }
 
         const result = await new Writer(writerClient).execute(nodeInput, signal, onChunk)
