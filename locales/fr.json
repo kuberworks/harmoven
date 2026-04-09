@@ -798,23 +798,5 @@
         "expires": "Disponible jusqu'au {date}"
       }
     }
-  },
-  "run_form": {
-    "llm": {
-      "section_title": "S\u00e9lection du mod\u00e8le",
-      "section_desc_auto": "Auto (syst\u00e8me d\u00e9cide)",
-      "section_desc_preset": "Pr\u00e9r\u00e9glage\u00a0: {preset}",
-      "preset_label": "Pr\u00e9r\u00e9glage qualit\u00e9",
-      "preset_auto": "Auto \u2014 le syst\u00e8me choisit (recommand\u00e9)",
-      "preset_economy": "\u00c9conomique \u2014 plus rapide, co\u00fbt minimal",
-      "preset_standard": "Standard \u2014 qualit\u00e9 \u00e9quilibr\u00e9e",
-      "preset_power": "Puissant \u2014 qualit\u00e9 maximale",
-      "preset_custom": "Personnalis\u00e9 \u2014 choisir par agent",
-      "preset_will_use": "Utilisera\u00a0: {model}",
-      "agent_planner": "Planificateur",
-      "agent_writer": "R\u00e9dacteur",
-      "agent_reviewer": "V\u00e9rificateur",
-      "agent_auto": "Auto"
-    }
   }
 }

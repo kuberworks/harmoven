@@ -798,23 +798,5 @@
         "expires": "Available until {date}"
       }
     }
-  },
-  "run_form": {
-    "llm": {
-      "section_title": "Model selection",
-      "section_desc_auto": "Auto (system decides)",
-      "section_desc_preset": "Preset: {preset}",
-      "preset_label": "Quality preset",
-      "preset_auto": "Auto \u2014 system picks (recommended)",
-      "preset_economy": "Economy \u2014 fastest, lowest cost",
-      "preset_standard": "Standard \u2014 balanced quality",
-      "preset_power": "Power \u2014 highest quality",
-      "preset_custom": "Custom \u2014 pick per agent",
-      "preset_will_use": "Will use: {model}",
-      "agent_planner": "Planner",
-      "agent_writer": "Writer",
-      "agent_reviewer": "Reviewer",
-      "agent_auto": "Auto"
-    }
   }
 }

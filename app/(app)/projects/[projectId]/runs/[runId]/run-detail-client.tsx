@@ -1266,6 +1266,17 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
   const gateReason = (liveGateEvent as { type: 'human_gate'; reason: string } | undefined)?.reason
     ?? initialRun.openGate?.reason
 
+  // Human-readable labels for gate reason codes — never show raw keys to users.
+  const GATE_REASON_LABELS: Record<string, string> = {
+    planner_exhausted:   'The AI planning agent could not build an execution plan for this task',
+    low_confidence_plan: 'Planner confidence is below threshold — plan requires review before execution',
+    low_confidence:      'Low confidence — human review requested',
+    reviewer_escalation: 'Reviewer escalated — output requires a human decision',
+    reviewer_findings:   'Reviewer found issues requiring a human decision',
+    budget_warning:      'Budget threshold exceeded',
+  }
+  const gateReasonDisplay = gateReason ? (GATE_REASON_LABELS[gateReason] ?? gateReason) : null
+
   return (
     <div className="space-y-6">
       {/* Run header */}
@@ -1318,8 +1329,8 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
             <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
             <div>
               <p className="text-sm font-medium text-amber-300">Human review required</p>
-              {gateReason && (
-                <p className="text-xs text-amber-400/80 mt-0.5">{gateReason}</p>
+              {gateReasonDisplay && (
+                <p className="text-xs text-amber-400/80 mt-0.5">{gateReasonDisplay}</p>
               )}
             </div>
           </div>
@@ -1452,7 +1463,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                         : ev.type === 'error'
                         ? `Error in ${ev.node_id}: ${ev.message}`
                         : ev.type === 'human_gate'
-                        ? `Human gate: ${ev.reason}`
+                        ? `Human gate: ${GATE_REASON_LABELS[ev.reason as string] ?? ev.reason}`
                         : ev.type === 'completed'
                         ? 'Run completed'
                         : ev.type
