@@ -109,9 +109,11 @@ async function callAnthropic(
   const client = buildAnthropicClient(profile)
   const { system, userMessages } = splitMessages(messages)
 
-  // If no tools, use simple non-looping path (backward compat)
+  // If no tools, use simple non-looping path (backward compat).
+  // Use .stream()/.finalMessage() instead of .create() so Anthropic does not
+  // reject requests that take > 10 minutes (streaming is required for those).
   if (!options.tools?.length || !options.toolExecutor) {
-    const response = await client.messages.create(
+    const stream = await client.messages.stream(
       {
         model:      profile.model_string,
         max_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
@@ -123,6 +125,7 @@ async function callAnthropic(
       },
       { signal: options.signal },
     )
+    const response = await stream.finalMessage()
     const textBlocks = response.content.filter(b => b.type === 'text')
     const content    = textBlocks.map(b => ('text' in b ? b.text : '')).join('')
     return {
@@ -165,7 +168,9 @@ async function callAnthropic(
       }
     }
 
-    const resp = await client.messages.create(
+    // Use .stream()/.finalMessage() to satisfy Anthropic's requirement for
+    // streaming on requests that may exceed 10 minutes.
+    const iterStream = await client.messages.stream(
       {
         model:      profile.model_string,
         max_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
@@ -176,6 +181,7 @@ async function callAnthropic(
       },
       { signal: options.signal },
     )
+    const resp = await iterStream.finalMessage()
 
     totalIn  += resp.usage.input_tokens
     totalOut += resp.usage.output_tokens
