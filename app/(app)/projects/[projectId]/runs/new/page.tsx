@@ -55,9 +55,6 @@ export default function NewRunPage({ params }: Props) {
   const [domainProfile, setDomainProfile]       = useState('generic')
   const [outputFileFormat, setOutputFileFormat] = useState('')
   const [enableWebSearch, setEnableWebSearch]   = useState(false)
-  // true once the user explicitly clicks the checkbox — prevents auto-detect from
-  // overriding a deliberate user choice (either direction).
-  const [webSearchUserChoice, setWebSearchUserChoice] = useState(false)
   const [budgetUsd, setBudgetUsd]               = useState('')
   const [error, setError]                 = useState<string | null>(null)
   const [loading, setLoading]             = useState(false)
@@ -79,27 +76,6 @@ export default function NewRunPage({ params }: Props) {
       })
       .catch(() => { /* ignore — auto preset still works, custom shows empty */ })
   }, [])
-
-  // Auto-detect real-time / news queries and suggest enabling web search.
-  // Only fires while the user hasn't manually interacted with the checkbox.
-  useEffect(() => {
-    if (webSearchUserChoice) return
-    const lower = taskInput.toLowerCase()
-    const REAL_TIME_KEYWORDS = [
-      // French
-      'actualité', 'actualités', 'nouvelles', 'dernières nouvelles', 'dernier', 'derniers',
-      'récent', 'récente', "aujourd'hui", 'ce jour', 'cette semaine', 'ce mois',
-      'guerre', 'conflit', 'élection', 'événement', 'en direct',
-      // English
-      'latest news', 'breaking news', 'latest', 'recent', 'today', 'current events',
-      'this week', 'this month', 'real-time', 'up-to-date', 'right now',
-    ]
-    // Also match 4-digit current years embedded in the text
-    const currentYear = new Date().getFullYear()
-    const hasYear = new RegExp(`\\b(${currentYear}|${currentYear - 1})\\b`).test(taskInput)
-    const hasKeyword = REAL_TIME_KEYWORDS.some(kw => lower.includes(kw))
-    setEnableWebSearch(hasKeyword || hasYear)
-  }, [taskInput, webSearchUserChoice])
 
   // Parse ?from=id1,id2,... and fetch the task_input for each parent to show in the banner
   useEffect(() => {
@@ -326,10 +302,7 @@ export default function NewRunPage({ params }: Props) {
                 id="enable_web_search"
                 type="checkbox"
                 checked={enableWebSearch}
-                onChange={(e) => {
-                  setWebSearchUserChoice(true)
-                  setEnableWebSearch(e.target.checked)
-                }}
+                onChange={(e) => setEnableWebSearch(e.target.checked)}
                 className="mt-0.5 h-4 w-4 rounded border-border accent-amber-500 cursor-pointer"
               />
               <div className="space-y-1 leading-none">
@@ -339,14 +312,9 @@ export default function NewRunPage({ params }: Props) {
                 <p className="text-xs text-muted-foreground">
                   Allows agents to search for current information on the web. May increase run duration and cost.
                 </p>
-                {enableWebSearch && !webSearchUserChoice && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400">
-                    ✨ Auto-enabled — your task appears to need current information.
-                  </p>
-                )}
                 {enableWebSearch && (
                   <p className="text-xs text-amber-600 dark:text-amber-400">
-                    ⚠️ Search queries may expose terms from your prompt to the search API. Avoid if your request contains sensitive information.
+                    ⚠️ Search queries may expose terms from your prompt to the search API (Brave/Tavily). Avoid if your request contains sensitive information.
                   </p>
                 )}
               </div>
