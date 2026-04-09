@@ -40,6 +40,13 @@ export interface WriterNodeInput {
   output_file_format?: string
   /** When true, a live web_search tool is injected — instruct the model to use it. */
   enable_web_search?: boolean
+  /**
+   * Pre-fetched web search results injected before the LLM call.
+   * Used as a fallback for providers that do not reliably call the web_search tool
+   * (e.g. MiniMax, some custom OpenAI-compat models). Already wrapped in
+   * <WEB_SEARCH_RESULT> tags matching the tool response format.
+   */
+  pre_search_context?: string
 }
 
 export interface WriterOutput {
@@ -375,6 +382,9 @@ export class Writer {
           task: node.description,
           expected_output_type: node.expected_output_type,
           upstream_inputs: sanitizeUpstreamInputs(node.inputs),
+          // Pre-fetched search context injected for providers that don't call tools reliably.
+          // The model should treat this as live external evidence and cite/use it in its output.
+          ...(node.pre_search_context ? { web_search_context: node.pre_search_context } : {}),
         }),
       },
     ]

@@ -428,6 +428,29 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           ? new ToolInjectionLLMClient(captureClient, tools, toolExecutor)
           : captureClient
 
+        // Pre-inject web search results for providers that don't reliably call tools
+        // (e.g. MiniMax, custom OpenAI-compat models). For Anthropic, anthropicNativeWebSearch
+        // handles search natively — the pre-injected context is redundant but harmless.
+        // Non-fatal: if the pre-search fails we simply proceed without it.
+        let preSearchContext: string | undefined
+        if (toolExecutor) {
+          const nodeDescription = (meta['description'] as string | undefined) ?? ''
+          if (nodeDescription.trim()) {
+            try {
+              const preResults = await toolExecutor(
+                [{ id: 'pre-search-0', name: 'web_search', input: { query: nodeDescription, max_results: 5 } }],
+                signal,
+              )
+              const r = preResults[0]
+              if (r && !r.is_error && r.content) {
+                preSearchContext = r.content
+              }
+            } catch {
+              // non-fatal — proceed without pre-search context
+            }
+          }
+        }
+
         const nodeInput: WriterNodeInput = {
           node_id:              node.node_id,
           description:          (meta['description'] as string | undefined) ?? '',
@@ -443,6 +466,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           run_id:              node.run_id,
           output_file_format:  outputFileFormat,
           enable_web_search:   runConfig.enable_web_search === true,
+          pre_search_context:  preSearchContext,
         }
 
         const result = await new Writer(writerClient).execute(nodeInput, signal, onChunk)
