@@ -131,39 +131,53 @@ function maxTokensFor(complexity: Complexity, profile: ProfileId): number {
   return CODE_PROFILES.has(profile) ? Math.min(base * 2, 131_072) : base
 }
 
+// Tier ceilings anchored to DEFAULT_MAX_TOKENS:
+//   TIGHT_CEILING  = low × 2  = 16 384  (model has a narrow window)
+//   NORMAL_CEILING = 40 000   (between medium 32 768 and high 65 536)
+const TIGHT_CEILING  = DEFAULT_MAX_TOKENS.low * 2  // 16 384
+const NORMAL_CEILING = 40_000
+
 /**
  * Build a token-budget directive injected into the system prompt.
- * Tells the LLM its output cap and instructs it to produce minimum
- * sufficient content — avoids over-production that leads to truncation.
+ * Injects a conciseness instruction proportional to the model's token window.
+ * Calibrate tier thresholds and claimed reductions with real run data.
+ *
+ * @param maxOutputTokens  effective cap after Math.min(requested, model limit)
+ * @param isCodeNode       true for python_code nodes — bullet-point advice
+ *                         is nonsensical for code; replaced with code-specific guidance
  *
  * Tiers:
- *   ≤ 16 384  tight  — strict conciseness, reserve ~10% for JSON envelope
- *   ≤ 40 000  normal — quality over verbosity, no padding
- *   > 40 000  large  — light reminder, avoid padding only
+ *   ≤ TIGHT_CEILING  (16 384) — strict conciseness, show exact content budget
+ *   ≤ NORMAL_CEILING (40 000) — quality over verbosity, no padding
+ *   > NORMAL_CEILING          — light reminder with token count
  */
-export function buildBudgetDirective(maxOutputTokens: number): string {
+export function buildBudgetDirective(maxOutputTokens: number, isCodeNode = false): string {
   const envelope = 400 // conservative estimate for JSON wrapper + metadata tokens
-  const contentBudget = Math.max(maxOutputTokens - envelope, maxOutputTokens * 0.9)
+  const contentBudget = Math.min(maxOutputTokens - envelope, Math.floor(maxOutputTokens * 0.9))
 
-  if (maxOutputTokens <= 16_384) {
+  if (maxOutputTokens <= TIGHT_CEILING) {
+    const conciseness = isCodeNode
+      ? 'Produce minimal, correct code only. No explanatory prose, no comments beyond what the task requires.'
+      : 'Be maximally concise: dense, structured prose; no padding; no repetition. Prefer bullet points over paragraphs.'
     return (
       `\n\nTOKEN BUDGET: Your entire JSON response must fit in ~${maxOutputTokens} tokens. ` +
-      `Content budget ≈ ${Math.floor(contentBudget)} tokens. ` +
-      `Be maximally concise: dense, structured prose; no padding; no repetition. ` +
-      `Prefer bullet points over paragraphs. Stop as soon as the task is fully addressed.`
+      `Content budget ≈ ${contentBudget} tokens. ` +
+      `${conciseness} Stop as soon as the task is fully addressed.`
     )
   }
-  if (maxOutputTokens <= 40_000) {
+  if (maxOutputTokens <= NORMAL_CEILING) {
+    const conciseness = isCodeNode
+      ? 'Produce clean, minimal code. Omit boilerplate unless explicitly required.'
+      : 'Avoid verbose elaboration, filler phrases, and redundant summaries.'
     return (
       `\n\nTOKEN BUDGET: Your entire JSON response must fit in ~${maxOutputTokens} tokens. ` +
       `Produce exactly what the task requires — no more. ` +
-      `Avoid verbose elaboration, filler phrases, and redundant summaries. ` +
-      `Stop as soon as the task is fully addressed.`
+      `${conciseness} Stop as soon as the task is fully addressed.`
     )
   }
-  // > 40k: light reminder — LLM still needs to know not to pad
+  // > NORMAL_CEILING: light reminder — LLM still needs to know not to pad
   return (
-    `\n\nOUTPUT DISCIPLINE: Produce only the content needed to fully address the task. ` +
+    `\n\nOUTPUT DISCIPLINE: Produce only the content needed to fully address the task (~${maxOutputTokens} token budget). ` +
     `Do not pad with filler prose or repeat information already stated.`
   )
 }
@@ -351,7 +365,7 @@ export class Writer {
     let retries = 0
 
     const messages = [
-      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code', node.enable_web_search) + buildWriterSystemPrompt(node.output_file_format) + buildBudgetDirective(effectiveMaxTokens) },
+      { role: 'system' as const, content: buildSystemPrompt(node.domain_profile, node.expected_output_type === 'python_code', node.enable_web_search) + buildWriterSystemPrompt(node.output_file_format) + buildBudgetDirective(effectiveMaxTokens, node.expected_output_type === 'python_code') },
       {
         role: 'user' as const,
         content: JSON.stringify({
