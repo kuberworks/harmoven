@@ -1154,6 +1154,12 @@ export class CustomExecutor implements IExecutionEngine {
             const currentRun = await this.db.run.findUniqueOrThrow({ where: { id: runId } })
             const currentDag = currentRun.dag as { nodes: { id: string; agent_type: string }[]; edges: { from: string; to: string }[] }
 
+            // Extract per-agent LLM overrides stored in run_config by the API route.
+            // Keys match agent types (PLANNER, WRITER, REVIEWER); absent = auto selection.
+            const llmOverrides = (
+              (currentRun.run_config as Record<string, unknown> | null)?.['llm_overrides'] ?? {}
+            ) as Record<string, string | undefined>
+
             // Build set of already-known node IDs to avoid duplicates.
             const existingIds = new Set(currentDag.nodes.map(n => n.id))
 
@@ -1231,6 +1237,7 @@ export class CustomExecutor implements IExecutionEngine {
                     expected_output_type: pn.expected_output_type,
                     domain_profile:       plan.domain_profile,
                     dependencies:         remappedDeps,
+                    ...(llmOverrides[pn.agent] ? { preferred_llm: llmOverrides[pn.agent] } : {}),
                   },
                 },
               })
