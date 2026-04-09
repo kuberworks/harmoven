@@ -982,6 +982,64 @@ components:
           description: "Modality supported by this model. `text` (default) = language model. `image` = image generation model (DALL-E, Imagen). `multimodal` = both text and image. The executor routes IMAGE_GEN DAG nodes to profiles with modality=image."
 
     # ── Analytics ─────────────────────────────────────────────────────────────
+
+    LlmOverrides:
+      type: object
+      additionalProperties: false
+      description: |
+        Per-agent LLM profile overrides for a run.
+        Each key selects the exact profile ID to use for that agent stage.
+        Absent keys = auto-selection by the system.
+        Profile IDs are validated against enabled profiles in the DB at run creation;
+        unknown or disabled IDs return HTTP 422.
+        `CLASSIFIER` cannot be overridden — it always uses the fastest eligible profile.
+      properties:
+        PLANNER:
+          type: string
+          maxLength: 128
+          description: "LLM profile ID to force for the PLANNER agent. Injected into the initial PLANNER node metadata so the executor routes it to this model."
+        WRITER:
+          type: string
+          maxLength: 128
+          description: "LLM profile ID to force for all WRITER agents produced by the DAG expansion."
+        REVIEWER:
+          type: string
+          maxLength: 128
+          description: "LLM profile ID to force for all REVIEWER agents produced by the DAG expansion."
+
+    AvailableProfile:
+      type: object
+      required: [id, provider, model_string, tier]
+      description: "Safe excerpt of an LlmProfile returned by `GET /models/available`. Never includes `config` or `api_key_enc` secrets."
+      properties:
+        id:
+          type: string
+          description: "Unique identifier for this LLM profile. Use as the value in `LlmOverrides` when overriding agents."
+        provider:
+          type: string
+          description: "LLM provider identifier, e.g. `anthropic`, `openai`."
+        model_string:
+          type: string
+          description: "Provider-native model identifier, e.g. `claude-sonnet-4-6`."
+        tier:
+          type: string
+          enum: [fast, balanced, powerful]
+          description: "Quality / cost tier. `fast` = lowest cost + latency; `balanced` = mid-tier; `powerful` = highest capability."
+        context_window:
+          type: integer
+          description: "Maximum context window in tokens."
+        cost_per_1m_input_tokens:
+          type: number
+          description: "Cost in USD per one million input tokens."
+        cost_per_1m_output_tokens:
+          type: number
+          description: "Cost in USD per one million output tokens."
+        modality:
+          type: string
+          enum: [text, image, multimodal]
+          description: "Modality supported by this model."
+
+    # ── Analytics (original marker kept) ──────────────────────────────────────
     AnalyticsSummary:
       type: object
       properties:
@@ -2636,6 +2694,9 @@ paths:
                   type: boolean
                   default: false
                   description: "When `true`, WRITER nodes can invoke the web search tool during generation. Requires BRAVE_SEARCH_API_KEY or TAVILY_API_KEY to be configured, or DuckDuckGo is used as fallback. Stored in `run_config.enable_web_search`."
+                llm_overrides:
+                  $ref: '#/components/schemas/LlmOverrides'
+                  description: "Per-agent LLM profile overrides. Forces specific models for PLANNER/WRITER/REVIEWER stages. Validated against enabled profiles — unknown or disabled IDs return 422."
       responses:
         '201':
           description: "Run accepted by the orchestrator and placed in PENDING state. The executor picks it up within seconds. Subscribe to `stream_url` for live progress. `estimated_cost_usd` and `estimated_duration_minutes` may be null immediately — they are populated once the Planner generates the DAG."
@@ -7214,6 +7275,35 @@ paths:
                   errors:  { type: integer }
         '401': { description: "Missing or invalid cron secret / session." }
         '503': { description: "INTERNAL_CRON_SECRET not configured." }
+
+  # ── LLM model catalogue ───────────────────────────────────────────────────
+  /models/available:
+    get:
+      operationId: getAvailableModels
+      summary: List available LLM profiles
+      description: |
+        Returns all enabled LLM profiles in the instance.
+        Used by the new-run form to populate preset and custom model selectors.
+        Any authenticated user may call this — no admin gate.
+        Fields that could expose credentials (`config`, `api_key_enc`) are never included.
+      tags: [runs]
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: "All enabled LLM profiles, ordered by tier then id."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles]
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailableProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ── Analytics (internal) ───────────────────────────────────────────────────
   /analytics:
