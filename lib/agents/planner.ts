@@ -126,6 +126,9 @@ Rules:
   downloadable binary files (Excel, CSV, PDF, image, etc.): in that case you MUST follow
   the PYTHON_EXECUTOR rule below. NEVER use WRITER to output a JSON description or text
   placeholder for a file; the file must be actually created by PYTHON_EXECUTOR.
+- WEB RESEARCH RULE: when enable_web_search = true and the task involves fetching
+  information from the internet, ALWAYS use WRITER nodes (they have a built-in web_search
+  tool). NEVER use PYTHON_EXECUTOR for web fetching — the sandbox has no network access.
 - REVIEWER must be the final node (depends on all other leaf nodes).
 - dependencies contains node_ids that must complete first.
 - If meta.confidence < 85, the plan will require human approval before execution.
@@ -257,6 +260,38 @@ PATTERN C — FILE GENERATION + MARKDOWN REPORT (task = "create files AND explai
   → n6=REVIEWER. Depth=5.
 - BAD (FORBIDDEN): use PATTERN A (no document WRITER) when the user explicitly wants a report.
 - BAD (FORBIDDEN): use PATTERN B (reads existing file) when creating new files from scratch.
+
+PATTERN D — WEB RESEARCH (task = "find / look up / retrieve current information from the web"):
+- TRIGGER: the user wants information gathered from the web — prices, news, documentation,
+  comparisons, current events, product listings, company data, etc. — and the input
+  contains enable_web_search = true.
+- FORBIDDEN: do NOT use PYTHON_EXECUTOR to fetch web data with requests, urllib, httpx,
+  BeautifulSoup, or any HTTP library. PYTHON_EXECUTOR runs in a sandboxed Pyodide
+  environment with no network access — any web fetch attempt will fail silently.
+- CORRECT pattern: use WRITER nodes with expected_output_type = "document".
+  The WRITER agent has a built-in web_search tool that is automatically injected when
+  enable_web_search = true. It calls the tool itself — you do NOT need to orchestrate it.
+- For a research task:
+  WRITER(document — searches the web, synthesises findings into Markdown)
+    → REVIEWER. Depth=2.
+- For a multi-topic research task:
+  WRITER(document — topic 1) + WRITER(document — topic 2) + …
+    → REVIEWER. Depth=2, width=N.
+- BAD (FORBIDDEN): using PYTHON_EXECUTOR to run requests.get() or any web HTTP call.
+  PYTHON_EXECUTOR has NO network access — it will always fail or return empty results.
+- BAD (FORBIDDEN): WRITER(python_code that calls urllib) → PYTHON_EXECUTOR for web scraping.
+  Same reason: no network access in the sandbox.
+
+WEB SEARCH + FILE GENERATION (task = "search the web AND produce a downloadable file"):
+- TRIGGER: enable_web_search = true AND the user wants a downloadable file (Excel, CSV, …)
+  built from web-gathered data.
+- Pattern:
+  WRITER(document — searches the web for raw data, prints structured data to output)
+    → WRITER(python_code — takes the researched data as input, generates the file)
+    → PYTHON_EXECUTOR (runs the code, saves the file)
+    → REVIEWER.
+- The web-searching WRITER must output structured content (JSON/Markdown tables) that the
+  python_code WRITER can parse. It must NOT attempt any file I/O itself.
 
 FORMAT ROUTING:
 If the classifier input contains desired_outputs:
@@ -458,7 +493,8 @@ export class Planner {
                   // The Planner must reference these artefacts when building the child DAG
                   // instead of re-generating what was already produced.
                   ...(prior_context ? { prior_run_context: prior_context } : {}),
-                  // Signal web search availability so the Planner can note it in descriptions
+                  // Signal web search availability: when true the Planner MUST use WRITER
+                  // nodes for any web-fetch task (PATTERN D) — PYTHON_EXECUTOR has no network access.
                   ...(runConfigPre.enable_web_search ? { enable_web_search: true } : {}),
                   // Full classifier context — not just profile id
                   classifier: {
