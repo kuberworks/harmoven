@@ -387,6 +387,17 @@ export class Writer {
               `[Writer(${node.node_id})] response truncated — recovering partial content ` +
               `(${contentSoFar.length} chars recovered)`,
             )
+            // For python_code output, truncated code is guaranteed to produce a
+            // SyntaxError in PYTHON_EXECUTOR. Fail fast here so the node is marked
+            // FAILED (restartable) rather than passing corrupted code downstream.
+            if (node.expected_output_type === 'python_code') {
+              throw new AgentCostError(
+                `Writer(${node.node_id}): LLM response truncated mid-output for python_code ` +
+                `(tokensOut=${tokensOut}) — increase max_tokens or switch to a model with ` +
+                `a higher output token limit`,
+                costUsd, tokensIn, tokensOut,
+              )
+            }
             parsed = {
               output: {
                 type:                 typeMatch?.[1]   ?? 'document',
