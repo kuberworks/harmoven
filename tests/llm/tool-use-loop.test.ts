@@ -145,26 +145,35 @@ describe('ToolInjectionLLMClient', () => {
     expect(capturedOptions[0]!.toolExecutor).toBe(toolExecutor)
   })
 
-  it('forwards tools and toolExecutor to inner.stream()', async () => {
+  it('stream() routes through inner.chat() (not inner.stream()) to enable the tool loop', async () => {
+    // streamAnthropic / streamOpenAI do not implement the tool_use loop.
+    // ToolInjectionLLMClient.stream() must call inner.chat() so that the tool
+    // loop runs correctly, then emit the result via onChunk.
     const inner = new MockLLMClient()
-    inner.setNextResponse('streamed')
+    inner.setNextResponse('streamed result')
 
-    const capturedOptions: ChatOptions[] = []
-    const origStream = inner.stream.bind(inner)
-    inner.stream = async (msgs, opts, onChunk, onModel) => {
-      capturedOptions.push(opts)
-      return origStream(msgs, opts, onChunk, onModel)
-    }
+    const chatCalls: ChatOptions[] = []
+    const streamCalls: ChatOptions[] = []
+    const origChat = inner.chat.bind(inner)
+    inner.chat = async (msgs, opts) => { chatCalls.push(opts); return origChat(msgs, opts) }
+    inner.stream = async (_msgs, opts) => { streamCalls.push(opts); return { content: '', tokensIn: 0, tokensOut: 0, model: 'mock', costUsd: 0 } }
 
     const toolExecutor = async (calls: ToolCall[]): Promise<ToolResult[]> =>
       calls.map(c => ({ tool_call_id: c.id, content: 'ok' }))
 
     const client = new ToolInjectionLLMClient(inner, [ECHO_TOOL], toolExecutor)
     const chunks: string[] = []
-    await client.stream(SYSTEM_MESSAGES, BASE_OPTIONS, c => chunks.push(c))
+    const result = await client.stream(SYSTEM_MESSAGES, BASE_OPTIONS, c => chunks.push(c))
 
-    expect(capturedOptions[0]!.tools).toEqual([ECHO_TOOL])
-    expect(capturedOptions[0]!.toolExecutor).toBe(toolExecutor)
+    // inner.chat() must have been called with tools injected
+    expect(chatCalls).toHaveLength(1)
+    expect(chatCalls[0]!.tools).toEqual([ECHO_TOOL])
+    expect(chatCalls[0]!.toolExecutor).toBe(toolExecutor)
+    // inner.stream() must NOT have been called (streaming path is bypassed)
+    expect(streamCalls).toHaveLength(0)
+    // onChunk must have been called with the final content
+    expect(chunks).toEqual(['streamed result'])
+    expect(result.content).toBe('streamed result')
   })
 
   it('does not override tools already in options (merges with spread, options wins)', async () => {
