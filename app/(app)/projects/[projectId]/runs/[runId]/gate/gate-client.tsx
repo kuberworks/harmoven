@@ -104,11 +104,11 @@ export function GateClient({
 
   // Human-readable gate reason labels
   const gateReasonLabel: Record<string, string> = {
-    planner_exhausted:      'Planner failed after 3 attempts — operator review required',
-    low_confidence_plan:    'Planner confidence below threshold — review the proposed plan before it executes',
+    planner_exhausted:      'The AI planning agent could not build a valid execution plan after 3 attempts — your guidance is needed to continue',
+    low_confidence_plan:    'Planner confidence below threshold — review the proposed plan before execution starts',
     low_confidence:         'Low confidence — human review requested',
-    reviewer_escalation:    'Reviewer escalated — output requires human decision',
-    reviewer_findings:      'Reviewer found issues requiring human decision',
+    reviewer_escalation:    'Reviewer escalated — output requires a human decision',
+    reviewer_findings:      'Reviewer found issues requiring a human decision',
     budget_warning:         'Budget threshold exceeded',
   }
   const gateReasonDisplay = gateReason ? (gateReasonLabel[gateReason] ?? gateReason) : null
@@ -198,6 +198,7 @@ export function GateClient({
                 size="sm"
                 onClick={() => handleDecision('approve')}
                 disabled={!!submitting}
+                title={isPlannerExhausted ? 'Re-run the planner with the same task description' : undefined}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white border-0"
               >
                 {submitting === 'approve' ? (
@@ -205,7 +206,7 @@ export function GateClient({
                 ) : (
                   <CheckCircle2 className="h-3.5 w-3.5" />
                 )}
-                Approve →
+                {isPlannerExhausted ? 'Retry planning →' : 'Approve →'}
               </Button>
             </PermissionGuard>
           </div>
@@ -459,6 +460,58 @@ export function GateClient({
                   </ul>
                 </div>
               )}
+            </div>
+          ) : isPlannerExhausted ? (
+            <div className="space-y-4 max-w-3xl">
+              {/* Failure summary */}
+              <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-5">
+                <div className="flex items-start gap-3 mb-3">
+                  <XCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-300">Execution plan could not be generated</p>
+                    <p className="text-xs text-red-400/70 mt-0.5">The planning agent failed after 3 consecutive attempts</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  This typically occurs when the task description is too broad, contains conflicting requirements, or requests a workflow that exceeds the planner&apos;s current capabilities.
+                </p>
+              </div>
+
+              {/* Original task for reference */}
+              {taskInput && (
+                <div className="rounded-lg border border-surface-border bg-surface-raised p-4">
+                  <p className="text-xs text-muted-foreground/60 font-mono mb-1.5">Original task</p>
+                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{taskInput}</p>
+                </div>
+              )}
+
+              {/* Actionable next steps */}
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                <p className="text-xs text-muted-foreground/60 font-mono mb-3">How to proceed</p>
+                <ul className="space-y-2.5 text-sm text-muted-foreground">
+                  <li className="flex items-start gap-2.5">
+                    <span className="shrink-0 text-amber-400 font-bold mt-0.5">1</span>
+                    <span>
+                      <span className="text-foreground font-medium">Request changes</span>
+                      {' '}— clarify the task, break it into smaller steps, or remove conflicting requirements, then resume. The planner will retry with your guidance.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <span className="shrink-0 text-muted-foreground/50 font-bold mt-0.5">2</span>
+                    <span>
+                      <span className="text-foreground font-medium">Retry planning</span>
+                      {' '}— re-run the planner with the original task. Use this only if the failure may have been transient (e.g. provider timeout).
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <span className="shrink-0 text-muted-foreground/50 font-bold mt-0.5">3</span>
+                    <span>
+                      <span className="text-foreground font-medium">Abort</span>
+                      {' '}— cancel this run entirely.
+                    </span>
+                  </li>
+                </ul>
+              </div>
             </div>
           ) : (
             <div className="rounded-lg border border-surface-border bg-surface-raised p-10 max-w-3xl text-center">
