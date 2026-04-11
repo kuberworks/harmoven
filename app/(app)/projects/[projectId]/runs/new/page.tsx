@@ -107,18 +107,24 @@ export default function NewRunPage({ params }: Props) {
     if (!from) return
     const ids = from.split(',').map(s => s.trim()).filter(Boolean).slice(0, 5)
     setParentRunIds(ids)
-    ids.forEach(id => {
-      fetch(`/api/runs/${id}`)
-        .then(r => r.ok ? r.json() : null)
-        .then((data: { run?: { task_input?: string } } | null) => {
-          if (data?.run?.task_input) {
-            setParentLabels(prev => ({
-              ...prev,
-              [id]: data.run!.task_input!.slice(0, 60) + (data.run!.task_input!.length > 60 ? '…' : ''),
-            }))
-          }
-        })
-        .catch(() => { /* ignore */ })
+    // Fetch all parent run labels in parallel and apply in a single setState
+    // to avoid N sequential re-renders of the form (one per resolved fetch).
+    Promise.all(
+      ids.map(id =>
+        fetch(`/api/runs/${id}`)
+          .then(r => r.ok ? r.json() : null)
+          .then((data: { run?: { task_input?: string } } | null) => {
+            const raw = data?.run?.task_input
+            return [id, raw ? raw.slice(0, 60) + (raw.length > 60 ? '…' : '') : null] as const
+          })
+          .catch(() => [id, null] as const),
+      ),
+    ).then(entries => {
+      const labels: Record<string, string> = {}
+      for (const [id, label] of entries) {
+        if (label !== null) labels[id] = label
+      }
+      setParentLabels(labels)
     })
   }, [searchParams])
 
