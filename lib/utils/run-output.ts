@@ -6,24 +6,36 @@
 export function extractOutputSummary(handoffOut: unknown): string | null {
   if (!handoffOut || typeof handoffOut !== 'object') return null
   const h = handoffOut as Record<string, unknown>
-  // REVIEWER: formatted_content is a consolidated Markdown doc — best summary
-  if (typeof h['formatted_content'] === 'string' && h['formatted_content']) {
-    return h['formatted_content'].slice(0, 2000)
+
+  // REVIEWER: prefer overall_confidence_rationale — it is a purposefully-written
+  // one-sentence summary, not a raw document slice.  Fall back to the first
+  // sentence of formatted_content only when rationale is absent.
+  if (typeof h['verdict'] === 'string') {
+    const rationale = typeof h['overall_confidence_rationale'] === 'string'
+      ? (h['overall_confidence_rationale'] as string).trim()
+      : null
+    if (rationale) return rationale.slice(0, 500)
+
+    // formatted_content is the full Markdown doc — extract first sentence only
+    if (typeof h['formatted_content'] === 'string' && h['formatted_content']) {
+      const text = (h['formatted_content'] as string).trim().slice(0, 600)
+      const sentenceEnd = Math.max(text.lastIndexOf('. '), text.lastIndexOf('.\n'))
+      return sentenceEnd > 30 ? text.slice(0, sentenceEnd + 1) : text
+    }
   }
+
   // WRITER / PYTHON_EXECUTOR: content lives under output.*
   const output = h['output'] as Record<string, unknown> | undefined
   if (output) {
     const summary = output['summary'] as string | undefined
     const content = (output['content'] ?? output['text']) as string | undefined
     if (summary) return summary.slice(0, 500)
-    if (content) return content.slice(0, 2000)
+    if (content) {
+      const text = (content as string).trim().slice(0, 600)
+      const sentenceEnd = Math.max(text.lastIndexOf('. '), text.lastIndexOf('.\n'))
+      return sentenceEnd > 30 ? text.slice(0, sentenceEnd + 1) : text
+    }
   }
-  // REVIEWER without formatted_content: fall back to overall_confidence_rationale
-  if (typeof h['verdict'] === 'string') {
-    const rationale = typeof h['overall_confidence_rationale'] === 'string'
-      ? (h['overall_confidence_rationale'] as string)
-      : null
-    if (rationale) return rationale.slice(0, 500)
-  }
+
   return null
 }
