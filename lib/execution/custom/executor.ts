@@ -1337,11 +1337,11 @@ export class CustomExecutor implements IExecutionEngine {
                   const ho = n.handoff_out as Record<string, unknown> | null
                   const out  = ho?.['output'] as Record<string, unknown> | undefined
                   const raw  = out?.['content'] ?? ho?.['content'] ?? ''
-                  const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 1500)
+                  const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 8000)
                   return `[${n.agent_type} ${n.node_id}]:\n${text}`
                 })
                 .join('\n\n---\n\n')
-                .slice(0, 4000)
+                .slice(0, 32000)
             })()
 
             for (const ft of followupTasks.slice(0, 3)) {
@@ -1793,7 +1793,7 @@ export class CustomExecutor implements IExecutionEngine {
         const rho = reviewerNode.handoff_out as Record<string, unknown> | null
         const fc  = typeof rho?.['formatted_content'] === 'string' ? (rho!['formatted_content'] as string) : null
         if (fc?.trim()) {
-          contextParts.push(`[Parent run ${parentId.slice(0, 8)} — REVIEWER]:\n${fc.slice(0, 1500)}`)
+          contextParts.push(`[Parent run ${parentId.slice(0, 8)} — REVIEWER]:\n${fc.slice(0, 8000)}`)
           contextAdded = true
         }
       }
@@ -1807,7 +1807,7 @@ export class CustomExecutor implements IExecutionEngine {
           const ho  = n.handoff_out as Record<string, unknown> | null
           const out = ho?.['output'] as Record<string, unknown> | undefined
           const raw = out?.['content'] ?? out?.['text'] ?? ''
-          const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 1500)
+          const text = (typeof raw === 'string' ? raw : JSON.stringify(raw)).slice(0, 8000)
           if (text.trim()) {
             contextParts.push(`[Parent run ${parentId.slice(0, 8)} — ${n.agent_type} ${n.node_id}]:\n${text}`)
           }
@@ -1816,6 +1816,6 @@ export class CustomExecutor implements IExecutionEngine {
     }
 
     if (contextParts.length === 0) return null
-    return contextParts.join('\n\n---\n\n').slice(0, 4000)
+    return contextParts.join('\n\n---\n\n').slice(0, 32000)
   }
 }
