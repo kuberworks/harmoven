@@ -162,10 +162,10 @@ export default async function AnalyticsPage({
           <section>
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('runs.labels.status')}</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <KpiCard label={t('analytics.kpis.runs_completed')} value={fmt(s.runs_total)} />
+              <KpiCard label={t('analytics.kpis.runs_total')}     value={fmt(s.runs_total)} />
               <KpiCard label={t('analytics.kpis.runs_completed')} value={fmt(s.runs_completed)} />
-              <KpiCard label={t('analytics.kpis.retention')}     value={fmtPct(s.completion_rate_pct)} />
-              <KpiCard label={t('runs.labels.cost')}             value={fmtUsd(s.cost_per_run_usd)} />
+              <KpiCard label={t('analytics.kpis.retention')}      value={fmtPct(s.completion_rate_pct)} />
+              <KpiCard label={t('runs.labels.cost')}              value={fmtUsd(s.cost_per_run_usd)} />
             </div>
           </section>
 
@@ -182,10 +182,10 @@ export default async function AnalyticsPage({
           <section>
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('analytics.kpis.roi')}</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <KpiCard label={t('analytics.kpis.roi')}      value={fmtUsd(s.cost_total_usd)} />
-              <KpiCard label={t('analytics.kpis.roi')}      value={fmtUsd(s.cost_per_active_user_usd)} />
-              <KpiCard label={t('analytics.kpis.roi')}      value={s.estimated_hours_saved_total !== null ? fmt(s.estimated_hours_saved_total, 'h') : '—'} />
-              <KpiCard label={t('analytics.kpis.roi')}      value={s.roi_multiplier !== null ? `${s.roi_multiplier.toFixed(1)}×` : '—'} goodWhen="up" />
+              <KpiCard label={t('analytics.kpis.cost_total')}    value={fmtUsd(s.cost_total_usd)} />
+              <KpiCard label={t('analytics.kpis.cost_per_user')} value={fmtUsd(s.cost_per_active_user_usd)} />
+              <KpiCard label={t('analytics.kpis.hours_saved')}   value={s.estimated_hours_saved_total !== null ? fmt(s.estimated_hours_saved_total, 'h') : '—'} />
+              <KpiCard label={t('analytics.kpis.roi_multiplier')} value={s.roi_multiplier !== null ? `${s.roi_multiplier.toFixed(1)}×` : '—'} goodWhen="up" />
             </div>
           </section>
 
