@@ -1206,6 +1206,28 @@ function CostMeter({
   )
 }
 
+// ─── RunElapsedDisplay ───────────────────────────────────────────────────────
+// Isolated component with its own 1-second timer so the setInterval-driven
+// re-render is scoped to this tiny leaf — RunDetailClient itself is not
+// re-rendered every second while the run is in progress.
+
+function RunElapsedDisplay({ startedAt }: { startedAt: string }) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    const update = () => {
+      setElapsed(Math.round((Date.now() - new Date(startedAt).getTime()) / 1000))
+    }
+    update()
+    const t = setInterval(update, 1000)
+    return () => clearInterval(t)
+  }, [startedAt])
+  return (
+    <p className="text-xs text-muted-foreground mt-0.5">
+      Running for {Math.floor(elapsed / 60)}m {elapsed % 60}s
+    </p>
+  )
+}
+
 // ─── Main client component ──────────────────────────────────────────────────
 
 export function RunDetailClient({ projectId, initialRun, initialNodes, permissions, initialEvents, uiLevel, chain }: Props) {
@@ -1280,18 +1302,6 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
     }
   }, [run.status])
 
-  // Elapsed run time
-  const [elapsed, setElapsed] = useState(0)
-  useEffect(() => {
-    if (!run.started_at || isTerminal) return
-    const update = () => {
-      setElapsed(Math.round((Date.now() - new Date(run.started_at!).getTime()) / 1000))
-    }
-    update()
-    const t = setInterval(update, 1000)
-    return () => clearInterval(t)
-  }, [run.started_at, isTerminal])
-
   // Gate banner: shown whenever the run is SUSPENDED or PAUSED — the executor
   // always transitions to SUSPENDED before emitting human_gate, so basing this
   // purely on run.status avoids the race condition where the state_change(SUSPENDED)
@@ -1342,9 +1352,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
           </div>
           <p className="mt-1 text-xs text-muted-foreground font-mono">{run.id}</p>
           {run.started_at && !isTerminal && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Running for {Math.floor(elapsed / 60)}m {elapsed % 60}s
-            </p>
+            <RunElapsedDisplay startedAt={run.started_at} />
           )}
           {run.completed_at && (
             <p className="text-xs text-muted-foreground mt-0.5">
