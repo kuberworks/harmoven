@@ -260,6 +260,17 @@ Rules:
 - assumptions_made: list ONLY non-obvious decisions not stated in the task. Maximum 3 items, each ≤ 12 words.
 - confidence_rationale: exactly ONE sentence, ≤ 20 words.
 - confidence < 80 means the output needs revision.
+- NO PLACEHOLDERS — EVER. Never write placeholder or deferred text such as:
+  "à compléter", "à remplir", "à définir", "en cours", "coming soon",
+  "TODO", "TBD", "FIXME", "[placeholder]", "[to be completed]", "[...]",
+  "insert X here", "see below", or any section that intentionally leaves
+  content unwritten. If you are unsure about a detail, write your best
+  approximation and note the uncertainty in assumptions_made. Producing
+  incomplete placeholder text is a critical failure — always write real content.
+- COMPLETE ALL SECTIONS. Every heading, bullet, or section you introduce MUST
+  contain actual content. Do not create a heading and leave its body empty or
+  deferred. If the task scope is too large, reduce the number of sections and
+  write each one fully rather than listing many sections with placeholder bodies.
 - FORMATTING — output.content for prose/document/data nodes (not python_code):
   • DEFAULT FORMAT IS MARKDOWN — use it unless the task explicitly requests another format.
   • Use # / ## / ### headings to structure the response.

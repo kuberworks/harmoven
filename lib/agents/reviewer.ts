@@ -125,6 +125,12 @@ Universal checklist:
 - No factual contradictions between parallel branches
 - Output format matches expected_output_type
 - No hallucinated data, figures, or unsourced claims
+- PLACEHOLDER CHECK (severity: error): if any section in any writer output contains
+  placeholder or deferred text such as "à compléter", "à remplir", "à définir",
+  "en cours", "TODO", "TBD", "FIXME", "[placeholder]", "[to be completed]", "[...]",
+  "coming soon", "insert X here", "see below", or empty-body headings — flag EACH
+  occurrence as an error finding and set verdict to REQUEST_REVISION. The writer
+  must produce real, complete content in all sections it creates.
 ${languageRule}${parallelSheetsRule}
 Profile-specific rules:
 - app_scaffolding: the writer output will be a file manifest listing generated source files.
