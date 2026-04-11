@@ -6,6 +6,7 @@
 // UX spec §3.5 — ExecutingView (Level 1–4), CompletedView, ProblemView.
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRunStream, type RunState, type NodeState } from '@/hooks/useRunStream'
 import { Badge } from '@/components/ui/badge'
@@ -20,9 +21,10 @@ import { PermissionGuard } from '@/components/shared/PermissionGuard'
 import { useT } from '@/lib/i18n/client'
 import { AlertTriangle, CheckCircle2, XCircle, Loader2, ExternalLink, Star, RotateCcw, FileText, Printer, Download, Globe } from 'lucide-react'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+
+// Lazy-load the markdown stack (react-markdown + remark-gfm + rehype-sanitize ≈ 80 KB)
+// so it is code-split out of the initial JS bundle for the run detail page.
+const MarkdownContent = dynamic(() => import('@/components/run/MarkdownContent'), { ssr: false })
 
 /**
  * Extract readable text from a partial LLM JSON response.
@@ -533,9 +535,7 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, node
           )}
           {outputText && renderAsMarkdown && (
             <div className="p-4 prose prose-sm dark:prose-invert max-w-none text-foreground/90 [&_pre]:bg-surface-raised [&_pre]:border [&_pre]:border-surface-border [&_pre]:rounded [&_pre]:p-3 [&_pre]:overflow-x-auto [&_code]:font-mono [&_code]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-surface-border [&_th]:px-3 [&_th]:py-1.5 [&_td]:border [&_td]:border-surface-border [&_td]:px-3 [&_td]:py-1.5">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
-                {outputText}
-              </ReactMarkdown>
+              <MarkdownContent>{outputText}</MarkdownContent>
             </div>
           )}
           {outputText && renderAsCode && (
@@ -708,17 +708,7 @@ function looksLikeMarkdown(text: string): boolean {
   return /^#{1,6}\s|^[-*+]\s|^\d+\.\s|^>\s|```|\|.+\||\*\*.+\*\*|__.+__|\[.+\]\(/m.test(text)
 }
 
-// rehype-sanitize schema: default allowlist, no iframes, no forms, no scripts.
-// javascript: URLs stripped automatically by the default schema.
-const SANITIZE_SCHEMA = {
-  ...defaultSchema,
-  attributes: {
-    ...defaultSchema.attributes,
-    '*': (defaultSchema.attributes?.['*'] ?? []).filter(
-      (a) => typeof a !== 'string' || !a.startsWith('on')
-    ),
-  },
-}
+// rehype-sanitize schema moved to components/run/MarkdownContent.tsx (co-located with the lazy load).
 
 const PRINT_CSS = `
 /* Margin strategy — all-browser reliable including Safari:
@@ -1003,9 +993,7 @@ function ResultTab({
                   data-output-content
                   className={`prose prose-sm dark:prose-invert max-w-none text-foreground${i === 0 ? ' pr-14' : ''}`}
                 >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
-                    {o.content}
-                  </ReactMarkdown>
+                  <MarkdownContent>{o.content}</MarkdownContent>
                 </div>
               ) : (
                 <div
