@@ -3,7 +3,7 @@
 // app/(app)/projects/[projectId]/runs/new/page.tsx
 // Create a new run for the project — POST /api/runs, then redirect to the run detail page.
 
-import { useState, use, useEffect } from 'react'
+import { useState, use, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronDown, ChevronLeft } from 'lucide-react'
@@ -25,6 +25,17 @@ interface AvailableProfile {
   model_string: string
   tier: string
 }
+
+// Module-level constant — avoids recreating on every render in the auto-detect useEffect.
+const REAL_TIME_KEYWORDS = [
+  // French
+  'actualité', 'actualités', 'nouvelles', 'dernières nouvelles', 'dernier', 'derniers',
+  'récent', 'récente', "aujourd'hui", 'ce jour', 'cette semaine', 'ce mois',
+  'guerre', 'conflit', 'élection', 'événement', 'en direct',
+  // English
+  'latest news', 'breaking news', 'latest', 'recent', 'today', 'current events',
+  'this week', 'this month', 'real-time', 'up-to-date', 'right now',
+]
 
 // Values match the DomainProfile enum in openapi/v1.yaml
 const DOMAIN_OPTIONS = [
@@ -58,6 +69,8 @@ export default function NewRunPage({ params }: Props) {
   // true once the user explicitly clicks the checkbox — prevents auto-detect from
   // overriding a deliberate user choice (either direction).
   const [webSearchUserChoice, setWebSearchUserChoice] = useState(false)
+  // Timer ref for debouncing the web-search auto-detect useEffect (300 ms).
+  const autoDetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [budgetUsd, setBudgetUsd]               = useState('')
   const [error, setError]                 = useState<string | null>(null)
   const [loading, setLoading]             = useState(false)
@@ -81,24 +94,23 @@ export default function NewRunPage({ params }: Props) {
   }, [])
 
   // Auto-detect real-time / news queries and suggest enabling web search.
+  // Debounced 300 ms so we don't re-evaluate on every keystroke.
   // Only fires while the user hasn't manually interacted with the checkbox.
   useEffect(() => {
     if (webSearchUserChoice) return
-    const lower = taskInput.toLowerCase()
-    const REAL_TIME_KEYWORDS = [
-      // French
-      'actualité', 'actualités', 'nouvelles', 'dernières nouvelles', 'dernier', 'derniers',
-      'récent', 'récente', "aujourd'hui", 'ce jour', 'cette semaine', 'ce mois',
-      'guerre', 'conflit', 'élection', 'événement', 'en direct',
-      // English
-      'latest news', 'breaking news', 'latest', 'recent', 'today', 'current events',
-      'this week', 'this month', 'real-time', 'up-to-date', 'right now',
-    ]
-    // Also match 4-digit current years embedded in the text
-    const currentYear = new Date().getFullYear()
-    const hasYear = new RegExp(`\\b(${currentYear}|${currentYear - 1})\\b`).test(taskInput)
-    const hasKeyword = REAL_TIME_KEYWORDS.some(kw => lower.includes(kw))
-    setEnableWebSearch(hasKeyword || hasYear)
+    if (autoDetectTimerRef.current) clearTimeout(autoDetectTimerRef.current)
+    autoDetectTimerRef.current = setTimeout(() => {
+      const lower = taskInput.toLowerCase()
+      // Also match 4-digit current years embedded in the text (computed inside
+      // the callback so the regex is only built once per 300 ms cadence).
+      const currentYear = new Date().getFullYear()
+      const hasYear = new RegExp(`\\b(${currentYear}|${currentYear - 1})\\b`).test(taskInput)
+      const hasKeyword = REAL_TIME_KEYWORDS.some(kw => lower.includes(kw))
+      setEnableWebSearch(hasKeyword || hasYear)
+    }, 300)
+    return () => {
+      if (autoDetectTimerRef.current) clearTimeout(autoDetectTimerRef.current)
+    }
   }, [taskInput, webSearchUserChoice])
 
   // Parse ?from=id1,id2,... and fetch the task_input for each parent to show in the banner
