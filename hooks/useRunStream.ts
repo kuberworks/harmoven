@@ -212,8 +212,9 @@ export function useRunStream(runId: string) {
     reconnectFnRef.current = () => {
       clearTimeout(reconnectTimer)
       es?.close()
-      // Reset lastEventId so the stream replays from the beginning on reconnect
-      lastEventIdRef.current = null
+      // Keep lastEventId so the server can resume from where it left off
+      // instead of replaying the entire event history from the beginning.
+      // The server uses the Last-Event-ID header to skip already-delivered events.
       connect()
     }
 
