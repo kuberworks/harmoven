@@ -6,11 +6,9 @@
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
-import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db/client'
 import { resolvePermissions } from '@/lib/auth/rbac'
-import { ChevronRight } from 'lucide-react'
 import { RunDetailClient } from './run-detail-client'
 import { PageBreadcrumb } from '@/components/shared/PageBreadcrumb'
 import { extractOutputSummary } from '@/lib/utils/run-output'
@@ -157,20 +155,6 @@ export default async function RunPage({ params }: Props) {
         { label: project.name, href: `/projects/${projectId}` },
         { label: `Run ${runId.slice(0, 8)}` },
       ]} />
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link href="/projects" className="hover:text-foreground transition-colors">Projects</Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <Link href={`/projects/${projectId}`} className="hover:text-foreground transition-colors">
-          {project.name}
-        </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <Link href={`/projects/${projectId}/runs`} className="hover:text-foreground transition-colors">
-          Runs
-        </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span className="text-foreground font-mono font-medium">{runId.slice(0, 8)}</span>
-      </nav>
 
       <RunDetailClient
         projectId={projectId}
