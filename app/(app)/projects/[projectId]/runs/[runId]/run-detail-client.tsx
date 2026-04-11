@@ -355,20 +355,12 @@ const NODE_STATUS_ICON: Record<string, React.ReactNode> = {
 
 // ─── Node card ──────────────────────────────────────────────────────────────
 
-function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, artifactsTick = 0, followupRuns = [], webSearchProgress = null, preferredLlm }: { node: InitialNode | NodeState; runId: string; projectId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; artifactsTick?: number; followupRuns?: Array<{ run_id: string; label: string }>; webSearchProgress?: { query?: string; result_count?: number; iteration: number } | null; preferredLlm?: string }) {
+function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, nodeArtifacts = null, followupRuns = [], webSearchProgress = null, preferredLlm }: { node: InitialNode | NodeState; runId: string; projectId: string; canRestart: boolean; onRestart?: () => void; uiLevel: 'GUIDED' | 'STANDARD' | 'ADVANCED'; nodeArtifacts?: ArtifactMeta[] | null; followupRuns?: Array<{ run_id: string; label: string }>; webSearchProgress?: { query?: string; result_count?: number; iteration: number } | null; preferredLlm?: string }) {
   const t = useT()
   const [expanded, setExpanded] = useState(false)
   const streamEndRef = useRef<HTMLPreElement>(null)
 
-  const [artifacts, setArtifacts] = useState<ArtifactMeta[] | null>(null)
-  useEffect(() => {
-    if (node.status !== 'COMPLETED' && artifactsTick === 0) return
-    fetch(`/api/runs/${runId}/artifacts`)
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((all: ArtifactMeta[]) => setArtifacts(all.filter(a => a.node_id === node.node_id && a.artifact_role !== 'discarded')))
-      .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.status, artifactsTick])
+  // Artifacts are now fetched once at RunDetailClient level and passed as nodeArtifacts prop.
 
   // Auto-scroll streaming panel to bottom as new content arrives
   useEffect(() => {
@@ -656,7 +648,7 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
         </div>
       )}
 
-      {artifacts && artifacts.length > 0 && (
+      {nodeArtifacts && nodeArtifacts.length > 0 && (
         <div className="border-t border-surface-border px-4 py-3 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground font-medium">
@@ -671,7 +663,7 @@ function NodeCard({ node, runId, projectId, canRestart, onRestart, uiLevel, arti
               {t('run.node.artifacts.downloadZip')}
             </a>
           </div>
-          {artifacts.map(a => (
+          {nodeArtifacts.map(a => (
             <a
               key={a.id}
               href={`/api/runs/${runId}/artifacts/${a.id}`}
@@ -781,33 +773,18 @@ function ResultTab({
   dag,
   runId,
   runStatus,
-  artifactReadyTick = 0,
+  runArtifacts = [],
 }: {
   nodes: (InitialNode | NodeState)[]
   dag: Dag
   runId: string
   runStatus: string
-  artifactReadyTick?: number
+  runArtifacts?: ArtifactMeta[]
 }) {
   const t = useT()
   const printRef = useRef<HTMLDivElement>(null)
 
-  // Fetch all artifacts for this run (binary files from PYTHON_EXECUTOR or HTML WRITER outputs).
-  // We try for any completed run — not just when PYTHON_EXECUTOR is present — because
-  // WRITER nodes that produce HTML are also stored as RunArtifact rows via detectArtifactFormat.
-  const [runArtifacts, setRunArtifacts] = useState<ArtifactMeta[]>([])
-  // Use count so the effect re-runs each time a new node completes.
-  // A boolean would stay `true` after the PLANNER finishes and never
-  // re-trigger when the WRITER (the actual artifact producer) completes.
-  const completedCount = nodes.filter(n => n.status === 'COMPLETED').length
-  useEffect(() => {
-    if (completedCount === 0 && artifactReadyTick === 0) return
-    fetch(`/api/runs/${runId}/artifacts`)
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((all: ArtifactMeta[]) => setRunArtifacts(all.filter(a => a.artifact_role !== 'discarded')))
-      .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, completedCount, artifactReadyTick])
+  // Artifacts are fetched once at RunDetailClient level and passed via the runArtifacts prop.
 
   function handlePrint() {
     const container = printRef.current
@@ -1308,6 +1285,20 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
   // arrives before the human_gate event and the banner fails to appear on first render.
   const hasOpenGate = run.status === 'SUSPENDED' || run.status === 'PAUSED'
 
+  // Lifted artifact fetch — single fetch shared by NodeCard (per-node slice) and ResultTab.
+  // Eliminates N separate fetches (one per NodeCard) that all call the same endpoint.
+  const [allArtifacts, setAllArtifacts] = useState<ArtifactMeta[]>([])
+  const artifactCompletedCount = nodes.filter(n => n.status === 'COMPLETED').length
+  const artifactReadyTick = (stream.eventsByType.get('artifact_ready') ?? []).length
+  useEffect(() => {
+    if (artifactCompletedCount === 0 && artifactReadyTick === 0) return
+    fetch(`/api/runs/${run.id}/artifacts`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then((all: ArtifactMeta[]) => setAllArtifacts(all.filter(a => a.artifact_role !== 'discarded')))
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.id, artifactCompletedCount, artifactReadyTick])
+
   // Gate reason — prefer the live SSE event reason (for gates opened after page load),
   // fall back to the server-fetched initialRun.openGate (for gates already open on load).
   // Uses eventsByType index (O(1)) instead of stream.events.filter (O(n)).
@@ -1415,7 +1406,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
             {run.status === 'COMPLETED' && (
               <TabsContent value="result">
-                <ResultTab nodes={nodes} dag={run.dag} runId={run.id} runStatus={run.status} artifactReadyTick={(stream.eventsByType.get('artifact_ready') ?? []).length} />
+                <ResultTab nodes={nodes} dag={run.dag} runId={run.id} runStatus={run.status} runArtifacts={allArtifacts} />
               </TabsContent>
             )}
 
@@ -1438,7 +1429,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                       onRestart={reconnect}
                       uiLevel={uiLevel}
                       preferredLlm={nodeMetaMap.get(node.node_id)}
-                      artifactsTick={(stream.eventsByType.get('artifacts_ready') ?? []).filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length}
+                      nodeArtifacts={allArtifacts.filter(a => a.node_id === node.node_id)}
                       webSearchProgress={(() => {
                         const last = (stream.eventsByType.get('tool_call_progress') ?? []).filter(e => e.type === 'tool_call_progress' && e.node_id === node.node_id).at(-1)
                         return last && last.type === 'tool_call_progress' ? { query: last.query, result_count: last.result_count, iteration: last.iteration } : null
