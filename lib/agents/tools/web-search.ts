@@ -12,7 +12,6 @@
 
 import type { ToolCall, ToolResult } from '@/lib/llm/interface'
 import type { RunConfig } from '@/lib/execution/run-config'
-import { assertNotPrivateHost } from '@/lib/security/ssrf-protection'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,17 +89,57 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 // ─── SSRF-safe URL filter ─────────────────────────────────────────────────────
 
 /**
- * Filter out result items whose URL resolves to a private host (SSRF guard §7.1).
- * Invalid or private URLs are silently dropped.
+ * Returns true if the URL hostname is a private/loopback IP literal.
+ * We do not do DNS resolution here — this is a structural check only.
+ * Private IP literals are: 10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x,
+ * 0.x, [::1], fc00::/7 (fd/fc prefix), localhost.
  */
-async function filterSafeResults(items: WebSearchResultItem[]): Promise<WebSearchResultItem[]> {
+function isPrivateLiteralHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '') // strip IPv6 brackets
+  if (h === 'localhost') return true
+  if (h === '::1' || h === '::') return true
+  if (h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80:')) return true
+  // IPv4 private ranges as literals
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+  if (v4) {
+    const [, a, b] = v4.map(Number) as [string, number, number]
+    return (
+      a === 10 ||
+      a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      a === 0
+    )
+  }
+  return false
+}
+
+/**
+ * Filter out result items with invalid, non-http(s), or private-IP-literal URLs.
+ *
+ * IMPORTANT: We do NOT perform DNS lookups here. Web search result URLs are
+ * never fetched by this layer — they are returned as citation context to the
+ * LLM only. DNS-based SSRF validation (assertNotPrivateHost) is reserved for
+ * URLs that are actually fetched (LLM API endpoints, MCP servers, etc.).
+ * Using DNS resolution here would:
+ *   1. Add 5–10 DNS lookups per search call (significant latency).
+ *   2. Silently drop all results when DNS resolution fails transiently
+ *      (fail-closed behaviour), returning 0 results instead of degrading gracefully.
+ */
+function filterSafeResults(items: WebSearchResultItem[]): WebSearchResultItem[] {
   const results: WebSearchResultItem[] = []
   for (const item of items) {
     try {
-      await assertNotPrivateHost(item.url)
+      const parsed = new URL(item.url)
+      if (!['http:', 'https:'].includes(parsed.protocol)) continue
+      if (isPrivateLiteralHost(parsed.hostname)) {
+        console.warn(`[web-search] Dropped result with private-host URL: ${item.url}`)
+        continue
+      }
       results.push(item)
     } catch {
-      // Silently drop SSRF-blocked or invalid URLs
+      // Invalid URL — skip silently
     }
   }
   return results
@@ -143,7 +182,7 @@ export async function searchBrave(query: string, maxResults = 5): Promise<WebSea
     published: typeof r['age'] === 'string' ? r['age'] : undefined,
   }))
 
-  return { query, results: await filterSafeResults(items) }
+  return { query, results: filterSafeResults(items) }
 }
 
 /**
@@ -182,7 +221,7 @@ export async function searchTavily(query: string, maxResults = 5): Promise<WebSe
     published: typeof r['published_date'] === 'string' ? r['published_date'] : undefined,
   }))
 
-  return { query, results: await filterSafeResults(items) }
+  return { query, results: filterSafeResults(items) }
 }
 
 /**
@@ -209,6 +248,7 @@ export async function searchDuckDuckGo(query: string, maxResults = 5): Promise<W
   htmlUrl.searchParams.set('q', query)
 
   const htmlResponse = await fetch(htmlUrl.toString(), {
+    cache: 'no-store',
     headers: {
       'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
@@ -225,7 +265,7 @@ export async function searchDuckDuckGo(query: string, maxResults = 5): Promise<W
     if (!isBotChallenge) {
       const htmlItems = parseDdgHtml(html, maxResults)
       if (htmlItems.length > 0) {
-        return { query, results: await filterSafeResults(htmlItems) }
+        return { query, results: filterSafeResults(htmlItems) }
       }
     }
   }
@@ -239,6 +279,7 @@ export async function searchDuckDuckGo(query: string, maxResults = 5): Promise<W
   iaUrl.searchParams.set('t', 'harmoven')
 
   const iaResponse = await fetch(iaUrl.toString(), {
+    cache: 'no-store',
     headers: {
       'Accept':     'application/json',
       'User-Agent': 'Mozilla/5.0 (compatible; harmoven/1.0)',
@@ -287,7 +328,7 @@ export async function searchDuckDuckGo(query: string, maxResults = 5): Promise<W
     )
   }
 
-  return { query, results: await filterSafeResults(items.slice(0, maxResults)) }
+  return { query, results: filterSafeResults(items.slice(0, maxResults)) }
 }
 
 /**
