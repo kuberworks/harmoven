@@ -578,10 +578,15 @@
     "export_pdf": "Export as PDF",
     "kpis": {
       "runs_completed": "Runs completed",
+      "runs_total": "Total runs",
       "active_users": "Active users",
       "retention": "30-day retention",
       "quality": "Avg. quality score",
-      "roi": "Estimated ROI"
+      "roi": "Estimated ROI",
+      "cost_total": "Total cost",
+      "cost_per_user": "Cost / active user",
+      "hours_saved": "Hours saved",
+      "roi_multiplier": "ROI multiplier"
     },
     "delta": "{delta}% vs previous period",
     "timeseries": "Activity over time",
