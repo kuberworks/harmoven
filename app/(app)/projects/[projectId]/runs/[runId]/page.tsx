@@ -143,7 +143,12 @@ export default async function RunPage({ params }: Props) {
     cost_usd:   permissions.has('stream:costs') ? Number(n.cost_usd) : 0,
     tokens_in:  permissions.has('stream:costs') ? n.tokens_in : 0,
     tokens_out: permissions.has('stream:costs') ? n.tokens_out : 0,
-    partial_output: n.partial_output ?? null,
+    // Exclude partial_output from the SSR payload for non-RUNNING nodes.
+    // partial_output can accumulate up to 100 K chars of streaming buffer.
+    // For COMPLETED/FAILED nodes it is irrelevant (handoff_out holds the
+    // final output). Sending it inflates __NEXT_DATA__ and slows TBT.
+    // When a node IS RUNNING on page-load it is short and genuinely useful.
+    partial_output: n.status === 'RUNNING' ? (n.partial_output ?? null) : null,
     handoff_out: n.handoff_out ?? null,
     metadata: (n.metadata ?? {}) as Record<string, unknown>,
   }))
