@@ -22,22 +22,22 @@ export default async function AdminPage() {
   const instanceRole = (session.user as Record<string, unknown>).role as string | null
   if (instanceRole !== 'instance_admin') redirect('/dashboard')
 
-  const [userCount, llmCount, runStats] = await Promise.all([
+  const [userCount, llmCount, runStats, completedToday] = await Promise.all([
     db.user.count(),
     db.llmProfile.count({ where: { enabled: true } }),
     db.run.groupBy({
       by: ['status'],
       _count: { status: true },
     }),
+    db.run.count({
+      where: {
+        status: 'COMPLETED',
+        completed_at: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+      },
+    }),
   ])
 
   const activeRuns = runStats.find((r) => r.status === 'RUNNING')?._count.status ?? 0
-  const completedToday = await db.run.count({
-    where: {
-      status: 'COMPLETED',
-      completed_at: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
-    },
-  })
 
   const adminLinks = [
     { href: '/admin/users',        icon: Users,    label: 'Users',          desc: 'Manage accounts, roles, bans' },
