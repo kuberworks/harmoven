@@ -124,11 +124,21 @@ export class PromptSummaryCaptureClient implements ILLMClient {
       const messagesText = messages.map(m => m.content).join('')
       const estimatedTokensIn = Math.ceil(messagesText.length / 4)
 
-      // Create the summary record
-      await (db as any).promptSummary.create({
-        data: {
+      // Upsert the summary record — a node may be retried/replayed, in which
+      // case (run_id, node_id) already exists from the previous execution.
+      await (db as any).promptSummary.upsert({
+        where: { run_id_node_id: { run_id: this.runId, node_id: this.nodeId } },
+        create: {
           run_id: this.runId,
           node_id: this.nodeId,
+          agent_type: this.agentType,
+          domain_profile: this.domainProfile,
+          execution_context: executionContext,
+          estimated_tokens_in: estimatedTokensIn,
+          upstream_handoff_hash: upstreamHash,
+          serialization_version: '1.0',
+        },
+        update: {
           agent_type: this.agentType,
           domain_profile: this.domainProfile,
           execution_context: executionContext,
