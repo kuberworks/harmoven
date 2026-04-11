@@ -350,9 +350,15 @@ export function DagView({ dag, nodeStates, onRestartNode, className }: DagViewPr
     }
   }
 
+  // Stable topology key — re-run layout only when DAG structure changes, not when
+  // the dag/edges array references change (which happens on every RUN SSE event
+  // even if the topology is unchanged).
+  const dagTopologyKey = dagNodes.map(n => n.id).join(',')
+  const edgesTopologyKey = edges.map(e => `${e.from}-${e.to}`).join(',')
   const layouted = useMemo(
     () => layoutNodes(dagNodes, edges),
-    [dagNodes, edges],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dagTopologyKey, edgesTopologyKey],
   )
 
   const nodeById = useMemo(
