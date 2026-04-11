@@ -1310,8 +1310,8 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
   // Gate reason — prefer the live SSE event reason (for gates opened after page load),
   // fall back to the server-fetched initialRun.openGate (for gates already open on load).
-  const liveGateEvent = stream.events.findLast?.((e) => e.type === 'human_gate') ??
-    stream.events.filter((e) => e.type === 'human_gate').at(-1)
+  // Uses eventsByType index (O(1)) instead of stream.events.filter (O(n)).
+  const liveGateEvent = (stream.eventsByType.get('human_gate') ?? []).at(-1)
   const gateReason = (liveGateEvent as { type: 'human_gate'; reason: string } | undefined)?.reason
     ?? initialRun.openGate?.reason
 
@@ -1415,7 +1415,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
 
             {run.status === 'COMPLETED' && (
               <TabsContent value="result">
-                <ResultTab nodes={nodes} dag={run.dag} runId={run.id} runStatus={run.status} artifactReadyTick={stream.events.filter(e => e.type === 'artifact_ready').length} />
+                <ResultTab nodes={nodes} dag={run.dag} runId={run.id} runStatus={run.status} artifactReadyTick={(stream.eventsByType.get('artifact_ready') ?? []).length} />
               </TabsContent>
             )}
 
@@ -1438,14 +1438,13 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
                       onRestart={reconnect}
                       uiLevel={uiLevel}
                       preferredLlm={nodeMetaMap.get(node.node_id)}
-                      artifactsTick={stream.events.filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length}
+                      artifactsTick={(stream.eventsByType.get('artifacts_ready') ?? []).filter(e => e.type === 'artifacts_ready' && e.node_id === node.node_id).length}
                       webSearchProgress={(() => {
-                        const last = stream.events.findLast?.(e => e.type === 'tool_call_progress' && e.node_id === node.node_id)
-                          ?? stream.events.filter(e => e.type === 'tool_call_progress' && e.node_id === node.node_id).at(-1)
+                        const last = (stream.eventsByType.get('tool_call_progress') ?? []).filter(e => e.type === 'tool_call_progress' && e.node_id === node.node_id).at(-1)
                         return last && last.type === 'tool_call_progress' ? { query: last.query, result_count: last.result_count, iteration: last.iteration } : null
                       })()}
                       followupRuns={(
-                        stream.events
+                        (stream.eventsByType.get('spawned_followup_runs') ?? [])
                           .filter(e => e.type === 'spawned_followup_runs' && e.node_id === node.node_id)
                           .flatMap(e => e.type === 'spawned_followup_runs' ? e.runs : [])
                       )}
@@ -1472,8 +1471,10 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
             <TabsContent value="activity">
               <Card>
                 <CardContent className="p-4 space-y-2 max-h-80 overflow-y-auto">
-                  {/* Live SSE events (newest first) */}
-                  {stream.events.slice().reverse().flatMap((ev, i) => {
+                  {/* Guard: only compute the event list when this tab is active.
+                      slice().reverse().flatMap() over up to 100 events is cheap but
+                      happens on every SSE event — skipping it saves ~6k ops/min. */}
+                  {activeTab === 'activity' && stream.events.slice().reverse().flatMap((ev, i) => {
                     if (ev.type === 'node_snapshot') {
                       // Skip pure streaming noise (partial_output only)
                       if (Object.keys(ev.data).length === 1 && 'partial_output' in ev.data) return []

@@ -54,6 +54,8 @@ export interface StreamState {
   run: RunState | null
   nodes: NodeState[]
   events: StreamEvent[]
+  /** O(1) lookup index: eventsByType.get('human_gate') returns all human_gate events in order. */
+  eventsByType: Map<string, StreamEvent[]>
   connected: boolean
   error: string | null
 }
@@ -71,7 +73,7 @@ function reducer(state: StreamState, action: Action): StreamState {
     case 'ERROR':
       return { ...state, connected: false, error: 'Connection lost — reconnecting…' }
     case 'RESET':
-      return { run: null, nodes: [], events: [], connected: false, error: null }
+      return { run: null, nodes: [], events: [], eventsByType: new Map(), connected: false, error: null }
     case 'EVENT': {
       const e = action.payload
       let { run, nodes } = state
@@ -118,11 +120,17 @@ function reducer(state: StreamState, action: Action): StreamState {
         // when the stream doesn't receive a matching state_change (e.g. SUSPENDED on gate open).
         run = { ...run, status: e.status as RunStatus }
       }
+      const newEvents = [...state.events.slice(-100), e] // keep last 100 events in memory
+      // Maintain eventsByType index for O(1) lookups in consumers.
+      const newEventsByType = new Map(state.eventsByType)
+      const prevList = newEventsByType.get(e.type) ?? []
+      newEventsByType.set(e.type, [...prevList, e])
       return {
         ...state,
         run,
         nodes,
-        events: [...state.events.slice(-100), e], // keep last 100 events in memory
+        events: newEvents,
+        eventsByType: newEventsByType,
       }
     }
     default:
@@ -131,7 +139,7 @@ function reducer(state: StreamState, action: Action): StreamState {
 }
 
 const INITIAL_STATE: StreamState = {
-  run: null, nodes: [], events: [], connected: false, error: null,
+  run: null, nodes: [], events: [], eventsByType: new Map(), connected: false, error: null,
 }
 
 export function useRunStream(runId: string) {
