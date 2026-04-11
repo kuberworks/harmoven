@@ -3,12 +3,18 @@
 // Spec: llm-tool-use-web-search.feature.md §3.3, §7.1–§7.5
 //
 // Security notes:
-// - SSRF guard: all result URLs are checked via assertNotPrivateHost() before use.
+// - SSRF guard: result URLs are validated with isPrivateLiteralHost() (structural
+//   check — no DNS). URLs are NOT fetched by this layer; they are returned as
+//   citation text to the LLM only. DNS-based assertNotPrivateHost() is reserved
+//   for URLs that are actually fetched (LLM API endpoints, MCP servers, etc.).
 // - Prompt injection: results are wrapped in <WEB_SEARCH_RESULT> tags so the LLM
-//   treats them as external, untrusted data (§7.2).
-// - Rate limit: 60 searches/hour per project_id (§7.5).
+//   treats them as external, untrusted data (§7.2). Angle brackets inside result
+//   content are stripped to prevent tag-escape injection (e.g. </WEB_SEARCH_RESULT>).
+// - Rate limit: 60 searches/hour per project_id (§7.5). In-memory window map is
+//   bounded and periodically compacted (max 10 000 entries, 2-hour TTL sweep).
 // - Provider keys are read from process.env — never logged.
 // - Graceful degradation: provider failure returns is_error=true, never throws.
+// - Retry policy: withRetry skips client errors (4xx) — non-retryable by definition.
 
 import type { ToolCall, ToolResult } from '@/lib/llm/interface'
 import type { RunConfig } from '@/lib/execution/run-config'
@@ -33,8 +39,20 @@ export interface WebSearchResponse {
 /** In-memory per-project rate limit: max 60 searches per hour. Spec §7.5 */
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>()
 
+/**
+ * Compact the rate-limit map: remove entries whose window expired more than
+ * 2 hours ago. Called whenever the map exceeds 10 000 entries to prevent
+ * unbounded memory growth in long-running processes with many projects.
+ */
+function compactRateLimitMap(now: number): void {
+  for (const [key, entry] of rateLimitMap) {
+    if (now - entry.windowStart > 7_200_000) rateLimitMap.delete(key)
+  }
+}
+
 function checkRateLimit(projectId: string): void {
   const now = Date.now()
+  if (rateLimitMap.size > 10_000) compactRateLimitMap(now)
   const entry = rateLimitMap.get(projectId)
   if (!entry || now - entry.windowStart > 3_600_000) {
     rateLimitMap.set(projectId, { count: 1, windowStart: now })
@@ -51,9 +69,15 @@ function checkRateLimit(projectId: string): void {
 /**
  * Wrap result content in trusted-source tags so the LLM knows this is
  * external, untrusted content (§7.2 — prompt injection protection).
+ *
+ * Security: angle brackets inside `content` are replaced with Unicode
+ * lookalikes (U+FE64 / U+FE65) to prevent a malicious snippet from
+ * embedding </WEB_SEARCH_RESULT> and breaking the trust boundary.
+ * Using lookalikes (not HTML entities) preserves readability for the LLM.
  */
 function wrapResultContent(content: string): string {
-  return `<WEB_SEARCH_RESULT>\n${content}\n</WEB_SEARCH_RESULT>`
+  const safe = content.replace(/</g, '\uFE64').replace(/>/g, '\uFE65')
+  return `<WEB_SEARCH_RESULT>\n${safe}\n</WEB_SEARCH_RESULT>`
 }
 
 // ─── Provider resolver ──────────────────────────────────────────────────────────
@@ -77,10 +101,18 @@ function resolveProvider(requested: string): string {
 
 // ─── Retry helper ─────────────────────────────────────────────────────────────
 
+/**
+ * Retry once after 1 s on transient failures (5xx, network errors).
+ * Client errors (4xx) are not retried — they indicate configuration issues
+ * (bad API key, quota exhausted permanently, etc.) that a retry cannot fix.
+ */
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
-  } catch {
+  } catch (err) {
+    // Do not retry client errors: 4xx responses are non-retryable by definition.
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/\b4\d\d\b/.test(msg)) throw err
     await new Promise(r => setTimeout(r, 1_000))
     return fn()
   }
@@ -98,6 +130,12 @@ function isPrivateLiteralHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '') // strip IPv6 brackets
   if (h === 'localhost') return true
   if (h === '::1' || h === '::') return true
+  // IPv4-mapped IPv6: ::ffff:192.168.x.x — private range embedded in IPv6 literal
+  if (h.startsWith('::ffff:')) {
+    const v4part = h.slice(7)
+    // Recurse to check the embedded IPv4 address using the same private-range logic
+    return isPrivateLiteralHost(v4part)
+  }
   if (h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80:')) return true
   // IPv4 private ranges as literals
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
