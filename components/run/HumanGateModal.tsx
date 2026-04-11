@@ -45,7 +45,9 @@ export function HumanGateModal({
         description: action === 'approve' ? 'The run will continue.' : 'The run has been aborted.',
       })
       onOpenChange(false)
-      router.refresh()
+      // Do NOT call router.refresh() here — the SSE stream already pushes
+      // state_change(RUNNING) / state_change(FAILED) events to the client,
+      // so the UI updates itself without a full server re-render cycle.
     } catch {
       toast({ title: 'Failed to submit decision', variant: 'destructive' })
     } finally {
