@@ -1251,6 +1251,23 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
   const isLive = run.status === 'RUNNING' || run.status === 'PAUSED' || run.status === 'SUSPENDED'
   const isTerminal = run.status === 'COMPLETED' || run.status === 'FAILED'
 
+  // Stable memoised nodeStates object for DagView — avoids recreating the object
+  // (and triggering DagView re-render/re-layout) on every render of RunDetailClient.
+  const nodeStatesForDag = useMemo(() => Object.fromEntries(
+    nodes.map(n => [n.node_id, {
+      status:          n.status,
+      cost_usd:        ('cost_usd'        in n ? n.cost_usd        : undefined),
+      error:           ('error'           in n ? n.error ?? undefined : undefined),
+      tokens_in:       ('tokens_in'       in n ? n.tokens_in       : undefined),
+      tokens_out:      ('tokens_out'      in n ? n.tokens_out      : undefined),
+      started_at:      ('started_at'      in n ? n.started_at      : undefined),
+      completed_at:    ('completed_at'    in n ? n.completed_at    : undefined),
+      llm_profile_id:  ('llm_profile_id'  in n ? n.llm_profile_id  : undefined),
+      partial_output:  ('partial_output'  in n ? n.partial_output  : undefined),
+      handoff_out:     ('handoff_out'     in n ? n.handoff_out     : undefined),
+    }]),
+  ), [nodes])
+
   // Active tab — defaults to 'result' for completed runs, auto-switches once on completion
   const autoSwitchedRef = useRef(false)
   const [activeTab, setActiveTab] = useState(
@@ -1433,20 +1450,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
             <TabsContent value="dag">
               <DagView
                 dag={run.dag}
-                nodeStates={Object.fromEntries(
-                  nodes.map(n => [n.node_id, {
-                    status:          n.status,
-                    cost_usd:        ('cost_usd'        in n ? n.cost_usd        : undefined),
-                    error:           ('error'           in n ? n.error ?? undefined : undefined),
-                    tokens_in:       ('tokens_in'       in n ? n.tokens_in       : undefined),
-                    tokens_out:      ('tokens_out'      in n ? n.tokens_out      : undefined),
-                    started_at:      ('started_at'      in n ? n.started_at      : undefined),
-                    completed_at:    ('completed_at'    in n ? n.completed_at    : undefined),
-                    llm_profile_id:  ('llm_profile_id'  in n ? n.llm_profile_id  : undefined),
-                    partial_output:  ('partial_output'  in n ? n.partial_output  : undefined),
-                    handoff_out:     ('handoff_out'     in n ? n.handoff_out     : undefined),
-                  }]),
-                )}
+                nodeStates={nodeStatesForDag}
                 onRestartNode={permissions.has('runs:replay') ? (nodeId) => {
                   fetch(`/api/runs/${run.id}/nodes/${nodeId}/gate`, {
                     method:  'POST',
