@@ -32,6 +32,8 @@ RUN mkdir -p ./public
 COPY orchestrator.yaml ./
 # Prisma schema + migrations — needed by prisma migrate deploy at startup
 COPY --from=builder /app/prisma ./prisma
+# prisma.config.ts — Prisma 7 reads this file to resolve datasource.url at runtime
+COPY --from=builder /app/prisma.config.ts ./
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
