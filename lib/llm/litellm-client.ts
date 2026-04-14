@@ -67,7 +67,7 @@ export class LiteLLMClient implements ILLMClient {
     ).withResponse()
 
     const costUsd  = Number(response.headers.get('x-litellm-cost') ?? '0') || 0
-    const content  = completion.choices[0]?.message?.content ?? ''
+    const content  = completion.choices?.[0]?.message?.content ?? ''
     return {
       content,
       tokensIn:  completion.usage?.prompt_tokens     ?? 0,
@@ -109,7 +109,7 @@ export class LiteLLMClient implements ILLMClient {
     let tokensOut  = 0
 
     for await (const chunk of stream) {
-      const text = chunk.choices[0]?.delta?.content ?? ''
+      const text = chunk.choices?.[0]?.delta?.content ?? ''
       if (text) { onChunk(text); fullText += text }
       if (chunk.model) modelName = chunk.model
       // stream_options.include_usage → last chunk carries usage
