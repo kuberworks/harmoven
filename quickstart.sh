@@ -20,6 +20,21 @@ warn()  { echo -e "${YELLOW}!${NC} $*"; }
 error() { echo -e "${RED}✗ $*${NC}" >&2; }
 step()  { echo -e "\n${BOLD}$*${NC}"; }
 
+# ── Portable port-in-use check ────────────────────────────────────────────────
+# Works on: macOS (lsof), Linux (lsof/ss), Git Bash on Windows (netstat)
+port_in_use() {
+  local port=$1
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -i tcp:"$port" -sTCP:LISTEN >/dev/null 2>&1
+  elif command -v ss >/dev/null 2>&1; then
+    ss -tlnp 2>/dev/null | grep -q ":${port} "
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -an 2>/dev/null | grep -qE "(tcp.*:${port}.*LISTEN|TCP.*:${port}.*LISTENING)"
+  else
+    return 1  # cannot detect — assume free, let Docker handle any real conflict
+  fi
+}
+
 # ── Prerequisites ─────────────────────────────────────────────────────────────
 step "Checking prerequisites..."
 
@@ -33,9 +48,11 @@ info "Docker Compose $(docker compose version --short)"
 # ── .env generation ───────────────────────────────────────────────────────────
 step "Configuring environment..."
 
+ENV_EXISTED=true
 if [ -f .env ]; then
   warn ".env already exists — skipping secret generation. Delete .env to regenerate."
 else
+  ENV_EXISTED=false
   info "Generating .env with random secrets..."
 
   POSTGRES_PASS=$(openssl rand -hex 24)
@@ -76,6 +93,27 @@ PYEOF
   info "POSTGRES_PASSWORD generated"
   info "AUTH_SECRET generated"
   info "ENCRYPTION_KEY generated"
+fi
+
+# ── Port auto-detection (first run only) ──────────────────────────────────────
+if [ "$ENV_EXISTED" = "false" ]; then
+  APP_PORT=3000
+  while port_in_use "$APP_PORT"; do APP_PORT=$((APP_PORT + 1)); done
+
+  DB_PORT=5432
+  while port_in_use "$DB_PORT"; do DB_PORT=$((DB_PORT + 1)); done
+
+  # Append port vars and update AUTH_URL atomically
+  echo "HARMOVEN_PORT=${APP_PORT}" >> .env
+  echo "HARMOVEN_DB_PORT=${DB_PORT}" >> .env
+  sed -i.bak "s|AUTH_URL=http://localhost:3000|AUTH_URL=http://localhost:${APP_PORT}|" .env \
+    && rm -f .env.bak
+
+  if [ "$APP_PORT" != "3000" ] || [ "$DB_PORT" != "5432" ]; then
+    info "Ports auto-selected: app=${APP_PORT}, db=${DB_PORT} (conflicts detected on default ports)"
+  else
+    info "Ports: app=${APP_PORT}, db=${DB_PORT}"
+  fi
 fi
 
 # ── LLM API key ───────────────────────────────────────────────────────────────
