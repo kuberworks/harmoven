@@ -6,6 +6,7 @@
 // Constraints: built-in roles cannot be modified or deleted.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess } from '@/lib/auth/ownership'
@@ -13,7 +14,7 @@ import {
   resolvePermissions,
   invalidateProjectPermCache,
 } from '@/lib/auth/rbac'
-import type { SessionCaller, Caller } from '@/lib/auth/rbac'
+import type { Caller } from '@/lib/auth/rbac'
 import { ALL_PERMISSIONS } from '@/lib/auth/permissions'
 import type { Permission } from '@/lib/auth/permissions'
 import { uuidv7 } from '@/lib/utils/uuidv7'
@@ -24,6 +25,18 @@ const VALID_PERMISSIONS = new Set<string>(ALL_PERMISSIONS)
 const BUILTIN_ROLE_NAMES = new Set([
   'viewer', 'operator', 'user', 'user_with_costs', 'developer', 'admin', 'instance_admin',
 ])
+
+// Zod schema — .strict() rejects unknown keys; permissions capped at the
+// exact number of known permissions to prevent unbounded arrays.
+const UpdateRoleBody = z.object({
+  display_name: z.string().min(1).max(128).optional(),
+  extends:      z.string().refine((v) => BUILTIN_ROLE_NAMES.has(v), {
+    message: 'extends must be a built-in role name',
+  }).nullable().optional(),
+  permissions:  z.array(z.string().refine((p) => VALID_PERMISSIONS.has(p), {
+    message: 'Unknown permission',
+  })).max(ALL_PERMISSIONS.length).optional(),
+}).strict()
 
 type RoleRow = { id: string; project_id: string | null; is_builtin: boolean; name: string }
 type GuardRoleResult =
@@ -51,12 +64,6 @@ async function guardAndFetchRole(req: NextRequest, projectId: string, roleId: st
   return { code: 'ok', caller, role }
 }
 
-interface UpdateRoleBody {
-  display_name?: string
-  extends?:     string | null
-  permissions?: string[]
-}
-
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { id: projectId, roleId } = await params
 
@@ -68,27 +75,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   const { caller, role } = guard
 
-  let body: UpdateRoleBody
+  let rawBody: unknown
   try {
-    body = await req.json() as UpdateRoleBody
+    rawBody = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { display_name, extends: extendsRole, permissions } = body
-
-  if (display_name !== undefined && (typeof display_name !== 'string' || display_name.length > 128)) {
-    return NextResponse.json({ error: 'display_name must be a string ≤128 chars' }, { status: 400 })
+  const parsed = UpdateRoleBody.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
-  if (extendsRole !== undefined && extendsRole !== null && !BUILTIN_ROLE_NAMES.has(extendsRole)) {
-    return NextResponse.json({ error: 'extends must be a built-in role name or null' }, { status: 400 })
-  }
-  if (permissions !== undefined) {
-    const invalid = permissions.filter((p) => !VALID_PERMISSIONS.has(p))
-    if (invalid.length > 0) {
-      return NextResponse.json({ error: `Unknown permissions: ${invalid.join(', ')}` }, { status: 400 })
-    }
-  }
+  const { display_name, extends: extendsRole, permissions } = parsed.data
 
   const updateData: {
     display_name?: string
@@ -97,9 +95,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   } = {}
   if (display_name !== undefined) updateData.display_name = display_name
   if (extendsRole  !== undefined) updateData.extends      = extendsRole
-  if (permissions  !== undefined) updateData.permissions  = permissions.filter(
-    (p): p is Permission => VALID_PERMISSIONS.has(p),
-  )
+  if (permissions  !== undefined) updateData.permissions  = permissions as Permission[]
 
   const updated = await db.projectRole.update({
     where: { id: roleId },

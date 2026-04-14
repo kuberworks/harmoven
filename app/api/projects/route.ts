@@ -91,16 +91,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Check instance-level permission: runs:create is the minimum role for project creation.
-  // For session callers without a specific project context, we check the global role.
-  // instance_admin always has this permission; regular users must have the `user` built-in role
-  // (which carries runs:create) — the session role field maps to Better Auth admin plugin roles.
-  const isAdmin = caller.instanceRole === 'instance_admin'
-  if (!isAdmin) {
-    // Non-admin users can create projects if they have the `user` role at the instance level.
-    // Since project-level RBAC requires an existing project, we do a lightweight check:
-    // any authenticated session user is allowed (they become the first admin of their project).
-    // Finer-grained instance-level role enforcement can be added when the user model exposes it.
+  // M-4: `billing` and `viewer` are explicitly restricted instance roles.
+  // They carry no operational permissions and must not be able to provision
+  // new project resources. Normal users have instanceRole=null (allowed).
+  const RESTRICTED_ROLES = new Set(['billing', 'viewer'])
+  if (RESTRICTED_ROLES.has(caller.instanceRole ?? '')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   let body: Record<string, unknown>
