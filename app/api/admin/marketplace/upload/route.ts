@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
-import { assertInstanceAdmin } from '@/lib/auth/rbac'
+import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 import { validateHpkg, persistHpkg, HpkgError } from '@/lib/marketplace/upload-hpkg'
 import { assertImportReasonRequired, ImportReasonRequiredError } from '@/lib/marketplace/assert-import-reason'
@@ -24,7 +24,10 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000 // 1 hour
 export async function POST(req: NextRequest) {
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  assertInstanceAdmin(caller)
+  try { assertInstanceAdmin(caller) } catch (e) {
+    const status = e instanceof UnauthorizedError ? 401 : 403
+    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status })
+  }
 
   // SEC-07: rate limit 5 uploads/userId/hour
   // Uses checkRateLimitAsync (keyed by userId) so that ALL attempts — including

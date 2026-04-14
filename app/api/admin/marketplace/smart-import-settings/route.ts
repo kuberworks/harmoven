@@ -2,11 +2,11 @@
 // GET  → read all marketplace.smart_import.* SystemSettings + budget snapshot
 // PATCH → upsert changed settings (batch)
 
-import { NextResponse }      from 'next/server'
-import { headers }           from 'next/headers'
-import { z }                 from 'zod'
-import { auth }              from '@/lib/auth'
-import { db }                from '@/lib/db/client'
+import { NextRequest, NextResponse }  from 'next/server'
+import { z }                          from 'zod'
+import { db }                         from '@/lib/db/client'
+import { resolveCaller }              from '@/lib/auth/resolve-caller'
+import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,13 +23,23 @@ const PatchSchema = z.object({
   settings: z.record(z.string(), z.string().nullable()),
 })
 
+// ─── Auth helper ─────────────────────────────────────────────────────────────
+
+async function guardAdmin(req: NextRequest): Promise<NextResponse | null> {
+  const caller = await resolveCaller(req)
+  if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try { assertInstanceAdmin(caller) } catch (e) {
+    const status = e instanceof UnauthorizedError ? 401 : 403
+    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status })
+  }
+  return null
+}
+
 // ─── GET ──────────────────────────────────────────────────────────────────────
 
-export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const role = (session.user as Record<string, unknown>).role as string | null
-  if (role !== 'instance_admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+export async function GET(req: NextRequest) {
+  const authErr = await guardAdmin(req)
+  if (authErr) return authErr
 
   const rows = await db.systemSetting.findMany({ where: { key: { in: [...KEYS] } } })
   const map: Record<string, string> = {}
@@ -51,11 +61,9 @@ export async function GET() {
 
 // ─── PATCH ────────────────────────────────────────────────────────────────────
 
-export async function PATCH(req: Request) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const role = (session.user as Record<string, unknown>).role as string | null
-  if (role !== 'instance_admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+export async function PATCH(req: NextRequest) {
+  const authErr = await guardAdmin(req)
+  if (authErr) return authErr
 
   // M-5 fix: wrap req.json() in try/catch — malformed JSON must return 400, not 500.
   let body: unknown

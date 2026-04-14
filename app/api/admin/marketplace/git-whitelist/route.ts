@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
-import { assertInstanceAdmin } from '@/lib/auth/rbac'
+import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 
 // ─── Validation helpers (A.2.3) ──────────────────────────────────────────────
@@ -55,7 +55,10 @@ const ListQuerySchema = z.object({
 export async function GET(req: NextRequest) {
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  assertInstanceAdmin(caller)
+  try { assertInstanceAdmin(caller) } catch (e) {
+    const status = e instanceof UnauthorizedError ? 401 : 403
+    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status })
+  }
 
   const params = Object.fromEntries(req.nextUrl.searchParams)
   const parsed = ListQuerySchema.safeParse(params)
@@ -98,7 +101,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  assertInstanceAdmin(caller)
+  try { assertInstanceAdmin(caller) } catch (e) {
+    const status = e instanceof UnauthorizedError ? 401 : 403
+    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status })
+  }
 
   let body: unknown
   try { body = await req.json() } catch {

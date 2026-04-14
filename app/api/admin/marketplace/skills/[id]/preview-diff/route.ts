@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { createHash } from 'node:crypto'
 import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
-import { assertInstanceAdmin } from '@/lib/auth/rbac'
+import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 import { fetchCappedText } from '@/lib/marketplace/resolve-github-url'
 
 // In-memory token bucket for SEC-60 (60 requests/preview_id/hour)
@@ -39,7 +39,10 @@ type RouteParams = { params: Promise<{ id: string }> }
 export async function GET(req: NextRequest, { params }: RouteParams) {
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  assertInstanceAdmin(caller)
+  try { assertInstanceAdmin(caller) } catch (e) {
+    const status = e instanceof UnauthorizedError ? 401 : 403
+    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status })
+  }
   const { id } = await params
 
   const queryParams = Object.fromEntries(req.nextUrl.searchParams)

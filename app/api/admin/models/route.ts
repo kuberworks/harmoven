@@ -55,7 +55,12 @@ export async function GET(req: NextRequest) {
 
   const models = await db.llmProfile.findMany({ where, orderBy: { id: 'asc' } })
 
-  return NextResponse.json({ models })
+  // H-4: strip config blob (contains api_key_enc) before returning to client.
+  // The config column is an implementation detail; callers don't need it.
+  // api_key is write-only: it can be set via POST/PATCH but never read back.
+  const safeModels = models.map(({ config: _, ...rest }) => rest)
+
+  return NextResponse.json({ models: safeModels })
 }
 
 // ─── POST /api/admin/models ──────────────────────────────────────────────────

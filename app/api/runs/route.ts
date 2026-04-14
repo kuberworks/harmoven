@@ -94,6 +94,9 @@ export async function GET(req: NextRequest) {
     projectId = qpProjectId
   }
 
+  // H-1: track whether the caller may see cost fields; instance_admin can always see costs.
+  let hasCosts = isAdmin
+
   if (projectId) {
     try {
       await assertProjectAccess(caller, projectId)
@@ -107,6 +110,7 @@ export async function GET(req: NextRequest) {
     if (!perms.has('runs:read')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    hasCosts = perms.has('runs:read_costs')
   }
 
   // Build filter — SEC-21: exclude phantom runs (marketplace_import) from all user-facing lists
@@ -127,7 +131,12 @@ export async function GET(req: NextRequest) {
     db.run.count({ where }),
   ])
 
-  return NextResponse.json({ runs, total, page, per_page: perPage })
+  // H-1: redact cost fields for callers without runs:read_costs — mirrors single-run GET.
+  const safeRuns = hasCosts
+    ? runs
+    : runs.map(r => ({ ...r, cost_actual_usd: undefined, tokens_actual: undefined }))
+
+  return NextResponse.json({ runs: safeRuns, total, page, per_page: perPage })
 }
 
 export async function POST(req: NextRequest) {
