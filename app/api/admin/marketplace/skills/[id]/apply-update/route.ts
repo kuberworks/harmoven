@@ -24,7 +24,10 @@ type RouteParams = { params: Promise<{ id: string }> }
 export async function POST(req: NextRequest, { params }: RouteParams) {
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  assertInstanceAdmin(caller)
+  try { assertInstanceAdmin(caller) } catch (e) {
+    const status = e instanceof UnauthorizedError ? 401 : 403
+    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status })
+  }
   const { id } = await params
 
   let body: unknown

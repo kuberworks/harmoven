@@ -7,14 +7,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
-import { assertInstanceAdmin } from '@/lib/auth/rbac'
+import { assertInstanceAdmin, ForbiddenError, UnauthorizedError } from '@/lib/auth/rbac'
 
 const PACK_ID_RE = /^[a-z0-9_]{1,64}$/
 
 export async function GET(req: NextRequest) {
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  assertInstanceAdmin(caller)
+  try { assertInstanceAdmin(caller) } catch (e) {
+    const status = e instanceof UnauthorizedError ? 401 : 403
+    return NextResponse.json({ error: status === 401 ? 'Unauthorized' : 'Forbidden' }, { status })
+  }
 
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'MISSING_ID' }, { status: 400 })

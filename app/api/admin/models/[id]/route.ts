@@ -143,7 +143,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   // (enabled toggle, model_string, config, etc.) take effect immediately.
   resetExecutionEngineSingleton()
 
-  return NextResponse.json({ model })
+  // H-4: strip config blob (contains api_key_enc) — write-only field, never read back.
+  const { config: _, ...safeModel } = model
+  return NextResponse.json({ model: safeModel })
 }
 
 // ─── DELETE /api/admin/models/:id ────────────────────────────────────────────

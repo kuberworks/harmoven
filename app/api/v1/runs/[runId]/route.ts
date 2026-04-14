@@ -39,6 +39,8 @@ export async function GET(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  const hasCosts = perms.has('runs:read_costs')
+
   const nodes = await db.node.findMany({
     where:   { run_id: runId },
     orderBy: { node_id: 'asc' },
@@ -49,7 +51,12 @@ export async function GET(req: NextRequest, { params }: Params) {
     },
   })
 
-  return NextResponse.json({ run, nodes })
+  // H-2: redact per-node cost fields for callers without runs:read_costs.
+  const safeNodes = hasCosts
+    ? nodes
+    : nodes.map(n => ({ ...n, cost_usd: undefined, tokens_in: undefined, tokens_out: undefined }))
+
+  return NextResponse.json({ run, nodes: safeNodes })
 }
 
 // ─── DELETE — abort ───────────────────────────────────────────────────────────
