@@ -172,6 +172,10 @@ fi
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 step "Starting Harmoven..."
+# Unset any shell-inherited port variables so Docker Compose reads them
+# exclusively from .env — shell env takes precedence over .env in Compose,
+# which would cause port conflicts if the user has these vars exported.
+unset HARMOVEN_PORT HARMOVEN_DB_PORT
 docker compose up -d --build
 
 # ── Health check ──────────────────────────────────────────────────────────────
