@@ -151,6 +151,17 @@
       "replay": "Rejouer ce nœud",
       "accept": "Accepter tel quel et continuer"
     },
+    "how_to": {
+      "planner_exhausted": "L'IA n'a pas réussi à construire un plan valide après 3 tentatives. Cliquez sur Relancer pour réessayer, ou décrivez une approche plus simple dans le champ ci-dessous.",
+      "low_confidence_plan": "L'IA n'est pas pleinement confiante dans ce plan. Examinez les étapes dans l'onglet Aperçu, puis Approuvez pour démarrer ou Demandez des modifications.",
+      "reviewer_escalation": "L'évaluateur a signalé ce contenu. Lisez-le dans l'onglet Aperçu, puis Approuvez s'il est correct ou Demandez des modifications pour expliquer ce qui doit changer.",
+      "reviewer_findings": "L'évaluateur a signalé ce contenu. Lisez-le dans l'onglet Aperçu, puis Approuvez s'il est correct ou Demandez des modifications pour expliquer ce qui doit changer.",
+      "low_confidence": "Le résultat a une faible confiance. Examinez-le dans l'onglet Aperçu, puis Approuvez pour continuer ou Demandez des modifications.",
+      "budget_warning": "Ce run a dépassé le seuil budgétaire. Examinez le résultat et décidez si vous souhaitez continuer.",
+      "default": "Lisez le contenu dans l'onglet Aperçu ci-dessous. Cliquez sur Approuver pour continuer, ou Demandez des modifications pour préciser ce que vous voulez changer."
+    },
+    "review_and_decide": "Examiner et décider →",
+    "how_to_dismiss": "Compris",
     "no_active_gate": {
       "title": "Aucune décision de validation en attente",
       "subtitle": "L'exécution a été interrompue avant qu'une validation ne soit ouverte. Il n'y a rien à approuver ni à abandonner.",

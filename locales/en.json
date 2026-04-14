@@ -151,6 +151,17 @@
       "replay": "Replay this node",
       "accept": "Accept as-is and continue"
     },
+    "how_to": {
+      "planner_exhausted": "The AI couldn't build a valid plan after 3 attempts. Click Retry to let it try again, or use the feedback box to describe a simpler approach.",
+      "low_confidence_plan": "The AI isn't fully confident about this plan. Review the proposed steps in the Preview tab, then Approve to proceed or Request changes to adjust.",
+      "reviewer_escalation": "The reviewer flagged this output. Read it in the Preview tab, then Approve if it looks right, or Request changes to describe what should be fixed.",
+      "reviewer_findings": "The reviewer flagged this output. Read it in the Preview tab, then Approve if it looks right, or Request changes to describe what should be fixed.",
+      "low_confidence": "The result has low confidence. Review it in the Preview tab, then Approve to continue or Request changes to ask for a revision.",
+      "budget_warning": "This run exceeded your budget threshold. Review the output and decide whether to continue.",
+      "default": "Read the output in the Preview tab below. Click Approve to continue, or Request changes to describe what you want revised."
+    },
+    "review_and_decide": "Review & decide \u2192",
+    "how_to_dismiss": "Got it",
     "no_active_gate": {
       "title": "No pending gate decision",
       "subtitle": "The run was interrupted before a gate was opened. There is nothing to approve or abort.",

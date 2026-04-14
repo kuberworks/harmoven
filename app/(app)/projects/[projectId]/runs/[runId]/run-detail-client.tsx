@@ -1322,7 +1322,7 @@ export function RunDetailClient({ projectId, initialRun, initialNodes, permissio
               href={`/projects/${projectId}/runs/${run.id}/gate`}
               className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-400 transition-colors"
             >
-              Review <ExternalLink className="h-3 w-3" />
+              {t('gates.review_and_decide')}
             </Link>
           </PermissionGuard>
         </div>
