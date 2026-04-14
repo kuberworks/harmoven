@@ -1241,6 +1241,10 @@ export class CustomExecutor implements IExecutionEngine {
                     domain_profile:       plan.domain_profile,
                     dependencies:         remappedDeps,
                     ...(llmOverrides[pn.agent] ? { preferred_llm: llmOverrides[pn.agent] } : {}),
+                    // Per-node web-search override (Option D).
+                    // Only stored when the planner explicitly sets false (opt-out).
+                    // Absent = inherits run-level enable_web_search in runner.ts.
+                    ...(pn.enable_web_search === false ? { enable_web_search: false } : {}),
                   },
                 },
               })

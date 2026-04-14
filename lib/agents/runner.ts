@@ -394,11 +394,18 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
         const runConfig  = parseRunConfig(runData?.run_config)
         const projectId  = runData?.project_id ?? ''
 
-        // Conditionally inject web search tools when run_config.enable_web_search is set
+        // Conditionally inject web search tools — Option D:
+        // Active when run_config.enable_web_search = true AND the node has not opted out
+        // (meta.enable_web_search !== false). A synthesis node sets enable_web_search:false
+        // in its metadata so it never fires a web search with its task description as query.
+        // Absent meta field = inherits run-level setting (rétrocompat for all existing nodes).
+        const nodeWebSearchOptOut = meta['enable_web_search'] === false
+        const nodeWebSearchEnabled = runConfig.enable_web_search === true && !nodeWebSearchOptOut
+
         let tools:        import('@/lib/llm/interface').ChatOptions['tools']        = undefined
         let toolExecutor: import('@/lib/llm/interface').ChatOptions['toolExecutor'] = undefined
 
-        if (runConfig.enable_web_search === true) {
+        if (nodeWebSearchEnabled) {
           tools = [WEB_SEARCH_TOOL]
           toolExecutor = makeWebSearchExecutor(
             runConfig,
@@ -465,7 +472,7 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           domain_profile:      asProfileId(meta['domain_profile']),
           run_id:              node.run_id,
           output_file_format:  outputFileFormat,
-          enable_web_search:   runConfig.enable_web_search === true,
+          enable_web_search:   nodeWebSearchEnabled,
           pre_search_context:  preSearchContext,
         }
 
