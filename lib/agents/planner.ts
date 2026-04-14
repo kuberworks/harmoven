@@ -31,8 +31,16 @@ export interface PlannerNode {
   timeout_minutes: number
   /** References to outputs of prior nodes, e.g. "output:n1". */
   inputs: string[]
-  expected_output_type: string  /** When set, the WRITER node targets this file format (spec §1.5). */
-  output_file_format?: string}
+  expected_output_type: string
+  /** When set, the WRITER node targets this file format (spec §1.5). */
+  output_file_format?: string
+  /**
+   * Per-node web-search override (Option D).
+   * Omit on research nodes — they inherit run-level enable_web_search.
+   * Set to false on synthesis/aggregation nodes that must NOT search the web.
+   */
+  enable_web_search?: boolean
+}
 
 export interface PlannerEdge {
   from: string
@@ -93,7 +101,10 @@ Output ONLY valid JSON matching this schema — no markdown, no prose:
         "complexity": "high",
         "timeout_minutes": 20,
         "inputs": [],   // MUST be an array of PLAIN STRINGS like "output:n1" — NEVER objects
-        "expected_output_type": "code"
+        "expected_output_type": "code",
+        // enable_web_search: omit on research nodes (inherits run config).
+        //                    set false on synthesis/aggregation nodes that must NOT search the web.
+        "enable_web_search": false  // example: synthesis node — explicitly disable
       }
     ],
     "edges": [
@@ -274,20 +285,27 @@ PATTERN D — WEB RESEARCH (task = "find / look up / retrieve current informatio
 - For a research task:
   WRITER(document — searches the web, synthesises findings into Markdown)
     → REVIEWER. Depth=2.
-- For a multi-topic research task:
-  WRITER(document — topic 1) + WRITER(document — topic 2) + …
-    → REVIEWER. Depth=2, width=N.
+- For a multi-topic research task with a synthesis step:
+  WRITER(document — topic 1) + WRITER(document — topic 2) + …  [enable_web_search omitted → inherits true]
+    → WRITER(document — synthesises outputs of n1..nN into a final report, enable_web_search: false)
+    → REVIEWER. Depth=3, width=N+1.
+  CRITICAL: the synthesis WRITER MUST set "enable_web_search": false — it already has the
+  research results as inputs and must NOT search the web again with the task description as query.
+  Research WRITERs: DO NOT set enable_web_search (omit field — inherits from run config = true).
+  Synthesis/aggregation WRITERs: ALWAYS set "enable_web_search": false.
 - BAD (FORBIDDEN): using PYTHON_EXECUTOR to run requests.get() or any web HTTP call.
   PYTHON_EXECUTOR has NO network access — it will always fail or return empty results.
 - BAD (FORBIDDEN): WRITER(python_code that calls urllib) → PYTHON_EXECUTOR for web scraping.
   Same reason: no network access in the sandbox.
+- BAD (FORBIDDEN): synthesis WRITER with enable_web_search omitted — it will blindly search
+  the web using its task description as a query, wasting time and producing irrelevant results.
 
 WEB SEARCH + FILE GENERATION (task = "search the web AND produce a downloadable file"):
 - TRIGGER: enable_web_search = true AND the user wants a downloadable file (Excel, CSV, …)
   built from web-gathered data.
 - Pattern:
-  WRITER(document — searches the web for raw data, prints structured data to output)
-    → WRITER(python_code — takes the researched data as input, generates the file)
+  WRITER(document — searches the web for raw data, prints structured data to output)  [omit enable_web_search]
+    → WRITER(python_code — takes the researched data as input, generates the file, enable_web_search: false)
     → PYTHON_EXECUTOR (runs the code, saves the file)
     → REVIEWER.
 - The web-searching WRITER must output structured content (JSON/Markdown tables) that the

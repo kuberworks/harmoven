@@ -67,6 +67,14 @@ const PlannerNodeSchema = z.object({
     'py', 'ts', 'js', 'sh',
     'docx', 'pdf',
   ]).optional(),
+  /**
+   * Per-node web-search opt-out (Option D).
+   * Absent = inherits run-level enable_web_search.
+   * false  = web search disabled for this node regardless of run config
+   *          (use on synthesis/aggregation nodes that must NOT search the web).
+   * true   = explicit opt-in (identical to inheriting true, mainly for clarity).
+   */
+  enable_web_search:    z.boolean().optional(),
 })
 
 const PlannerMetaSchema = z.object({
