@@ -17,7 +17,7 @@ import { EvalTab } from '@/components/gate/EvalTab'
 import type { CriticalReviewerOutput } from '@/lib/agents/reviewer/critical-reviewer.types'
 import type { EvalAgentOutput } from '@/lib/agents/eval/eval.types'
 import type { Permission } from '@/lib/auth/permissions'
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, MessageSquare } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, MessageSquare, Info } from 'lucide-react'
 
 interface NodeCost {
   node_id: string
@@ -96,6 +96,8 @@ export function GateClient({
   // L-4 fix: track ignored/fixed findings locally so CriticalReviewTab stays reactive.
   const [ignoredFindings, setIgnoredFindings] = useState<Set<string>>(new Set())
   const [pendingFindings, setPendingFindings] = useState<Set<string>>(new Set())
+  // Instruction card — shown by default, dismissible for the session.
+  const [showHowTo, setShowHowTo] = useState(true)
 
   const hasOpenGate = !!gateId
   const canDecide = permissions.has('gates:write') && hasOpenGate
@@ -114,6 +116,17 @@ export function GateClient({
     budget_warning:         'Budget threshold exceeded',
   }
   const gateReasonDisplay = gateReason ? (gateReasonLabel[gateReason] ?? gateReason) : null
+
+  // Instruction card text — one actionable sentence per gate reason.
+  const howToMap: Record<string, string> = {
+    planner_exhausted:   t('gates.how_to.planner_exhausted'),
+    low_confidence_plan: t('gates.how_to.low_confidence_plan'),
+    reviewer_escalation: t('gates.how_to.reviewer_escalation'),
+    reviewer_findings:   t('gates.how_to.reviewer_findings'),
+    low_confidence:      t('gates.how_to.low_confidence'),
+    budget_warning:      t('gates.how_to.budget_warning'),
+  }
+  const howToText = gateReason ? (howToMap[gateReason] ?? t('gates.how_to.default')) : t('gates.how_to.default')
 
   // Context-aware copy for the feedback panel
   const feedbackPanelLabel = isPlannerExhausted
@@ -192,7 +205,7 @@ export function GateClient({
               disabled={!!submitting}
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              Request changes
+              {t('gates.actions.request_changes')}
             </Button>
             <PermissionGuard permissions={permissions} permission="gates:approve">
               <Button
@@ -207,7 +220,7 @@ export function GateClient({
                 ) : (
                   <CheckCircle2 className="h-3.5 w-3.5" />
                 )}
-                {isPlannerExhausted ? 'Retry planning →' : 'Approve →'}
+                {isPlannerExhausted ? 'Retry planning →' : t('gates.actions.approve')}
               </Button>
             </PermissionGuard>
           </div>
@@ -243,7 +256,7 @@ export function GateClient({
               className="border-red-500/40 text-red-400 hover:bg-red-900/20"
             >
               {submitting === 'abort' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
-              Abort run
+              {t('gates.actions.abandon')}
             </Button>
             <Button
               size="sm"
@@ -306,6 +319,21 @@ export function GateClient({
           >
             {t('gates.no_active_gate.back_to_run')}
           </Button>
+        </div>
+      )}
+
+      {/* ── How-to instruction card — shown when gate is open, dismissible for the session ── */}
+      {hasOpenGate && showHowTo && (
+        <div className="flex items-start gap-3 mb-4 px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/25">
+          <Info className="h-4 w-4 shrink-0 mt-0.5 text-blue-400" />
+          <p className="flex-1 text-sm text-blue-200/90 leading-relaxed">{howToText}</p>
+          <button
+            type="button"
+            onClick={() => setShowHowTo(false)}
+            className="shrink-0 text-xs text-blue-400/60 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-500/20 transition-colors"
+          >
+            {t('gates.how_to_dismiss')}
+          </button>
         </div>
       )}
 
