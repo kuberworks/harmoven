@@ -41,6 +41,7 @@ step "Checking prerequisites..."
 command -v docker >/dev/null 2>&1   || { error "Docker is required → https://docs.docker.com/get-docker/"; exit 1; }
 docker compose version >/dev/null 2>&1 || { error "Docker Compose v2 is required → https://docs.docker.com/compose/install/"; exit 1; }
 command -v openssl >/dev/null 2>&1  || { error "openssl is required (usually pre-installed on macOS/Linux)."; exit 1; }
+command -v python3 >/dev/null 2>&1  || { error "python3 is required (usually pre-installed on macOS/Linux; on Windows install from https://python.org)."; exit 1; }
 
 info "Docker $(docker --version | grep -o '[0-9.]*' | head -1)"
 info "Docker Compose $(docker compose version --short)"
