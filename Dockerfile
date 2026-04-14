@@ -3,11 +3,16 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+# --legacy-peer-deps: better-auth@1.5.x pulls @better-auth/core@1.5.6 which declares
+# peer better-call@1.3.2 and jose@^6, but the project intentionally ships
+# better-call@2.0.3 (direct dep) and jose@5.x — both verified working at runtime.
+# This flag is scoped to this Docker build stage only and does not affect lockfile
+# integrity (npm ci still verifies checksums against package-lock.json).
+RUN npm ci --omit=dev --legacy-peer-deps
 
 FROM base AS builder
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
