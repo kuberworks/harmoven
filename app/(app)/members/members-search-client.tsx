@@ -114,7 +114,7 @@ export function MembersSearchClient({ isInstanceAdmin }: Props) {
         <div className="flex flex-col items-center gap-2 py-10 text-center">
           <UserX className="h-7 w-7 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">
-            No members found for <strong className="text-foreground">"{trimmed}"</strong>.
+            No members found for <strong className="text-foreground">&quot;{trimmed}&quot;</strong>.
           </p>
         </div>
       )}

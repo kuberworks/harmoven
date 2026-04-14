@@ -65,7 +65,7 @@ export function UploadTab() {
       setFile(dropped)
       setError(null)
     }
-  }, [])
+  }, [t])
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
@@ -77,7 +77,7 @@ export function UploadTab() {
       setFile(selected)
       setError(null)
     }
-  }, [])
+  }, [t])
 
   const handleUpload = async () => {
     if (!file) return
