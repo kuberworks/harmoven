@@ -117,7 +117,7 @@ export function ApiKeysClient({ initialKeys }: Props) {
       {newKeyValue && (
         <Alert variant="warning">
           <AlertTriangle className="h-4 w-4" aria-hidden />
-          <AlertTitle>Save your API key — it won't be shown again</AlertTitle>
+          <AlertTitle>Save your API key &mdash; it won&apos;t be shown again</AlertTitle>
           <AlertDescription>
             <div className="flex items-center gap-2 mt-2">
               <code className="flex-1 font-mono text-xs bg-surface-raised border border-surface-border rounded px-2 py-1.5 select-all overflow-auto">
@@ -134,7 +134,7 @@ export function ApiKeysClient({ initialKeys }: Props) {
               className="mt-2 text-xs text-muted-foreground h-7"
               onClick={() => setNewKeyValue(null)}
             >
-              I've saved it — dismiss
+              I&apos;ve saved it &mdash; dismiss
             </Button>
           </AlertDescription>
         </Alert>

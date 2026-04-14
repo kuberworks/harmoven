@@ -3,6 +3,12 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   output: 'standalone',
 
+  // ESLint is run separately in CI — skipping it during docker build avoids
+  // installing devDependencies (eslint plugins) in the builder image layer.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // HTTP security headers — applied on every response.
   // Spec: Amendment 92 (92.10) — complete header set.
   async headers() {

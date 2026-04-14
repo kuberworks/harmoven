@@ -180,7 +180,7 @@ export function ProjectSettingsClient({
             <div>
               <p className="text-sm font-medium text-foreground">{t('project_settings.transparency_mode')}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Show agents' reasoning steps and intermediate outputs to all project members.
+                Show agents&apos; reasoning steps and intermediate outputs to all project members.
               </p>
             </div>
             <Switch
