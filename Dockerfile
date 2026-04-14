@@ -13,6 +13,10 @@ RUN npm ci --omit=dev --legacy-peer-deps
 FROM base AS builder
 COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps
+# Copy Prisma schema before generating types — the client codegen requires
+# the schema to be present and must run before `next build` type-checks the app.
+COPY prisma ./prisma
+RUN npx prisma generate
 COPY . .
 RUN npm run build
 
