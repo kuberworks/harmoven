@@ -87,6 +87,17 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const { name, description, is_public, dag, change_note } = body as Record<string, unknown>
 
+  // M-6: enforce length caps on unbounded string fields.
+  if (typeof name === 'string' && name.length > 256) {
+    return NextResponse.json({ error: 'name must be ≤256 characters' }, { status: 400 })
+  }
+  if (typeof description === 'string' && description.length > 1024) {
+    return NextResponse.json({ error: 'description must be ≤1024 characters' }, { status: 400 })
+  }
+  if (typeof change_note === 'string' && change_note.length > 500) {
+    return NextResponse.json({ error: 'change_note must be ≤500 characters' }, { status: 400 })
+  }
+
   // SEC-H-05: Enforce maximum DAG payload size before writing to DB.
   if (dag && JSON.stringify(dag).length > MAX_DAG_BYTES) {
     return NextResponse.json(

@@ -6,6 +6,7 @@
 // Safety: Prevents removing or role-changing the last admin of a project.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess } from '@/lib/auth/ownership'
@@ -15,6 +16,10 @@ import {
 } from '@/lib/auth/rbac'
 import type { Caller } from '@/lib/auth/rbac'
 import { uuidv7 } from '@/lib/utils/uuidv7'
+
+const PatchMemberBody = z.object({
+  role_id: z.string().uuid(),
+})
 
 type Params = { params: Promise<{ id: string; userId: string }> }
 
@@ -38,6 +43,13 @@ async function authGuard(req: NextRequest, projectId: string): Promise<AuthGuard
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { id: projectId, userId } = await params
 
+  if (
+    !z.string().uuid().safeParse(projectId).success ||
+    !z.string().uuid().safeParse(userId).success
+  ) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  }
+
   const guard = await authGuard(req, projectId)
   if (guard.code !== 'ok') {
     if (guard.code === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -45,15 +57,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   const { caller } = guard
 
-  let body: { role_id: string }
+  let rawBody: unknown
   try {
-    body = await req.json() as { role_id: string }
+    rawBody = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { role_id } = body
-  if (!role_id) return NextResponse.json({ error: 'Missing role_id' }, { status: 400 })
+  const parsed = PatchMemberBody.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
+  }
+  const { role_id } = parsed.data
 
   // Verify member exists
   const existing = await db.projectMember.findUnique({
@@ -109,6 +124,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 export async function DELETE(req: NextRequest, { params }: Params) {
   const { id: projectId, userId } = await params
+
+  if (
+    !z.string().uuid().safeParse(projectId).success ||
+    !z.string().uuid().safeParse(userId).success
+  ) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  }
 
   const guard = await authGuard(req, projectId)
   if (guard.code !== 'ok') {

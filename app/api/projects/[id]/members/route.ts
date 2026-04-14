@@ -5,6 +5,7 @@
 // Auth: project:members permission required for both operations.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db/client'
 import { resolveCaller } from '@/lib/auth/resolve-caller'
 import { assertProjectAccess } from '@/lib/auth/ownership'
@@ -16,10 +17,19 @@ import {
 } from '@/lib/auth/rbac'
 import { uuidv7 } from '@/lib/utils/uuidv7'
 
+const AddMemberBody = z.object({
+  user_id: z.string().uuid(),
+  role_id: z.string().uuid(),
+})
+
 type Params = { params: Promise<{ id: string }> }
 
 export async function GET(req: NextRequest, { params }: Params) {
   const { id: projectId } = await params
+
+  if (!z.string().uuid().safeParse(projectId).success) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  }
 
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -52,13 +62,12 @@ export async function GET(req: NextRequest, { params }: Params) {
   return NextResponse.json({ members })
 }
 
-interface AddMemberBody {
-  user_id: string
-  role_id: string
-}
-
 export async function POST(req: NextRequest, { params }: Params) {
   const { id: projectId } = await params
+
+  if (!z.string().uuid().safeParse(projectId).success) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  }
 
   const caller = await resolveCaller(req)
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -76,17 +85,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  let body: AddMemberBody
+  let rawBody: unknown
   try {
-    body = await req.json() as AddMemberBody
+    rawBody = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { user_id, role_id } = body
-  if (!user_id || !role_id) {
-    return NextResponse.json({ error: 'Missing required fields: user_id, role_id' }, { status: 400 })
+  const parsed = AddMemberBody.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
+  const { user_id, role_id } = parsed.data
 
   // Validate user exists
   const user = await db.user.findUnique({ where: { id: user_id }, select: { id: true } })
