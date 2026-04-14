@@ -419,7 +419,7 @@ export async function runOpenAIToolLoop(
       { signal },
     )
 
-    const msg  = resp.choices[0]?.message
+    const msg  = resp.choices?.[0]?.message
     if (resp.model) lastModel = resp.model
     totalIn  += resp.usage?.prompt_tokens     ?? 0
     totalOut += resp.usage?.completion_tokens ?? 0
@@ -552,7 +552,7 @@ async function streamOpenAI(
   let tokensIn  = 0
   let tokensOut = 0
   for await (const chunk of stream) {
-    const text = chunk.choices[0]?.delta?.content ?? ''
+    const text = chunk.choices?.[0]?.delta?.content ?? ''
     if (text) { onChunk(text); fullText += text }
     if (chunk.model) modelName = chunk.model
     // Some providers send usage in the final chunk
