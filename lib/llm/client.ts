@@ -425,8 +425,39 @@ export async function runOpenAIToolLoop(
     totalOut += resp.usage?.completion_tokens ?? 0
 
     if (!msg?.tool_calls?.length || !options.toolExecutor) {
+      const content = msg?.content ?? ''
+
+      // Some OpenAI-compat providers (e.g. MiniMax via CometAPI) return null/empty
+      // choices when tool_choice is injected but respond correctly without tools.
+      // When this happens on the FIRST iteration, degrade gracefully: retry the same
+      // request without tools so the LLM can produce content.
+      // runner.ts already pre-fetches web_search_context into the user message as a
+      // fallback, so search results are still available even without live tool calls.
+      if (!content && iteration === 0 && oaiTools && options.toolExecutor) {
+        console.warn('[runOpenAIToolLoop] Empty response with tools — retrying without tools (provider may not support tool_choice)')
+        const plainResp = await client.chat.completions.create(
+          {
+            model:      profile.model_string,
+            max_tokens: options.maxTokens ?? 4096,
+            messages:   currentMessages,
+          },
+          { signal },
+        )
+        const plainMsg = plainResp.choices?.[0]?.message
+        totalIn  += plainResp.usage?.prompt_tokens     ?? 0
+        totalOut += plainResp.usage?.completion_tokens ?? 0
+        if (plainResp.model) lastModel = plainResp.model
+        return {
+          content:  plainMsg?.content ?? '',
+          tokensIn: totalIn, tokensOut: totalOut,
+          model:    lastModel,
+          costUsd:  0,
+          ...(trace.length > 0 ? { tool_calls_trace: trace } : {}),
+        }
+      }
+
       return {
-        content:  msg?.content ?? '',
+        content,
         tokensIn: totalIn, tokensOut: totalOut,
         model:    lastModel,
         costUsd:  0,
