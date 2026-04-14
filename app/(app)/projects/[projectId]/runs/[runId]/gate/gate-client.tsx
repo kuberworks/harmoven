@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useT } from '@/lib/i18n/client'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -86,6 +87,7 @@ export function GateClient({
   uiLevel,
 }: Props) {
   const router = useRouter()
+  const t = useT()
   const [submitting, setSubmitting] = useState<Decision | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [blockingWarn, setBlockingWarn] = useState(false)
@@ -286,6 +288,25 @@ export function GateClient({
 
       {error && (
         <p role="alert" className="mb-4 text-sm text-red-400">{error}</p>
+      )}
+
+      {/* ── No active gate callout — shown when run is interrupted without an open gate ── */}
+      {!hasOpenGate && runStatus !== 'PAUSED' && runStatus !== 'COMPLETED' && (
+        <div className="flex items-start gap-3 mb-5 px-4 py-3 rounded-lg bg-muted/40 border border-border text-sm text-muted-foreground">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-yellow-500" />
+          <div className="flex-1">
+            <p className="font-medium text-foreground">{t('gates.no_active_gate.title')}</p>
+            <p className="mt-0.5">{t('gates.no_active_gate.subtitle')}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            onClick={() => router.push(`/projects/${projectId}/runs/${runId}`)}
+          >
+            {t('gates.no_active_gate.back_to_run')}
+          </Button>
+        </div>
       )}
 
       {/* ── Tabs ── */}
