@@ -39,6 +39,14 @@ export interface LlmProfileConfig {
   api_key_enc?: string
   /** Hard cap on output tokens for this model (provider-specific limit). LLM client clamps max_tokens to this value. */
   max_output_tokens?: number
+  /**
+   * Whether this provider supports OpenAI-style tool_choice injection.
+   * Defaults to true (absent = supported). Set to false for providers that
+   * return empty choices when tools are injected (e.g. MiniMax, some Ollama models).
+   * When false, the LLM client skips tool injection and relies on pre_search_context
+   * embedded in the user message by runner.ts.
+   */
+  supports_tool_choice?: boolean
 }
 
 // ─── Built-in catalog ──────────────────────────────────────────────────────────
@@ -259,6 +267,9 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     task_type_affinity:       ['intent_classification', 'simple_coding_tasks'],
     base_url:                 'http://localhost:11434/v1',
     api_key_env:              undefined,
+    // Ollama models do not reliably support tool_choice — skip injection
+    // and rely on pre_search_context for web-search nodes.
+    supports_tool_choice:     false,
   },
 ]
 
@@ -305,6 +316,11 @@ export function dbRowToLlmProfileConfig(row: {
     max_output_tokens: typeof cfg['max_output_tokens'] === 'number'
       ? cfg['max_output_tokens']
       : BUILT_IN_PROFILES.find(p => p.id === row.id)?.max_output_tokens,
+    // Admin can set supports_tool_choice: false in config JSON for providers that
+    // return empty choices when tool_choice is injected (e.g. MiniMax via CometAPI).
+    supports_tool_choice: typeof cfg['supports_tool_choice'] === 'boolean'
+      ? cfg['supports_tool_choice']
+      : BUILT_IN_PROFILES.find(p => p.id === row.id)?.supports_tool_choice,
   }
 }
 

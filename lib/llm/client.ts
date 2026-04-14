@@ -384,7 +384,7 @@ function toOpenAIMessages(messages: ChatMessage[]): OpenAI.Chat.ChatCompletionMe
  */
 export async function runOpenAIToolLoop(
   client:   OpenAI,
-  profile:  { model_string: string },
+  profile:  { model_string: string; supports_tool_choice?: boolean },
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   options:  ChatOptions,
   signal?:  AbortSignal,
@@ -408,13 +408,18 @@ export async function runOpenAIToolLoop(
   let iteration = 0
   let lastModel = profile.model_string
 
+  // Providers that declare supports_tool_choice: false (e.g. MiniMax, Ollama) return
+  // empty choices when tool_choice is injected. Skip injection entirely and let the
+  // pre_search_context embedded in the user message serve as the search fallback.
+  const canInjectTools = profile.supports_tool_choice !== false
+
   while (true) {
     const resp = await client.chat.completions.create(
       {
         model:      profile.model_string,
         max_tokens: options.maxTokens ?? 4096,
         messages:   currentMessages,
-        ...(oaiTools ? { tools: oaiTools, tool_choice: 'auto' as const } : {}),
+        ...(oaiTools && canInjectTools ? { tools: oaiTools, tool_choice: 'auto' as const } : {}),
       },
       { signal },
     )
