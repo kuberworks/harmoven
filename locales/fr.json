@@ -150,6 +150,11 @@
       "edit_partial": "Modifier la sortie partielle",
       "replay": "Rejouer ce nœud",
       "accept": "Accepter tel quel et continuer"
+    },
+    "no_active_gate": {
+      "title": "Aucune décision de validation en attente",
+      "subtitle": "L'exécution a été interrompue avant qu'une validation ne soit ouverte. Il n'y a rien à approuver ni à abandonner.",
+      "back_to_run": "Retour à l'exécution"
     }
   },
   "kanban": {

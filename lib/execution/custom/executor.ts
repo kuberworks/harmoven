@@ -849,6 +849,9 @@ export class CustomExecutor implements IExecutionEngine {
           payload: { threshold_ms: orphanThresholdMs },
         },
       })
+      // Emit SSE so the DAG view reflects the node interruption in real time
+      // without requiring the user to refresh the page.
+      this._emit(node.run_id, { type: 'state_change', entity_type: 'node', id: node.node_id, status: 'INTERRUPTED' })
       affectedRunIds.add(node.run_id)
     }
 

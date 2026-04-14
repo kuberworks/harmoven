@@ -150,6 +150,11 @@
       "edit_partial": "Edit the partial output",
       "replay": "Replay this node",
       "accept": "Accept as-is and continue"
+    },
+    "no_active_gate": {
+      "title": "No pending gate decision",
+      "subtitle": "The run was interrupted before a gate was opened. There is nothing to approve or abort.",
+      "back_to_run": "Back to run"
     }
   },
   "kanban": {
