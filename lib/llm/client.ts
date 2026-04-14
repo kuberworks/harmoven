@@ -778,6 +778,15 @@ export class DirectLLMClient implements ILLMClient {
     // so confidentiality / jurisdiction / budget constraints are enforced.
     if (['fast', 'balanced', 'powerful'].includes(tier)) {
       if (ctx) {
+        // When a specific LLM override is set (run-level llm_overrides feature),
+        // allow cross-tier selection so the user's chosen model wins regardless of tier.
+        // Otherwise limit candidates to the requested tier to prevent the cost scorer
+        // from routing agents (classifier=fast, planner/reviewer=powerful) to cheap
+        // models from other tiers (e.g. a 'balanced' budget model winning over 'fast'
+        // or 'powerful' Anthropic profiles purely on cost).
+        const tierCandidates = ctx.preferredLlmId
+          ? this.profiles
+          : this.profiles.filter(p => p.tier === tier)
         const input: SelectLlmInput = {
           node: {
             task_type:        ctx.task_type,
@@ -788,7 +797,10 @@ export class DirectLLMClient implements ILLMClient {
           jurisdictionTags: ctx.jurisdictionTags ?? [],
           preferredLlmId:   ctx.preferredLlmId,
           budgetRemaining:  ctx.budgetRemaining,
-          candidates:       this.profiles,
+          // Use tier-filtered candidates to enforce tier discipline.
+          // Fall back to the full pool only if no same-tier profiles exist
+          // (e.g. admin removed all 'fast' profiles from orchestrator.yaml).
+          candidates: tierCandidates.length > 0 ? tierCandidates : this.profiles,
         }
         const selected = selectLlm(input)
         if (selected) return selected
