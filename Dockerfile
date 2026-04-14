@@ -27,7 +27,8 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# public/ is optional — only copy if it exists (no static assets currently in repo)
+RUN mkdir -p ./public
 COPY orchestrator.yaml ./
 # Prisma schema + migrations — needed by prisma migrate deploy at startup
 COPY --from=builder /app/prisma ./prisma
