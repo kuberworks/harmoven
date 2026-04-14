@@ -59,6 +59,7 @@ else
   POSTGRES_PASS=$(openssl rand -hex 24)
   AUTH_SECRET_VAL=$(openssl rand -base64 32)
   ENC_KEY_VAL=$(openssl rand -base64 32)
+  CRON_SECRET_VAL=$(openssl rand -hex 32)
 
   cp .env.example .env
 
@@ -66,6 +67,7 @@ else
   POSTGRES_PASS="$POSTGRES_PASS" \
   AUTH_SECRET_VAL="$AUTH_SECRET_VAL" \
   ENC_KEY_VAL="$ENC_KEY_VAL" \
+  CRON_SECRET_VAL="$CRON_SECRET_VAL" \
   python3 << 'PYEOF'
 import re, os
 
@@ -73,6 +75,7 @@ content = open('.env').read()
 pg   = os.environ['POSTGRES_PASS']
 auth = os.environ['AUTH_SECRET_VAL']
 enc  = os.environ['ENC_KEY_VAL']
+cron = os.environ['CRON_SECRET_VAL']
 
 # DATABASE_URL: switch localhost → db (Docker internal hostname) + inject password
 content = content.replace(
@@ -87,6 +90,7 @@ content = content.replace(
 content = re.sub(r'POSTGRES_PASSWORD="CHANGE_ME"\s*#[^\n]*', f'POSTGRES_PASSWORD="{pg}"', content)
 content = re.sub(r'AUTH_SECRET=""\s*#[^\n]*', f'AUTH_SECRET="{auth}"', content)
 content = re.sub(r'ENCRYPTION_KEY=""\s*#[^\n]*', f'ENCRYPTION_KEY="{enc}"', content)
+content = re.sub(r'INTERNAL_CRON_SECRET=""\s*#[^\n]*', f'INTERNAL_CRON_SECRET="{cron}"', content)
 
 open('.env', 'w').write(content)
 PYEOF
@@ -94,6 +98,7 @@ PYEOF
   info "POSTGRES_PASSWORD generated"
   info "AUTH_SECRET generated"
   info "ENCRYPTION_KEY generated"
+  info "INTERNAL_CRON_SECRET generated"
 fi
 
 # ── Port auto-detection (first run only) ──────────────────────────────────────
