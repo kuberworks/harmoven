@@ -28,6 +28,7 @@ import { auth }                      from '@/lib/auth'
 import { validateOllamaUrl, validateLLMBaseUrl } from '@/lib/security/ssrf-protection'
 import { ValidationError }           from '@/lib/utils/input-validation'
 import { patchOrchestratorYaml }     from '@/lib/config-git/orchestrator-config'
+import { BUILT_IN_PROFILES }         from '@/lib/llm/profiles'
 
 // ─── Validation ────────────────────────────────────────────────────────────────
 
@@ -269,6 +270,26 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     console.warn('[llm-verify] Failed to update orchestrator.yaml (non-fatal):', err)
+  }
+
+  // Disable built-in profiles that are no longer in the new profiles_active set.
+  // This cleans up stale bootstrap profiles (e.g. ollama_local seeded before the
+  // wizard ran) immediately so Admin → Models shows only the configured provider.
+  // Skipped for litellm because it uses custom DB profiles (no built-in list).
+  if (provider !== 'litellm') {
+    const newActiveIds = PROVIDER_PROFILES[provider] ?? []
+    const builtInIds   = BUILT_IN_PROFILES.map(p => p.id)
+    const toDisable    = builtInIds.filter(id => !newActiveIds.includes(id))
+    if (toDisable.length > 0) {
+      try {
+        await db.llmProfile.updateMany({
+          where: { id: { in: toDisable }, enabled: true },
+          data:  { enabled: false },
+        })
+      } catch (err) {
+        console.warn('[llm-verify] Failed to disable stale built-in profiles (non-fatal):', err)
+      }
+    }
   }
 
   return NextResponse.json({
