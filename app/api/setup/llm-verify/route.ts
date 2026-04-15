@@ -29,6 +29,7 @@ import { validateOllamaUrl, validateLLMBaseUrl } from '@/lib/security/ssrf-prote
 import { ValidationError }           from '@/lib/utils/input-validation'
 import { patchOrchestratorYaml }     from '@/lib/config-git/orchestrator-config'
 import { BUILT_IN_PROFILES }         from '@/lib/llm/profiles'
+import { encryptLlmKey }             from '@/lib/utils/llm-key-crypto'
 
 // ─── Validation ────────────────────────────────────────────────────────────────
 
@@ -279,16 +280,39 @@ export async function POST(req: NextRequest) {
     const newActiveIds = PROVIDER_PROFILES[provider] ?? []
     const builtInIds   = BUILT_IN_PROFILES.map(p => p.id)
 
+    // Encrypt the API key once for storage (if provided — Ollama has no key).
+    // The encrypted value is written into config.api_key_enc of each seeded profile
+    // so the app can call the provider without reading any env var at runtime.
+    // The env var path (Option A) still works as a fallback when api_key_enc is absent.
+    let encryptedKey: string | undefined
+    if (api_key?.trim()) {
+      try {
+        encryptedKey = encryptLlmKey(api_key.trim())
+      } catch {
+        // ENCRYPTION_KEY not configured — skip DB storage, fall back to env var
+        console.warn('[llm-verify] ENCRYPTION_KEY not set — API key will not be stored in DB')
+      }
+    }
+
     // 1. Seed (or re-enable) the new provider's profiles.
     for (const id of newActiveIds) {
       const built = BUILT_IN_PROFILES.find(p => p.id === id)
       if (!built) continue
+      const profileConfig = {
+        ...(built.base_url            ? { base_url:          built.base_url            } : {}),
+        ...(built.api_key_env         ? { api_key_env:       built.api_key_env         } : {}),
+        ...(built.max_output_tokens != null ? { max_output_tokens: built.max_output_tokens } : {}),
+        ...(encryptedKey              ? { api_key_enc:       encryptedKey              } : {}),
+      }
       try {
         await db.llmProfile.upsert({
           where:  { id },
-          // Re-enable if the profile existed but was previously disabled
-          // (e.g. user switching back to a previously configured provider).
-          update: { enabled: true },
+          // Re-enable and update the stored key when the user re-runs the wizard
+          // (e.g. rotating their API key or switching back to a provider).
+          update: {
+            enabled: true,
+            ...(encryptedKey ? { config: profileConfig } : {}),
+          },
           create: {
             id,
             provider:                  built.provider,
@@ -301,11 +325,7 @@ export async function POST(req: NextRequest) {
             trust_tier:                built.trust_tier,
             task_type_affinity:        built.task_type_affinity as string[],
             enabled:                   true,
-            config: {
-              ...(built.base_url            ? { base_url:          built.base_url            } : {}),
-              ...(built.api_key_env         ? { api_key_env:       built.api_key_env         } : {}),
-              ...(built.max_output_tokens != null ? { max_output_tokens: built.max_output_tokens } : {}),
-            },
+            config:                    profileConfig,
           },
         })
       } catch (err) {
