@@ -675,14 +675,14 @@ export function ModelsAdminClient({ initialModels }: ModelsAdminClientProps) {
                   {/* Info */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-foreground font-mono">{m.id}</span>
+                      <span className="text-sm font-medium text-foreground font-mono">{m.model_string}</span>
                       <Badge variant={TIER_VARIANT[m.tier] ?? 'pending'}>{m.tier}</Badge>
                       {!m.enabled && <Badge variant="suspended">disabled</Badge>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
                       <span>{m.provider}</span>
                       <span>·</span>
-                      <span className="font-mono">{m.model_string}</span>
+                      <span className="font-mono text-muted-foreground/60">{m.id}</span>
                       <span>·</span>
                       <span>{(m.context_window / 1000).toFixed(0)}k ctx</span>
                       <span>·</span>
