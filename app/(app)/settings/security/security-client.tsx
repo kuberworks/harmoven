@@ -410,7 +410,7 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
         setTotpDialogOpen(open)
         if (!open) { setTotpCode(''); setTotpPassword(''); setShowManualKey(false) }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           {/* Progress bar */}
           <div className="flex gap-1.5 pt-1" aria-hidden>
             {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
