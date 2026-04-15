@@ -68,37 +68,9 @@ const nextConfig: NextConfig = {
                 },
               ]
             : []),
-          // ── Content-Security-Policy ─────────────────────────────────────────
-          // frame-src 'none' requires gate preview to use subpath mode (Am.73).
-          // connect-src: 'self' + wss:/ws: for SSE streams.
-          // style-src: unsafe-inline retained for Tailwind CSS (no inline-removal
-          //   without a runtime nonce strategy — future enhancement post-T3.9).
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              process.env.NODE_ENV === 'production'
-                ? "script-src 'self'"
-                : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",  // HMR in dev
-              "style-src 'self' 'unsafe-inline'",  // Tailwind inline styles — unsafe-inline
-              // retained because Tailwind v3 emits inline styles; removing it requires a
-              // runtime nonce strategy (future enhancement, post-T3.9).
-              "img-src 'self' data: blob:",
-              "font-src 'self'",
-              // connect-src: SSE streams use EventSource to same-origin paths (/api/…).
-              // ws:/wss: are only needed in dev for Next.js HMR WebSocket.
-              // Wildcard wss:/ws: is removed from production to prevent exfiltration via
-              // arbitrary WebSocket endpoints (I-03).
-              process.env.NODE_ENV === 'production'
-                ? "connect-src 'self'"
-                : "connect-src 'self' ws: wss:",  // HMR WebSocket in dev
-              "frame-src 'none'",               // no iframes
-              "frame-ancestors 'none'",         // no embedding Harmoven
-              "object-src 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join('; '),
-          },
+          // Content-Security-Policy is set per-request in middleware.ts (with nonce)
+          // so that Next.js App Router RSC inline scripts can be allowed without
+          // unsafe-inline. Static headers here would not support per-request nonces.
         ],
       },
     ]

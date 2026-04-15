@@ -120,7 +120,7 @@ export const auth = betterAuth({
       defaultRole: 'user',
     }),
     // Two-factor authentication (TOTP + backup codes)
-    twoFactor(),
+    twoFactor({ issuer: 'Harmoven' }),
     // Passkey (FIDO2/WebAuthn) — package: @better-auth/passkey
     // rpId must be the bare domain (no scheme/port).
     // In dev: 'localhost'. In prod: set AUTH_DOMAIN=app.harmoven.com

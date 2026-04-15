@@ -36,8 +36,15 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
+# Create /data for config-git storage (lib/config-git/paths.ts default).
+# Must run as root (before USER switch) so the dir is owned by nextjs.
+RUN mkdir -p /data && chown nextjs:nodejs /data
 
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
+# HOSTNAME=0.0.0.0 forces Next.js standalone to bind on all interfaces.
+# Without this, Docker sets HOSTNAME to the container name which resolves to
+# the container's internal IP only — breaking port forwarding and health checks.
+ENV HOSTNAME=0.0.0.0
 CMD ["./entrypoint.sh"]

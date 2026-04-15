@@ -63,7 +63,7 @@ export function LoginForm({ allowSignup }: Props) {
     if (isPendingEmail) return
     setIsPendingEmail(true)
     try {
-      const { error } = await authClient.signIn.email({
+      const { data, error } = await authClient.signIn.email({
         email,
         password,
         callbackURL,
@@ -74,6 +74,13 @@ export function LoginForm({ allowSignup }: Props) {
           title: 'Sign in failed',
           description: error.message ?? 'Invalid email or password',
         })
+      } else if ((data as Record<string, unknown> | null)?.twoFactorRedirect === true) {
+        // Better Auth signals that TOTP verification is required before the session
+        // is fully established. Redirect to the challenge page, preserving the
+        // original destination so the user lands there after verification.
+        const dest = new URLSearchParams()
+        dest.set('callbackURL', callbackURL)
+        router.push(`/login/two-factor?${dest.toString()}`)
       } else {
         router.push(callbackURL)
       }
