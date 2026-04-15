@@ -1033,17 +1033,17 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
     }
   }
 
-  // Seed BUILT_IN_PROFILES for the active ids listed in orchestrator.yaml.
-  // Upsert is idempotent — admin-customised rows are never overwritten.
   const activeIds = config.llm?.profiles_active ?? []
+
+  // Seed built-in profiles explicitly listed in orchestrator.yaml (idempotent upsert).
   if (activeIds.length > 0) {
     await seedMissingProfilesToDb(activeIds, db)
-  } else {
-    // No explicit list — auto-detect the first provider with a key configured.
-    await seedMissingProfilesToDb([detectFallbackProfileId()], db)
   }
 
-  // Load all enabled profiles from DB — this is the live source of truth.
+  // DB is the live source of truth. Load it BEFORE deciding whether to seed a
+  // fallback — the admin may have configured keys via the UI (api_key_enc) with
+  // no env vars at all, so we must not unconditionally overwrite with an
+  // env-detected default.
   const rows = await db.llmProfile.findMany({ where: { enabled: true } })
   const dbProfiles: LlmProfileConfig[] = rows.map(dbRowToLlmProfileConfig)
 
@@ -1053,9 +1053,17 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   const profiles       = [...dbProfiles, ...pluginProfiles]
 
   if (profiles.length === 0) {
-    // Absolute fallback — should never happen after seeding, but guard anyway.
-    console.warn('[LLM] No enabled profiles in DB — using built-in defaults.')
-    return new DirectLLMClient(loadActiveProfiles(activeIds.length > 0 ? activeIds : [detectFallbackProfileId()]))
+    // DB is empty (fresh install, no admin config yet).
+    // Seed a single bootstrap profile based on which provider key is available
+    // in the environment — this is a one-time first-run convenience only.
+    const bootstrapId = detectFallbackProfileId()
+    console.warn(`[LLM] No enabled profiles in DB — seeding bootstrap profile "${bootstrapId}".`)
+    await seedMissingProfilesToDb([bootstrapId], db)
+    const bootstrapRows = await db.llmProfile.findMany({ where: { enabled: true } })
+    const bootstrapProfiles = bootstrapRows.map(dbRowToLlmProfileConfig)
+    if (bootstrapProfiles.length > 0) return new DirectLLMClient(bootstrapProfiles)
+    // Absolute last resort (DB unavailable, etc.) — in-memory only.
+    return new DirectLLMClient(loadActiveProfiles([bootstrapId]))
   }
 
   return new DirectLLMClient(profiles)
