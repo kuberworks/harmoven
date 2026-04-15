@@ -307,10 +307,14 @@ export async function POST(req: NextRequest) {
       try {
         await db.llmProfile.upsert({
           where:  { id },
-          // Re-enable and update the stored key when the user re-runs the wizard
-          // (e.g. rotating their API key or switching back to a provider).
+          // Re-enable and sync model_string/pricing when the user re-runs the wizard
+          // (e.g. rotating their API key or after a code update).
           update: {
-            enabled: true,
+            enabled:                   true,
+            model_string:              built.model_string,
+            cost_per_1m_input_tokens:  built.cost_per_1m_input_tokens,
+            cost_per_1m_output_tokens: built.cost_per_1m_output_tokens,
+            context_window:            built.context_window,
             ...(encryptedKey ? { config: profileConfig } : {}),
           },
           create: {
