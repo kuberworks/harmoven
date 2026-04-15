@@ -102,14 +102,21 @@ async function verifyOllama(ollamaUrl?: string): Promise<void> {
   if (!res.ok) throw new Error(`Ollama returned HTTP ${res.status} from ${base}`)
 }
 
-// ─── Env var hint per provider ────────────────────────────────────────────────
+// ─── Env var mapping per provider ────────────────────────────────────────────
+// Maps provider id → the env var name that holds its API key.
+// Used to fall back to env vars when no api_key is submitted (wizard
+// "already configured" path) and to populate the hint shown in API responses.
 
-const ENV_VAR_HINT: Record<string, string> = {
+const ENV_KEY_MAP: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai:    'OPENAI_API_KEY',
   gemini:    'GOOGLE_API_KEY',
-  ollama:    '(no key needed)',
-  litellm:   'LITELLM_API_KEY (set if needed)',
+}
+
+const ENV_VAR_HINT: Record<string, string> = {
+  ...ENV_KEY_MAP,
+  ollama:  '(no key needed)',
+  litellm: 'LITELLM_API_KEY (set if needed)',
 }
 
 // ─── Provider → default profiles_active mapping ──────────────────────────────
@@ -146,8 +153,15 @@ export async function POST(req: NextRequest) {
 
   const { provider, api_key, ollama_url, litellm_url, models } = parsed.data
 
-  // api_key is required for classic cloud providers (not Ollama or custom LiteLLM endpoints)
-  if (provider !== 'ollama' && provider !== 'litellm' && !api_key?.trim()) {
+  // Resolve the effective API key: explicit body value takes priority, then
+  // the env var for this provider (the "already configured" wizard path).
+  // Ollama and litellm never need a key this way.
+  const effectiveKey =
+    api_key?.trim() ||
+    (ENV_KEY_MAP[provider] ? process.env[ENV_KEY_MAP[provider]] : undefined)
+
+  // api_key is required for classic cloud providers UNLESS the env var is already set
+  if (provider !== 'ollama' && provider !== 'litellm' && !effectiveKey) {
     return NextResponse.json({ error: 'api_key is required for this provider' }, { status: 422 })
   }
 
@@ -181,7 +195,7 @@ export async function POST(req: NextRequest) {
 
   // ── Verify provider connection ──────────────────────────────────────────────
   try {
-    const key = api_key?.trim() ?? ''
+    const key = effectiveKey ?? ''
     switch (provider) {
       case 'anthropic': await verifyAnthropic(key);             break
       case 'openai':    await verifyOpenAI(key);                break
@@ -285,9 +299,9 @@ export async function POST(req: NextRequest) {
     // so the app can call the provider without reading any env var at runtime.
     // The env var path (Option A) still works as a fallback when api_key_enc is absent.
     let encryptedKey: string | undefined
-    if (api_key?.trim()) {
+    if (effectiveKey) {
       try {
-        encryptedKey = encryptLlmKey(api_key.trim())
+        encryptedKey = encryptLlmKey(effectiveKey)
       } catch {
         // ENCRYPTION_KEY not configured — skip DB storage, fall back to env var
         console.warn('[llm-verify] ENCRYPTION_KEY not set — API key will not be stored in DB')

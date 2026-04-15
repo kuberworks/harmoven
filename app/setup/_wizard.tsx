@@ -124,7 +124,13 @@ const PROVIDER_KEY_LINK: Record<string, string> = {
 
 // ── Main wizard ───────────────────────────────────────────────────────────────
 
-export function SetupWizard() {
+interface SetupWizardProps {
+  /** Provider ids ('anthropic' | 'openai' | 'gemini') whose API key is already
+   *  present in the server environment. The key values are never sent to the client. */
+  detectedProviders: string[]
+}
+
+export function SetupWizard({ detectedProviders }: SetupWizardProps) {
   const router = useRouter()
   const { toast } = useToast()
   const searchParams = useSearchParams()
@@ -146,13 +152,19 @@ export function SetupWizard() {
   // was found. Ensures a clean state if the user ever returns to /setup.
   useEffect(() => { sessionStorage.removeItem('hv_setup_retries') }, [])
 
+  // Auto-select the first provider whose key is already in the environment.
+  // Falls back to 'anthropic' when none are detected.
+  const defaultProvider = (
+    (['anthropic', 'openai', 'gemini'] as const).find(p => detectedProviders.includes(p)) ?? 'anthropic'
+  )
+
   const [form, setForm] = useState<FormState>({
     orgName: '',
     adminName: '',
     adminEmail: '',
     adminPassword: '',
     adminCreated: false,
-    llmProvider: 'anthropic',
+    llmProvider: defaultProvider,
     apiKey: '',
     ollamaUrl: '',
     litellmUrl: '',
@@ -294,8 +306,9 @@ export function SetupWizard() {
     setCustomModels(prev => prev?.map(m => m.id === id ? { ...m, tier } : m) ?? null)
   }
 
-  const pw      = passwordStrength(form.adminPassword)
-  const keyLink = PROVIDER_KEY_LINK[form.llmProvider] ?? ''
+  const pw          = passwordStrength(form.adminPassword)
+  const keyLink     = PROVIDER_KEY_LINK[form.llmProvider] ?? ''
+  const keyDetected = detectedProviders.includes(form.llmProvider)
 
   return (
     <>
@@ -468,6 +481,11 @@ export function SetupWizard() {
                               Recommended
                             </span>
                           )}
+                          {detectedProviders.includes(p.value) && (
+                            <span className="flex items-center gap-0.5 rounded-badge bg-[var(--color-status-completed)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-status-completed)]">
+                              <CheckCircle2 className="h-2.5 w-2.5" /> Ready
+                            </span>
+                          )}
                         </div>
                         {p.sublabel && <div className="text-xs text-muted-foreground">{p.sublabel}</div>}
                       </div>
@@ -606,29 +624,45 @@ export function SetupWizard() {
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="api-key">API key</Label>
-                      {keyLink && (
-                        <a
-                          href={keyLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-[var(--accent-amber-9)] hover:underline"
-                        >
-                          Get your API key <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
+                  <div className="space-y-2">
+                    {keyDetected && (
+                      <div className="flex items-start gap-2 rounded-lg border border-[var(--color-status-completed)] bg-[var(--color-status-completed)]/10 px-3 py-2">
+                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-status-completed)]" />
+                        <p className="text-xs text-[var(--color-status-completed)]">
+                          <span className="font-semibold">API key already configured.</span>{' '}
+                          Leave the field below empty to use it, or enter a different key to override.
+                        </p>
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="api-key">
+                          API key{' '}
+                          {keyDetected && (
+                            <span className="font-normal text-muted-foreground">(optional)</span>
+                          )}
+                        </Label>
+                        {keyLink && (
+                          <a
+                            href={keyLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-[var(--accent-amber-9)] hover:underline"
+                          >
+                            Get your API key <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                      <Input
+                        id="api-key"
+                        type="password"
+                        placeholder={keyDetected ? 'Leave empty to use the pre-configured key' : 'sk-ant-…'}
+                        value={form.apiKey}
+                        onChange={e => update('apiKey', e.target.value)}
+                        required={!keyDetected}
+                        autoComplete="off"
+                      />
                     </div>
-                    <Input
-                      id="api-key"
-                      type="password"
-                      placeholder="sk-ant-…"
-                      value={form.apiKey}
-                      onChange={e => update('apiKey', e.target.value)}
-                      required
-                      autoComplete="off"
-                    />
                   </div>
                 )}
 

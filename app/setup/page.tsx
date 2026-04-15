@@ -77,6 +77,17 @@ export default async function SetupPage({
     )
   }
 
+  // Detect which providers already have their API key in the environment.
+  // We only expose presence (boolean) — the key values are never forwarded to the client.
+  const ENV_KEY_MAP: Record<string, string> = {
+    anthropic: 'ANTHROPIC_API_KEY',
+    openai:    'OPENAI_API_KEY',
+    gemini:    'GOOGLE_API_KEY',
+  }
+  const detectedProviders = Object.entries(ENV_KEY_MAP)
+    .filter(([, envVar]) => !!process.env[envVar])
+    .map(([provider]) => provider)
+
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-surface-base px-4 py-12">
       {/* Background glow */}
@@ -94,7 +105,7 @@ export default async function SetupPage({
 
       <div className="relative z-10 w-full max-w-[480px] animate-fade-in">
         <Suspense fallback={<div className="flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
-          <SetupWizard />
+          <SetupWizard detectedProviders={detectedProviders} />
         </Suspense>
       </div>
     </div>
