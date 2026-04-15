@@ -139,8 +139,9 @@ fi
 # Check if any LLM key is already set in .env
 HAS_LLM_KEY=false
 for key in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_AI_API_KEY MISTRAL_API_KEY; do
-  val=$(grep "^${key}=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
-  if [ -n "$val" ] && [ "$val" != '""' ]; then
+  # Strip inline comments, quotes, and whitespace before testing emptiness.
+  val=$(grep "^${key}=" .env 2>/dev/null | cut -d'=' -f2- | sed 's/#.*//' | tr -d '"' | tr -d "'" | tr -d ' ' || true)
+  if [ -n "$val" ]; then
     HAS_LLM_KEY=true
     info "$key is set"
     break
