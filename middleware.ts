@@ -55,10 +55,11 @@ const PUBLIC_PATHS = [
 
 /**
  * Paths that instance_admin accounts with pending 2FA can still access.
- * /auth/two-factor  — Better Auth's built-in 2FA challenge page
- * /auth/two-factor/* — 2FA verification sub-routes
+ * /settings/security — where the admin activates TOTP (avoids bootstrap loop).
+ * /settings/profile  — needed to reach security tab in some layouts.
+ * /api/auth          — Better Auth 2FA API endpoints (enable, verify, etc.).
  */
-const MFA_ALLOWED_PATHS = ['/auth/two-factor']
+const MFA_ALLOWED_PATHS = ['/settings/security', '/settings/profile', '/api/auth', '/mfa-setup']
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'))
@@ -120,7 +121,36 @@ async function isMfaRequiredForAdmin(): Promise<boolean> {
  */
 const SESSION_COOKIE_NAME = 'better-auth.session_token'
 
-export async function middleware(request: NextRequest): Promise<NextResponse> {
+/**
+ * Per-request Content-Security-Policy value.
+ * Moved from next.config.ts static headers to middleware so a nonce can be
+ * injected per-request — required for Next.js App Router RSC inline scripts.
+ *
+ * Production: nonce + strict-dynamic allows Next.js hydration scripts.
+ *   strict-dynamic propagates trust from the nonce to scripts it loads, so
+ *   every script src does not need to be whitelisted explicitly.
+ * Dev: unsafe-eval + unsafe-inline for HMR.
+ */
+function buildCsp(nonce: string): string {
+  const isProd = process.env.NODE_ENV === 'production'
+  return [
+    "default-src 'self'",
+    isProd
+      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+      : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",  // HMR in dev
+    "style-src 'self' 'unsafe-inline'",  // Tailwind inline styles
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    isProd ? "connect-src 'self'" : "connect-src 'self' ws: wss:",  // HMR WebSocket in dev
+    "frame-src 'none'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ')
+}
+
+async function handleRequest(request: NextRequest, requestHeaders: Headers): Promise<NextResponse> {
   const { pathname } = request.nextUrl
 
   // ── First-run guard ──────────────────────────────────────────────────────────
@@ -139,7 +169,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
 
   if (isPublic(pathname)) {
-    return NextResponse.next()
+    return NextResponse.next({ request: { headers: requestHeaders } })
   }
 
   // BUG-001 FIX — Fast-exit when no session cookie is present.
@@ -225,13 +255,12 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
       if (enforceMfa && body.user?.twoFactorEnabled !== true) {
         console.error(
           `[harmoven] SECURITY: instance_admin user id="${body.user?.id ?? 'unknown'}" `
-          + `is accessing the system without 2FA configured — blocking access until 2FA is enabled.`,
+          + `is accessing the system without 2FA configured — redirecting to security settings.`,
         )
         if (!isMfaAllowed(pathname)) {
-          const mfaSetupUrl = new URL('/auth/two-factor', request.url)
-          mfaSetupUrl.searchParams.set('callbackURL', pathname)
-          mfaSetupUrl.searchParams.set('setup', '1')
-          return NextResponse.redirect(mfaSetupUrl)
+          // /auth/two-factor does not exist — redirect to the dedicated MFA setup page.
+          // Without this, a freshly-created admin account is locked out (infinite redirect loop).
+          return NextResponse.redirect(new URL('/mfa-setup', request.url))
         }
       }
 
@@ -251,13 +280,18 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
         body.session?.twoFactorVerified !== true &&
         !isMfaAllowed(pathname)
       ) {
-        const mfaUrl = new URL('/auth/two-factor', request.url)
-        mfaUrl.searchParams.set('callbackURL', pathname)
-        return NextResponse.redirect(mfaUrl)
+        // Better Auth handles the TOTP challenge via its own API flow when
+        // signIn.email() is called — the client is redirected by the authClient.
+        // If the session somehow has twoFactorEnabled but not twoFactorVerified
+        // (e.g. resumed after expiry), redirect to login so Better Auth restarts
+        // the challenge flow from a clean state.
+        const loginUrl = new URL('/login', request.url)
+        loginUrl.searchParams.set('callbackURL', pathname)
+        return NextResponse.redirect(loginUrl)
       }
     }
 
-    return NextResponse.next()
+    return NextResponse.next({ request: { headers: requestHeaders } })
   }
 
   // No valid session — redirect to /login, preserving the intended path as callbackURL.
@@ -267,6 +301,24 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const loginUrl = new URL('/login', request.url)
   loginUrl.searchParams.set('callbackURL', pathname)
   return NextResponse.redirect(loginUrl)
+}
+
+/**
+ * Exported middleware: generates a per-request nonce, injects it into the
+ * request headers (so Server Components can read it via headers().get('x-nonce'))
+ * and attaches the CSP header to every response.
+ *
+ * Next.js App Router reads x-nonce to add nonce attributes to the inline
+ * <script> tags it generates for RSC hydration — without this they are
+ * blocked by 'script-src self' in production.
+ */
+export async function middleware(request: NextRequest): Promise<NextResponse> {
+  const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-nonce', nonce)
+  const response = await handleRequest(request, requestHeaders)
+  response.headers.set('Content-Security-Policy', buildCsp(nonce))
+  return response
 }
 
 export const config = {

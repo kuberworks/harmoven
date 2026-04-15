@@ -96,10 +96,12 @@ ANTHROPIC_API_KEY=sk-ant-...         # or OPENAI_API_KEY / GOOGLE_AI_API_KEY
 #### 2. Start
 
 ```bash
-docker compose up -d
+bash quickstart.sh
 ```
 
-The app builds the image, starts PostgreSQL, and runs `prisma migrate deploy` automatically before serving traffic. The app starts at **http://localhost:3000**.
+> **Always use `bash quickstart.sh`** to start Harmoven — including restarts. It unsets any conflicting shell variables before calling Docker Compose, which prevents port binding failures when a dev instance is running in the same shell session. Running `docker compose up -d` directly can fail if your shell exports `HARMOVEN_PORT`, `HARMOVEN_DB_PORT`, or `POSTGRES_PASSWORD`.
+
+The app builds the image, starts PostgreSQL, and runs `prisma migrate deploy` automatically before serving traffic. The app starts at **http://localhost:3000** (or the auto-selected port printed by the script).
 
 On first boot a **setup token** is printed in the logs. Open `/setup`, enter the token, and complete the wizard (admin account + LLM profile + organisation preset).
 

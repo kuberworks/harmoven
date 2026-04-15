@@ -112,7 +112,7 @@ if [ "$ENV_EXISTED" = "false" ]; then
   # Append port vars and update AUTH_URL atomically
   echo "HARMOVEN_PORT=${APP_PORT}" >> .env
   echo "HARMOVEN_DB_PORT=${DB_PORT}" >> .env
-  sed -i.bak "s|AUTH_URL=http://localhost:3000|AUTH_URL=http://localhost:${APP_PORT}|" .env \
+  sed -i.bak "s|AUTH_URL=\"http://localhost:3000\"|AUTH_URL=\"http://localhost:${APP_PORT}\"|" .env \
     && rm -f .env.bak
 
   if [ "$APP_PORT" != "3000" ] || [ "$DB_PORT" != "5432" ]; then
@@ -172,10 +172,12 @@ fi
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 step "Starting Harmoven..."
-# Unset any shell-inherited port variables so Docker Compose reads them
+# Unset any shell-inherited Harmoven variables so Docker Compose reads them
 # exclusively from .env — shell env takes precedence over .env in Compose,
-# which would cause port conflicts if the user has these vars exported.
+# which causes conflicts when a dev instance exports these vars in the shell.
 unset HARMOVEN_PORT HARMOVEN_DB_PORT
+unset POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB DATABASE_URL
+unset AUTH_SECRET AUTH_URL ENCRYPTION_KEY INTERNAL_CRON_SECRET
 docker compose up -d --build
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -185,8 +187,10 @@ PORT="${PORT:-3000}"
 URL="http://localhost:${PORT}"
 
 ATTEMPTS=0
-MAX=40
-until curl -sf "${URL}/api/health" >/dev/null 2>&1; do
+MAX=60
+# Use 127.0.0.1 instead of localhost to avoid IPv6 (::1) resolution on macOS/Linux.
+HEALTH_URL="http://127.0.0.1:${PORT}/api/health"
+until curl -sf "${HEALTH_URL}" >/dev/null 2>&1; do
   ATTEMPTS=$((ATTEMPTS + 1))
   if [ "$ATTEMPTS" -ge "$MAX" ]; then
     error "Harmoven did not become healthy in time."
