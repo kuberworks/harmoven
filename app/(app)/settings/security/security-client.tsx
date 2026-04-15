@@ -42,6 +42,7 @@ interface Props {
   sessions: SessionRow[]
   passkeys: PasskeyRow[]
   totpEnabled: boolean
+  userEmail: string
 }
 
 function parseBrowser(ua: string | null | undefined): string {
@@ -57,7 +58,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export function SecurityClient({ sessions: initialSessions, passkeys: initialPasskeys, totpEnabled }: Props) {
+export function SecurityClient({ sessions: initialSessions, passkeys: initialPasskeys, totpEnabled, userEmail }: Props) {
   const { toast } = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -448,20 +449,20 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               className="space-y-1.5"
             >
               {/*
-                Apple Keychain (and most password managers) require a username/email
-                field in the same form to associate the stored credential and offer
-                autofill. type="text" is required — type="hidden" is ignored by most
-                managers. sr-only + aria-hidden hides it visually and from screen
-                readers while keeping it discoverable by autofill heuristics.
+                Apple Keychain requires a username/email field in the same form,
+                pre-populated with the current user's email, to match the stored
+                credential and offer autofill. Keep type="text" (type="hidden" is
+                ignored). opacity-0 hides it visually without clipping, which
+                some autofill engines skip. No aria-hidden — Safari autofill
+                checks the accessibility tree and skips aria-hidden fields.
               */}
               <input
                 type="text"
                 name="username"
                 autoComplete="username email"
-                defaultValue={undefined}
-                aria-hidden="true"
+                defaultValue={userEmail}
                 tabIndex={-1}
-                className="sr-only"
+                className="opacity-0 absolute w-px h-px pointer-events-none"
               />
               <Label htmlFor="totp-password-input">{t('settings.totp_password_label')}</Label>
               <Input
