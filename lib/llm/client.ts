@@ -36,6 +36,7 @@ import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
 import { validateLLMBaseUrl, assertLocalHost } from '@/lib/security/ssrf-protection'
 import { decryptLlmKey }                      from '@/lib/utils/llm-key-crypto'
+import { getLlmPlugin, getPluginProfiles }    from './plugin-loader'
 
 // ─── Orchestrator YAML types ───────────────────────────────────────────────────
 
@@ -907,8 +908,11 @@ export class DirectLLMClient implements ILLMClient {
       case 'mistral':   return callOpenAI(profile, messages, options)  // OpenAI-compat
       case 'custom':    return callOpenAI(profile, messages, options)  // OpenAI-compat
       case 'gemini':    return callGemini(profile, messages, options)
-      default:
+      default: {
+        const plugin = getLlmPlugin(profile.provider)
+        if (plugin) return plugin.chat(profile, messages, options)
         throw new Error(`[DirectLLMClient] Unknown provider: "${profile.provider}"`)
+      }
     }
   }
 
@@ -927,8 +931,11 @@ export class DirectLLMClient implements ILLMClient {
       case 'mistral':   return streamOpenAI(profile, messages, options, onChunk)  // OpenAI-compat
       case 'custom':    return streamOpenAI(profile, messages, options, onChunk)  // OpenAI-compat
       case 'gemini':    return streamGemini(profile, messages, options, onChunk)
-      default:
+      default: {
+        const plugin = getLlmPlugin(profile.provider)
+        if (plugin) return plugin.stream(profile, messages, options, onChunk)
         throw new Error(`[DirectLLMClient] Unknown provider: "${profile.provider}"`)
+      }
     }
   }
 }
@@ -1033,17 +1040,22 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
     await seedMissingProfilesToDb(activeIds, db)
   } else {
     // No explicit list — seed the default fallback profile.
-    await seedMissingProfilesToDb(['claude-3-5-haiku-20241022'], db)
+    await seedMissingProfilesToDb(['claude-haiku-4-5'], db)
   }
 
   // Load all enabled profiles from DB — this is the live source of truth.
   const rows = await db.llmProfile.findMany({ where: { enabled: true } })
-  const profiles: LlmProfileConfig[] = rows.map(dbRowToLlmProfileConfig)
+  const dbProfiles: LlmProfileConfig[] = rows.map(dbRowToLlmProfileConfig)
+
+  // Merge plugin profiles (runtime-only, not stored in DB).
+  // DB-stored versions win when the same id exists in both (admin customisation preserved).
+  const pluginProfiles = getPluginProfiles().filter(pp => !dbProfiles.find(p => p.id === pp.id))
+  const profiles       = [...dbProfiles, ...pluginProfiles]
 
   if (profiles.length === 0) {
     // Absolute fallback — should never happen after seeding, but guard anyway.
     console.warn('[LLM] No enabled profiles in DB — using built-in defaults.')
-    return new DirectLLMClient(loadActiveProfiles(activeIds.length > 0 ? activeIds : ['claude-3-5-haiku-20241022']))
+    return new DirectLLMClient(loadActiveProfiles(activeIds.length > 0 ? activeIds : ['claude-haiku-4-5']))
   }
 
   return new DirectLLMClient(profiles)
