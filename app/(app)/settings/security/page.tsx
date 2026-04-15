@@ -81,6 +81,7 @@ export default async function SecurityPage() {
         sessions={serializedSessions}
         passkeys={passkeys}
         totpEnabled={totpEnabled}
+        userEmail={session.user.email ?? ''}
       />
     </div>
   )
