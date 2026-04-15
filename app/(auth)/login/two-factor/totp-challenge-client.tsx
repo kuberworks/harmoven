@@ -55,12 +55,15 @@ export function TotpChallengeClient() {
         body: JSON.stringify({ code }),
       })
 
-      // Better Auth returns a 302 to callbackURL on success (it stores callbackURL
-      // in the two_factor_pending cookie during signIn.email). With redirect:'manual'
-      // this 302 appears as opaqueredirect — navigate to callbackURL and let the
-      // middleware decide: valid session → dashboard, expired → back to login.
+      // Better Auth returns a 302 to callbackURL on success and sets the session
+      // cookie in that same response. With redirect:'manual' the 302 becomes
+      // opaqueredirect. router.replace() is a client-side navigation that fires
+      // before the browser commits Set-Cookie headers from the opaque response —
+      // the middleware then sees no session cookie and redirects to /login.
+      // window.location.href is a full page reload that only runs after all
+      // cookie writes from the current response are committed.
       if (res.type === 'opaqueredirect' || res.status === 0) {
-        router.replace(callbackURL)
+        window.location.href = callbackURL
         return
       }
 
