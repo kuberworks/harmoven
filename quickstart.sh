@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # quickstart.sh — Harmoven one-command setup
-# Usage: bash quickstart.sh [--llm]
+# Usage: bash quickstart.sh [--dev] [--llm]
 #
 # What this script does:
 #   1. Checks prerequisites (Docker, openssl)
-#   2. Generates .env with random secrets (if .env does not exist)
-#   3. Starts Harmoven with docker compose
-#   4. Prints the first-run setup URL  → complete via the web wizard
+#   2. Starts Harmoven with docker compose
+#   3. Prints the first-run setup URL  → complete via the web wizard
+#
+# Environment variable sources:
+#   Production / enterprise: inject via shell (secret manager, CI, etc.) — no .env needed.
+#   Development: create .env manually (cp .env.example .env) or use --dev below.
 #
 # Flags:
-#   --llm   Prompt for an LLM API key now (write it to .env).
-#           Omit this flag to skip — configure keys later via Admin → Models.
+#   --dev   Auto-generate .env with random secrets from .env.example.
+#           Use for local development on a fresh checkout.
+#   --llm   (only with --dev) Also prompt for an LLM API key and write it to .env.
+#           Without --dev this flag is ignored; configure keys later via Admin → Models.
 #
 # To restart without regenerating secrets:
 #   docker compose up -d
@@ -18,14 +23,15 @@
 set -euo pipefail
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
-# LLM key prompt is OFF by default — configure keys via Admin → Models instead.
+GENERATE_ENV=false
 SKIP_LLM=true
 for arg in "$@"; do
   case "$arg" in
+    --dev) GENERATE_ENV=true ;;
     --llm) SKIP_LLM=false ;;
   esac
 done
-# Always skip when stdin is not a terminal (CI/pipe/non-interactive)
+# Always skip LLM prompt when stdin is not a terminal (CI/pipe/non-interactive)
 [ -t 0 ] || SKIP_LLM=true
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -61,15 +67,16 @@ command -v python3 >/dev/null 2>&1  || { error "python3 is required (usually pre
 info "Docker $(docker --version | grep -o '[0-9.]*' | head -1)"
 info "Docker Compose $(docker compose version --short)"
 
-# ── .env generation ───────────────────────────────────────────────────────────
+# ── .env handling ─────────────────────────────────────────────────────────────
 step "Configuring environment..."
 
-ENV_EXISTED=true
+ENV_FILE_PRESENT=false
 if [ -f .env ]; then
-  warn ".env already exists — skipping secret generation. Delete .env to regenerate."
-else
-  ENV_EXISTED=false
-  info "Generating .env with random secrets..."
+  ENV_FILE_PRESENT=true
+  warn ".env already exists — using it as-is. Delete .env to regenerate."
+elif [ "$GENERATE_ENV" = "true" ]; then
+  ENV_FILE_PRESENT=true
+  info "Generating .env with random secrets (--dev mode)..."
 
   POSTGRES_PASS=$(openssl rand -hex 24)
   AUTH_SECRET_VAL=$(openssl rand -base64 32)
@@ -114,17 +121,14 @@ PYEOF
   info "AUTH_SECRET generated"
   info "ENCRYPTION_KEY generated"
   info "INTERNAL_CRON_SECRET generated"
-fi
 
-# ── Port auto-detection (first run only) ──────────────────────────────────────
-if [ "$ENV_EXISTED" = "false" ]; then
+  # Port auto-detection (only when generating a fresh .env)
   APP_PORT=3000
   while port_in_use "$APP_PORT"; do APP_PORT=$((APP_PORT + 1)); done
 
   DB_PORT=5432
   while port_in_use "$DB_PORT"; do DB_PORT=$((DB_PORT + 1)); done
 
-  # Append port vars and update AUTH_URL atomically
   echo "HARMOVEN_PORT=${APP_PORT}" >> .env
   echo "HARMOVEN_DB_PORT=${DB_PORT}" >> .env
   sed -i.bak "s|AUTH_URL=\"http://localhost:3000\"|AUTH_URL=\"http://localhost:${APP_PORT}\"|" .env \
@@ -135,10 +139,13 @@ if [ "$ENV_EXISTED" = "false" ]; then
   else
     info "Ports: app=${APP_PORT}, db=${DB_PORT}"
   fi
+else
+  info "No .env file — env vars will be read from the shell environment."
+  info "  (For local dev: run 'bash quickstart.sh --dev' to auto-generate a .env)"
 fi
 
-# ── LLM API key ───────────────────────────────────────────────────────────────
-# Check if any LLM key is already set in .env
+# ── LLM API key (only relevant when using a .env file) ────────────────────────
+if [ "$ENV_FILE_PRESENT" = "true" ]; then
 HAS_LLM_KEY=false
 for key in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_AI_API_KEY MISTRAL_API_KEY; do
   # Strip inline comments, quotes, and whitespace before testing emptiness.
@@ -186,20 +193,24 @@ if [ "$HAS_LLM_KEY" = "false" ]; then
     esac
   fi
 fi
+fi  # ENV_FILE_PRESENT
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 step "Starting Harmoven..."
-# Unset any shell-inherited Harmoven variables so Docker Compose reads them
-# exclusively from .env — shell env takes precedence over .env in Compose,
-# which causes conflicts when a dev instance exports these vars in the shell.
-unset HARMOVEN_PORT HARMOVEN_DB_PORT
-unset POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB DATABASE_URL
-unset AUTH_SECRET AUTH_URL ENCRYPTION_KEY INTERNAL_CRON_SECRET
+if [ "$ENV_FILE_PRESENT" = "true" ]; then
+  # Unset shell-inherited vars so Docker Compose reads exclusively from .env.
+  # Shell env takes precedence over .env in Compose, causing conflicts when a
+  # dev instance exports these vars in the shell.
+  unset HARMOVEN_PORT HARMOVEN_DB_PORT
+  unset POSTGRES_PASSWORD POSTGRES_USER POSTGRES_DB DATABASE_URL
+  unset AUTH_SECRET AUTH_URL ENCRYPTION_KEY INTERNAL_CRON_SECRET
+fi
 docker compose up -d --build
 
 # ── Health check ──────────────────────────────────────────────────────────────
 step "Waiting for Harmoven to be ready..."
-PORT=$(grep '^HARMOVEN_PORT=' .env 2>/dev/null | cut -d'=' -f2 || echo "3000")
+# Prefer .env if present, fall back to shell env var, then default to 3000.
+PORT=$(grep '^HARMOVEN_PORT=' .env 2>/dev/null | cut -d'=' -f2 || echo "${HARMOVEN_PORT:-3000}")
 PORT="${PORT:-3000}"
 URL="http://localhost:${PORT}"
 
