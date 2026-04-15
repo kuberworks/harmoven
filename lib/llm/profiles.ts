@@ -150,11 +150,11 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
   {
     id:                       'gpt-4o-mini',
     provider:                 'openai',
-    model_string:             'gpt-4o-mini',
+    model_string:             'gpt-5.4-nano',   // replaces gpt-4o-mini — https://developers.openai.com/api/docs/pricing
     tier:                     'fast',
     context_window:           128_000,
-    cost_per_1m_input_tokens:  0.15,
-    cost_per_1m_output_tokens: 0.60,
+    cost_per_1m_input_tokens:  0.20,
+    cost_per_1m_output_tokens: 1.25,
     jurisdiction:             'us',
     trust_tier:               1,
     task_type_affinity:       ['intent_classification', 'simple_coding_tasks'],
@@ -163,11 +163,11 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
   {
     id:                       'gpt-4o',
     provider:                 'openai',
-    model_string:             'gpt-4o',
+    model_string:             'gpt-5.4-mini',   // replaces gpt-4o — https://developers.openai.com/api/docs/pricing
     tier:                     'balanced',
     context_window:           128_000,
-    cost_per_1m_input_tokens:  2.50,
-    cost_per_1m_output_tokens: 10.00,
+    cost_per_1m_input_tokens:  0.75,
+    cost_per_1m_output_tokens: 4.50,
     jurisdiction:             'us',
     trust_tier:               1,
     task_type_affinity:       ['document_analysis', 'report_writing', 'marketing_content'],
