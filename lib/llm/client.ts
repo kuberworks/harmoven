@@ -1027,8 +1027,9 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   const { db } = await import('@/lib/db/client') as unknown as {
     db: {
       llmProfile: {
-        findMany: (args: PrismaTypes.LlmProfileFindManyArgs) => Promise<LlmProfile[]>
-        upsert:   (args: PrismaTypes.LlmProfileUpsertArgs)    => Promise<LlmProfile>
+        findMany:   (args: PrismaTypes.LlmProfileFindManyArgs)   => Promise<LlmProfile[]>
+        upsert:     (args: PrismaTypes.LlmProfileUpsertArgs)     => Promise<LlmProfile>
+        updateMany: (args: PrismaTypes.LlmProfileUpdateManyArgs) => Promise<PrismaTypes.BatchPayload>
       }
     }
   }
@@ -1038,6 +1039,24 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   // Seed built-in profiles explicitly listed in orchestrator.yaml (idempotent upsert).
   if (activeIds.length > 0) {
     await seedMissingProfilesToDb(activeIds, db)
+
+    // Disable built-in profiles that are no longer in profiles_active.
+    // This cleans up stale bootstrap profiles (e.g. ollama_local seeded before the
+    // wizard ran) and old provider profiles when the user switches providers.
+    // Custom profiles added via the admin UI are never touched (they have ids not
+    // present in BUILT_IN_PROFILES).
+    const builtInIds = BUILT_IN_PROFILES.map(p => p.id)
+    const toDisable  = builtInIds.filter(id => !activeIds.includes(id))
+    if (toDisable.length > 0) {
+      try {
+        await db.llmProfile.updateMany({
+          where: { id: { in: toDisable }, enabled: true },
+          data:  { enabled: false },
+        })
+      } catch (err) {
+        console.warn('[LLM] Failed to disable stale built-in profiles (non-fatal):', err)
+      }
+    }
   }
 
   // DB is the live source of truth. Load it BEFORE deciding whether to seed a
