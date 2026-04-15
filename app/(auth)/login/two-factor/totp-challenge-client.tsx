@@ -4,7 +4,7 @@
 // No Dialog, no layout chrome — rendered directly inside (auth)/layout.tsx.
 
 import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,7 +30,6 @@ function getSafeCallbackURL(raw: string | null): string {
 
 export function TotpChallengeClient() {
   const t = useT()
-  const router = useRouter()
   const searchParams = useSearchParams()
 
   const callbackURL = getSafeCallbackURL(searchParams.get('callbackURL'))
@@ -45,27 +44,18 @@ export function TotpChallengeClient() {
     setLoading(true)
     setError(null)
     try {
+      // redirect:'follow' (default) lets the browser follow Better Auth's 302
+      // and commit its Set-Cookie headers. With redirect:'manual' the 302 becomes
+      // opaqueredirect and Set-Cookie headers are NEVER applied — the session
+      // cookie is lost regardless of how we navigate afterwards.
+      // Errors (wrong code, rate-limit, session expired) return 4xx JSON directly
+      // (no redirect), so !res.ok still catches them.
       const res = await fetch('/api/auth/two-factor/verify-totp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        // Prevent silent redirect-following: if Better Auth returns a 302,
-        // we want res.status = 0 (opaqueredirect) not a silently-followed 200.
-        redirect: 'manual',
         body: JSON.stringify({ code }),
       })
-
-      // Better Auth returns a 302 to callbackURL on success and sets the session
-      // cookie in that same response. With redirect:'manual' the 302 becomes
-      // opaqueredirect. router.replace() is a client-side navigation that fires
-      // before the browser commits Set-Cookie headers from the opaque response —
-      // the middleware then sees no session cookie and redirects to /login.
-      // window.location.href is a full page reload that only runs after all
-      // cookie writes from the current response are committed.
-      if (res.type === 'opaqueredirect' || res.status === 0) {
-        window.location.href = callbackURL
-        return
-      }
 
       if (res.status === 429) {
         setError(t('auth.totp_rate_limit'))
@@ -73,15 +63,14 @@ export function TotpChallengeClient() {
         return
       }
 
-      if (!res.ok) {
-        // Wrong code (401) or any other server error
+      if (!res.ok && !res.redirected) {
         setError(t('auth.totp_invalid'))
         setCode('')
         return
       }
 
-      // Success — navigate to the intended page
-      router.replace(callbackURL)
+      // Success — session cookie is now committed; full reload to apply it.
+      window.location.href = callbackURL
     } catch {
       setError(t('auth.totp_invalid'))
     } finally {
@@ -129,7 +118,7 @@ export function TotpChallengeClient() {
           </Button>
           <button
             type="button"
-            onClick={() => router.push('/login')}
+            onClick={() => { window.location.href = '/login' }}
             className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             {t('auth.totp_back_to_login')}
