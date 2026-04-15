@@ -55,9 +55,12 @@ export function TotpChallengeClient() {
         body: JSON.stringify({ code }),
       })
 
-      // opaqueredirect or status 0 → 2FA window expired, must restart login
+      // Better Auth returns a 302 to callbackURL on success (it stores callbackURL
+      // in the two_factor_pending cookie during signIn.email). With redirect:'manual'
+      // this 302 appears as opaqueredirect — navigate to callbackURL and let the
+      // middleware decide: valid session → dashboard, expired → back to login.
       if (res.type === 'opaqueredirect' || res.status === 0) {
-        router.replace(`/login?error=session_expired`)
+        router.replace(callbackURL)
         return
       }
 
