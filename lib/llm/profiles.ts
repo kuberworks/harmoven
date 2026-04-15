@@ -176,10 +176,10 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
   {
     id:                       'gpt-5-4',
     provider:                 'openai',
-    model_string:             'gpt-4o',    // conservative alias until gpt-5-4 GA
+    model_string:             'gpt-5.4',   // GA as of 2026 — https://developers.openai.com/api/docs/pricing
     tier:                     'powerful',
     context_window:           128_000,
-    cost_per_1m_input_tokens:  5.00,
+    cost_per_1m_input_tokens:  2.50,
     cost_per_1m_output_tokens: 15.00,
     jurisdiction:             'us',
     trust_tier:               1,
