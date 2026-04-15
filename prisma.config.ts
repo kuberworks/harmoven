@@ -22,4 +22,10 @@ export default defineConfig({
   datasource: {
     url: process.env.DATABASE_URL,
   },
+  migrations: {
+    // Also exposes `prisma db seed` for local dev / CI.
+    // The seed-runner.mjs is zero-dependency (no @/ aliases) and runs fine
+    // with plain node in the Docker container via entrypoint.sh.
+    seed: 'node prisma/seed-runner.mjs',
+  },
 })
