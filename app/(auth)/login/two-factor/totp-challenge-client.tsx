@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useT } from '@/lib/i18n/client'
+import { authClient } from '@/lib/auth-client'
 
 /**
  * getSafeCallbackURL — same guard as login-form.tsx.
@@ -44,33 +45,21 @@ export function TotpChallengeClient() {
     setLoading(true)
     setError(null)
     try {
-      // redirect:'follow' (default) lets the browser follow Better Auth's 302
-      // and commit its Set-Cookie headers. With redirect:'manual' the 302 becomes
-      // opaqueredirect and Set-Cookie headers are NEVER applied — the session
-      // cookie is lost regardless of how we navigate afterwards.
-      // Errors (wrong code, rate-limit, session expired) return 4xx JSON directly
-      // (no redirect), so !res.ok still catches them.
-      const res = await fetch('/api/auth/two-factor/verify-totp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ code }),
-      })
-
-      if (res.status === 429) {
-        setError(t('auth.totp_rate_limit'))
+      // Use the official Better Auth twoFactor client — it handles the session
+      // cookie correctly via the SDK's own cookie management layer instead of
+      // raw fetch which has unreliable Set-Cookie behaviour on redirect chains.
+      const { error: verifyError } = await (authClient as Record<string, unknown> & { twoFactor: { verifyTotp: (data: { code: string }, opts?: { onSuccess?: () => void }) => Promise<{ error: { status?: number } | null }> } }).twoFactor.verifyTotp(
+        { code },
+        { onSuccess: () => { window.location.href = callbackURL } },
+      )
+      if (verifyError) {
+        if ((verifyError as { status?: number }).status === 429) {
+          setError(t('auth.totp_rate_limit'))
+        } else {
+          setError(t('auth.totp_invalid'))
+        }
         setCode('')
-        return
       }
-
-      if (!res.ok && !res.redirected) {
-        setError(t('auth.totp_invalid'))
-        setCode('')
-        return
-      }
-
-      // Success — session cookie is now committed; full reload to apply it.
-      window.location.href = callbackURL
     } catch {
       setError(t('auth.totp_invalid'))
     } finally {
