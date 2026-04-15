@@ -411,20 +411,6 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
         if (!open) { setTotpCode(''); setTotpPassword(''); setShowManualKey(false) }
       }}>
         <DialogContent>
-          {/* Progress bar */}
-          <div className="flex gap-1.5 pt-1" aria-hidden>
-            {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
-              <div
-                key={s}
-                className={cn(
-                  'h-1 flex-1 rounded-full transition-colors duration-300',
-                  (['password', 'scan', 'codes', 'verify'] as const).indexOf(totpStep) >= i
-                    ? 'bg-primary'
-                    : 'bg-surface-border'
-                )}
-              />
-            ))}
-          </div>
 
           {/* ── Step 0: Password ── */}
           {totpStep === 'password' && <>
@@ -432,6 +418,12 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               <DialogTitle>{t('settings.totp_step_password_title')}</DialogTitle>
               <DialogDescription>{t('settings.totp_step_password_desc')}</DialogDescription>
             </DialogHeader>
+            {/* Progress bar — below header so it doesn't crowd the title */}
+            <div className="flex gap-1.5" aria-hidden>
+              {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
+                <div key={s} className={cn('h-1 flex-1 rounded-full transition-colors duration-300', i === 0 ? 'bg-primary' : 'bg-surface-border')} />
+              ))}
+            </div>
             {/*
               Wrap in <form> so password managers (1Password, Bitwarden, etc.)
               detect the field and can autofill. Without a <form>, most managers
@@ -475,6 +467,11 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               <DialogTitle>{t('settings.totp_step_scan_title')}</DialogTitle>
               <DialogDescription>{t('settings.totp_scan_instruction')}</DialogDescription>
             </DialogHeader>
+            <div className="flex gap-1.5" aria-hidden>
+              {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
+                <div key={s} className={cn('h-1 flex-1 rounded-full transition-colors duration-300', i <= 1 ? 'bg-primary' : 'bg-surface-border')} />
+              ))}
+            </div>
             <div className="flex flex-col items-center gap-3 py-1">
               <div className="bg-white rounded-lg p-3 shadow-sm">
                 <QRCodeCanvas value={totpUri ?? ''} size={160} level="M" marginSize={1} />
@@ -504,6 +501,11 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               <DialogTitle>{t('settings.totp_step_codes_title')}</DialogTitle>
               <DialogDescription>{t('settings.totp_backup_desc')}</DialogDescription>
             </DialogHeader>
+            <div className="flex gap-1.5" aria-hidden>
+              {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
+                <div key={s} className={cn('h-1 flex-1 rounded-full transition-colors duration-300', i <= 2 ? 'bg-primary' : 'bg-surface-border')} />
+              ))}
+            </div>
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
               <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                 {totpBackupCodes.map((code) => (
@@ -523,6 +525,11 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               <DialogTitle>{t('settings.totp_step_verify_title')}</DialogTitle>
               <DialogDescription>{t('settings.totp_enter_code_hint')}</DialogDescription>
             </DialogHeader>
+            <div className="flex gap-1.5" aria-hidden>
+              {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
+                <div key={s} className={cn('h-1 flex-1 rounded-full transition-colors duration-300 bg-primary')} />
+              ))}
+            </div>
             <Input
               id="totp-code"
               placeholder="000000"
