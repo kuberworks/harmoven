@@ -47,6 +47,14 @@ export interface LlmProfileConfig {
    * embedded in the user message by runner.ts.
    */
   supports_tool_choice?: boolean
+  /**
+   * Extra HTTP headers to send on every request for this profile.
+   * Used by OpenAI-compatible providers that require custom headers
+   * (e.g. GitHub Models: X-GitHub-Api-Version).
+   * Plugin providers handle their own headers internally — this field
+   * is available for admin-configured custom/github profiles.
+   */
+  extra_headers?: Record<string, string>
 }
 
 // ─── Built-in catalog ──────────────────────────────────────────────────────────
@@ -321,6 +329,11 @@ export function dbRowToLlmProfileConfig(row: {
     supports_tool_choice: typeof cfg['supports_tool_choice'] === 'boolean'
       ? cfg['supports_tool_choice']
       : BUILT_IN_PROFILES.find(p => p.id === row.id)?.supports_tool_choice,
+    // Admin can set extra_headers in config JSON for OpenAI-compatible providers
+    // that require custom request headers (e.g. X-GitHub-Api-Version).
+    extra_headers: typeof cfg['extra_headers'] === 'object' && cfg['extra_headers'] !== null
+      ? cfg['extra_headers'] as Record<string, string>
+      : undefined,
   }
 }
 
@@ -333,7 +346,7 @@ export function dbRowToLlmProfileConfig(row: {
  */
 export function loadActiveProfiles(activeIds: string[]): LlmProfileConfig[] {
   if (activeIds.length === 0) {
-    const fallback = BUILT_IN_PROFILES.find(p => p.id === 'claude-3-5-haiku-20241022')
+    const fallback = BUILT_IN_PROFILES.find(p => p.id === 'claude-haiku-4-5')
     return fallback ? [fallback] : []
   }
   const result: LlmProfileConfig[] = []
