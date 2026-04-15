@@ -18,6 +18,12 @@ RUN npm ci --legacy-peer-deps
 COPY prisma ./prisma
 RUN npx prisma generate
 COPY . .
+# Better Auth validates AUTH_SECRET at module initialisation time, which causes
+# Next.js static-analysis (page data collection) to crash during `npm run build`
+# if the variable is absent.  We supply a build-time placeholder here — it is
+# never used at runtime because the real value is injected via env_file / shell.
+ARG AUTH_SECRET=build-time-placeholder-not-used-at-runtime
+ENV AUTH_SECRET=$AUTH_SECRET
 RUN npm run build
 
 FROM base AS runner
