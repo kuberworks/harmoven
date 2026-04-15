@@ -447,6 +447,22 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               onSubmit={e => { e.preventDefault(); if (totpPassword) handlePasswordNext() }}
               className="space-y-1.5"
             >
+              {/*
+                Apple Keychain (and most password managers) require a username/email
+                field in the same form to associate the stored credential and offer
+                autofill. type="text" is required — type="hidden" is ignored by most
+                managers. sr-only + aria-hidden hides it visually and from screen
+                readers while keeping it discoverable by autofill heuristics.
+              */}
+              <input
+                type="text"
+                name="username"
+                autoComplete="username email"
+                defaultValue={undefined}
+                aria-hidden="true"
+                tabIndex={-1}
+                className="sr-only"
+              />
               <Label htmlFor="totp-password-input">{t('settings.totp_password_label')}</Label>
               <Input
                 id="totp-password-input"
