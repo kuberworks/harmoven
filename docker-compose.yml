@@ -10,10 +10,18 @@ services:
         required: false   # prod: omit .env and inject vars from your secret manager
     environment:
       - NODE_ENV=production
-      # DATABASE_URL must be set via .env (dev) or shell env / secret manager (prod).
-      # Shell env takes precedence over .env when both are present.
-      # Internal Docker DNS uses the service name "db" on port 5432.
-      # Example: DATABASE_URL=postgresql://harmoven:CHANGE_ME@db:5432/harmoven
+      # ── Required secrets ────────────────────────────────────────────────────
+      # These vars are forwarded from the shell environment when no .env is used
+      # (production / secret-manager deployments). When .env is present (--dev or
+      # developer setup), env_file above takes precedence only if the shell var is
+      # not already set; listing them here ensures Docker Compose always forwards
+      # them regardless of source.
+      - DATABASE_URL=${DATABASE_URL}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - INTERNAL_CRON_SECRET=${INTERNAL_CRON_SECRET}
+      # ── Optional / defaulted ────────────────────────────────────────────────
+      - AUTH_URL=${AUTH_URL:-http://localhost:3000}
       # LiteLLM gateway — app talks to sidecar, NEVER to provider APIs directly (Am.91).
       # Only relevant when litellm.enabled=true in orchestrator.yaml.
       - LITELLM_GATEWAY_URL=${LITELLM_GATEWAY_URL:-http://litellm:4000}
