@@ -213,7 +213,7 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
     <div className="space-y-6 animate-stagger">
       {/* MFA enforcement banner — shown when redirected by middleware */}
       {setupMfa && !totpEnabled && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/10 px-4 py-3 text-sm">
+        <div className="flex items-start gap-3 rounded-lg border border-amber-400 dark:border-amber-500/30 bg-amber-200 dark:bg-amber-500/10 px-4 py-3 text-sm">
           <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" aria-hidden />
           <div>
             <p className="font-medium text-amber-900 dark:text-amber-300">{t('settings.mfa_required_title')}</p>
@@ -232,7 +232,7 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
         </CardHeader>
         <CardContent className="space-y-4">
           {totpEnabled ? (
-            <div className="flex items-center gap-3 rounded-lg border border-green-300 dark:border-green-500/20 bg-green-100 dark:bg-green-500/10 px-4 py-3">
+            <div className="flex items-center gap-3 rounded-lg border border-green-400 dark:border-green-500/20 bg-green-200 dark:bg-green-500/10 px-4 py-3">
               <CheckCircle2 className="h-5 w-5 text-green-700 dark:text-green-400 shrink-0" aria-hidden />
               <div>
                 <p className="text-sm font-medium text-green-900 dark:text-green-300">{t('settings.totp_active_title')}</p>
