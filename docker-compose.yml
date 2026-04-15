@@ -25,6 +25,13 @@ services:
       # LiteLLM gateway — app talks to sidecar, NEVER to provider APIs directly (Am.91).
       # Only relevant when litellm.enabled=true in orchestrator.yaml.
       - LITELLM_GATEWAY_URL=${LITELLM_GATEWAY_URL:-http://litellm:4000}
+      # ── LLM provider API keys (forwarded from shell / secret manager) ────────
+      # Set the key for your chosen provider. Unused vars evaluate to empty and
+      # are ignored by the app. Only one provider key is needed at a time.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       # ── MFA operator escape hatch (forwarded from shell / secret manager) ──
       # Set both vars in your shell (or secret manager) to disable admin MFA.
       # When unset, MFA enforcement falls back to the DB setting (default: on).
