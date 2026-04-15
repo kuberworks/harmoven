@@ -214,10 +214,10 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
       {/* MFA enforcement banner — shown when redirected by middleware */}
       {setupMfa && !totpEnabled && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-          <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" aria-hidden />
+          <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" aria-hidden />
           <div>
-            <p className="font-medium text-amber-300">{t('settings.mfa_required_title')}</p>
-            <p className="text-amber-400/80 mt-0.5">{t('settings.mfa_required_desc')}</p>
+            <p className="font-medium text-amber-700 dark:text-amber-300">{t('settings.mfa_required_title')}</p>
+            <p className="text-amber-600/80 dark:text-amber-400/80 mt-0.5">{t('settings.mfa_required_desc')}</p>
           </div>
         </div>
       )}
@@ -233,10 +233,10 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
         <CardContent className="space-y-4">
           {totpEnabled ? (
             <div className="flex items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-3">
-              <CheckCircle2 className="h-5 w-5 text-green-400 shrink-0" aria-hidden />
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" aria-hidden />
               <div>
-                <p className="text-sm font-medium text-green-300">{t('settings.totp_active_title')}</p>
-                <p className="text-xs text-green-400/80 mt-0.5">{t('settings.totp_active_desc')}</p>
+                <p className="text-sm font-medium text-green-700 dark:text-green-300">{t('settings.totp_active_title')}</p>
+                <p className="text-xs text-green-600/80 dark:text-green-400/80 mt-0.5">{t('settings.totp_active_desc')}</p>
               </div>
             </div>
           ) : (
@@ -536,7 +536,7 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
               <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                 {totpBackupCodes.map((code) => (
-                  <code key={code} className="text-xs font-mono text-amber-300 tracking-wider">{code}</code>
+                  <code key={code} className="text-xs font-mono text-amber-700 dark:text-amber-300 tracking-wider">{code}</code>
                 ))}
               </div>
             </div>
