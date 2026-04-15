@@ -88,6 +88,7 @@ export function TotpChallengeClient() {
                 setCode(e.target.value.replace(/\D/g, ''))
                 if (error) setError(null)
               }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void handleVerify(e as unknown as React.FormEvent) } }}
               autoComplete="one-time-code"
               inputMode="numeric"
               aria-invalid={error !== null}

@@ -275,20 +275,11 @@ async function handleRequest(request: NextRequest, requestHeaders: Headers): Pro
         )
       }
 
-      if (
-        body.user?.twoFactorEnabled === true &&
-        body.session?.twoFactorVerified !== true &&
-        !isMfaAllowed(pathname)
-      ) {
-        // Better Auth handles the TOTP challenge via its own API flow when
-        // signIn.email() is called — the client is redirected by the authClient.
-        // If the session somehow has twoFactorEnabled but not twoFactorVerified
-        // (e.g. resumed after expiry), redirect to login so Better Auth restarts
-        // the challenge flow from a clean state.
-        const loginUrl = new URL('/login', request.url)
-        loginUrl.searchParams.set('callbackURL', pathname)
-        return NextResponse.redirect(loginUrl)
-      }
+      // Note: Better Auth does NOT set a `twoFactorVerified` field on the session.
+      // The security guarantee comes from the flow itself: when twoFactorEnabled is true,
+      // signIn.email() never creates a session — it creates a short-lived two-factor cookie.
+      // A full session cookie (SESSION_COOKIE_NAME) is only set after verifyTotp succeeds.
+      // Therefore any valid session for a twoFactorEnabled user is already TOTP-verified.
     }
 
     return NextResponse.next({ request: { headers: requestHeaders } })
