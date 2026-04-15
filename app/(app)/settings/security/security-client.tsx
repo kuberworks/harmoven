@@ -410,9 +410,14 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
         setTotpDialogOpen(open)
         if (!open) { setTotpCode(''); setTotpPassword(''); setShowManualKey(false) }
       }}>
-        <DialogContent>
-          {/* Progress bar — top of dialog, mb-4 gives breathing room before the title */}
-          <div className="flex gap-1.5 mb-4" aria-hidden>
+        {/*
+          w-[calc(100%-2rem)]: 16px margin on each side on mobile so the dialog
+          never touches screen edges. sm:w-full restores normal width on desktop.
+          max-h-[90dvh] + overflow-y-auto: prevent overflow on short/small screens.
+        */}
+        <DialogContent className="w-[calc(100%-2rem)] sm:w-full max-h-[90dvh] overflow-y-auto">
+          {/* Progress bar — pr-10 clears the absolute close button (right-4 + icon width) */}
+          <div className="flex gap-1.5 mb-4 pr-10" aria-hidden>
             {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
               <div
                 key={s}
