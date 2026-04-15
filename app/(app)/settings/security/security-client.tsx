@@ -71,6 +71,11 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
   const [revoking, setRevoking] = useState(false)
   const [addingPasskey, setAddingPasskey] = useState(false)
 
+  // ── TOTP disable state ─────────────────────────────────────────────
+  const [disableDialogOpen, setDisableDialogOpen] = useState(false)
+  const [disablePassword, setDisablePassword] = useState('')
+  const [disableLoading, setDisableLoading] = useState(false)
+
   // ── TOTP setup state ──────────────────────────────────────────────
   const [totpDialogOpen, setTotpDialogOpen] = useState(false)
   const [totpStep, setTotpStep] = useState<'password' | 'scan' | 'codes' | 'verify'>('password')
@@ -85,6 +90,28 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
   // useState(initialPasskeys) only reads the prop once on mount, so without this effect
   // the list never updates after a passkey is added.
   useEffect(() => { setPasskeys(initialPasskeys) }, [initialPasskeys])
+
+  // ── TOTP disable handler ──────────────────────────────────────────
+  async function handleDisableTotp() {
+    if (!disablePassword) return
+    setDisableLoading(true)
+    try {
+      const { error } = await (authClient as Record<string, unknown> & {
+        twoFactor: { disable: (data: { password: string }) => Promise<{ error: { status?: number } | null }> }
+      }).twoFactor.disable({ password: disablePassword })
+      if (error) {
+        toast({ variant: 'destructive', title: t('settings.totp_wrong_password'), description: t('settings.totp_wrong_password_desc') })
+        return
+      }
+      toast({ title: t('settings.totp_disabled_toast'), description: t('settings.totp_disabled_toast_desc') })
+      setDisableDialogOpen(false)
+      router.refresh()
+    } catch {
+      toast({ variant: 'destructive', title: t('settings.totp_setup_error'), description: t('settings.totp_network_error') })
+    } finally {
+      setDisableLoading(false)
+    }
+  }
 
   // ── TOTP setup handlers ───────────────────────────────────────────
   /** Initiate TOTP setup: generates secret + backup codes, returns totpURI */
@@ -234,10 +261,18 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
           {totpEnabled ? (
             <div className="flex items-center gap-3 rounded-lg border border-green-300 dark:border-green-500/20 bg-green-100 dark:bg-green-500/10 px-4 py-3">
               <CheckCircle2 className="h-5 w-5 text-green-700 dark:text-green-400 shrink-0" aria-hidden />
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-green-900 dark:text-green-300">{t('settings.totp_active_title')}</p>
                 <p className="text-xs text-green-800 dark:text-green-400/80 mt-0.5">{t('settings.totp_active_desc')}</p>
               </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-100 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-500/10 shrink-0"
+                onClick={() => { setDisablePassword(''); setDisableDialogOpen(true) }}
+              >
+                {t('settings.totp_disable_btn')}
+              </Button>
             </div>
           ) : (
             <div className="space-y-4">
@@ -576,6 +611,49 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               </Button>
             </DialogFooter>
           </>}
+        </DialogContent>
+      </Dialog>
+
+      {/* Disable TOTP dialog */}
+      <Dialog open={disableDialogOpen} onOpenChange={open => {
+        setDisableDialogOpen(open)
+        if (!open) setDisablePassword('')
+      }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('settings.totp_disable_title')}</DialogTitle>
+            <DialogDescription>{t('settings.totp_disable_desc')}</DialogDescription>
+          </DialogHeader>
+          <form
+            id="totp-disable-form"
+            onSubmit={e => { e.preventDefault(); handleDisableTotp() }}
+            className="space-y-1.5"
+          >
+            <Label htmlFor="totp-disable-password">{t('settings.totp_password_label')}</Label>
+            <Input
+              id="totp-disable-password"
+              type="password"
+              autoComplete="current-password"
+              placeholder={t('settings.totp_password_placeholder')}
+              value={disablePassword}
+              onChange={e => setDisablePassword(e.target.value)}
+              autoFocus
+              className="h-11"
+            />
+          </form>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDisableDialogOpen(false)}>{t('common.cancel')}</Button>
+            <Button
+              type="submit"
+              form="totp-disable-form"
+              size="sm"
+              variant="destructive"
+              disabled={disableLoading || !disablePassword}
+            >
+              {disableLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t('settings.totp_disable_confirm')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
