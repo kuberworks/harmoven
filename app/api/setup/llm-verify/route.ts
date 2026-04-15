@@ -272,14 +272,50 @@ export async function POST(req: NextRequest) {
     console.warn('[llm-verify] Failed to update orchestrator.yaml (non-fatal):', err)
   }
 
-  // Disable built-in profiles that are no longer in the new profiles_active set.
-  // This cleans up stale bootstrap profiles (e.g. ollama_local seeded before the
-  // wizard ran) immediately so Admin → Models shows only the configured provider.
-  // Skipped for litellm because it uses custom DB profiles (no built-in list).
+  // Sync built-in profiles to DB immediately so Admin → Models reflects the
+  // chosen provider right after the wizard step — without waiting for the first run.
+  // Skipped for litellm (uses custom DB profiles created above, no built-in list).
   if (provider !== 'litellm') {
     const newActiveIds = PROVIDER_PROFILES[provider] ?? []
     const builtInIds   = BUILT_IN_PROFILES.map(p => p.id)
-    const toDisable    = builtInIds.filter(id => !newActiveIds.includes(id))
+
+    // 1. Seed (or re-enable) the new provider's profiles.
+    for (const id of newActiveIds) {
+      const built = BUILT_IN_PROFILES.find(p => p.id === id)
+      if (!built) continue
+      try {
+        await db.llmProfile.upsert({
+          where:  { id },
+          // Re-enable if the profile existed but was previously disabled
+          // (e.g. user switching back to a previously configured provider).
+          update: { enabled: true },
+          create: {
+            id,
+            provider:                  built.provider,
+            model_string:              built.model_string,
+            tier:                      built.tier,
+            context_window:            built.context_window,
+            cost_per_1m_input_tokens:  built.cost_per_1m_input_tokens,
+            cost_per_1m_output_tokens: built.cost_per_1m_output_tokens,
+            jurisdiction:              built.jurisdiction,
+            trust_tier:                built.trust_tier,
+            task_type_affinity:        built.task_type_affinity as string[],
+            enabled:                   true,
+            config: {
+              ...(built.base_url            ? { base_url:          built.base_url            } : {}),
+              ...(built.api_key_env         ? { api_key_env:       built.api_key_env         } : {}),
+              ...(built.max_output_tokens != null ? { max_output_tokens: built.max_output_tokens } : {}),
+            },
+          },
+        })
+      } catch (err) {
+        console.warn(`[llm-verify] Failed to seed profile "${id}" (non-fatal):`, err)
+      }
+    }
+
+    // 2. Disable built-in profiles that belong to other providers.
+    //    This cleans up stale bootstrap profiles (e.g. ollama_local seeded on first boot).
+    const toDisable = builtInIds.filter(id => !newActiveIds.includes(id))
     if (toDisable.length > 0) {
       try {
         await db.llmProfile.updateMany({
