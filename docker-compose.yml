@@ -6,11 +6,12 @@ services:
     ports:
       - "${HARMOVEN_PORT:-3000}:3000"
     env_file:
-      - .env
+      - path: .env
+        required: false   # prod: omit .env and inject vars from your secret manager
     environment:
       - NODE_ENV=production
-      # DATABASE_URL must be set in .env (env_file above) — no default here
-      # so the env_file value is never silently shadowed by a hardcoded fallback.
+      # DATABASE_URL must be set via .env (dev) or shell env / secret manager (prod).
+      # Shell env takes precedence over .env when both are present.
       # Internal Docker DNS uses the service name "db" on port 5432.
       # Example: DATABASE_URL=postgresql://harmoven:CHANGE_ME@db:5432/harmoven
       # LiteLLM gateway — app talks to sidecar, NEVER to provider APIs directly (Am.91).
