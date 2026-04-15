@@ -30,7 +30,7 @@ import {
 
 import type { ILLMClient, ChatMessage, ChatOptions, ChatResult, ToolCall, ToolResult, ToolCallIteration } from '@/lib/llm/interface'
 import type { LlmProfile, Prisma as PrismaTypes }            from '@prisma/client'
-import { BUILT_IN_PROFILES, loadActiveProfiles, dbRowToLlmProfileConfig } from './profiles'
+import { BUILT_IN_PROFILES, loadActiveProfiles, detectFallbackProfileId, dbRowToLlmProfileConfig } from './profiles'
 import { selectByTier, selectLlm } from './selector'
 import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
@@ -1039,8 +1039,8 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   if (activeIds.length > 0) {
     await seedMissingProfilesToDb(activeIds, db)
   } else {
-    // No explicit list — seed the default fallback profile.
-    await seedMissingProfilesToDb(['claude-haiku-4-5'], db)
+    // No explicit list — auto-detect the first provider with a key configured.
+    await seedMissingProfilesToDb([detectFallbackProfileId()], db)
   }
 
   // Load all enabled profiles from DB — this is the live source of truth.
@@ -1055,7 +1055,7 @@ export async function createLLMClient(yamlPath?: string): Promise<ILLMClient> {
   if (profiles.length === 0) {
     // Absolute fallback — should never happen after seeding, but guard anyway.
     console.warn('[LLM] No enabled profiles in DB — using built-in defaults.')
-    return new DirectLLMClient(loadActiveProfiles(activeIds.length > 0 ? activeIds : ['claude-haiku-4-5']))
+    return new DirectLLMClient(loadActiveProfiles(activeIds.length > 0 ? activeIds : [detectFallbackProfileId()]))
   }
 
   return new DirectLLMClient(profiles)
