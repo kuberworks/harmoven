@@ -9,7 +9,6 @@ import { Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { useToast } from '@/components/ui/use-toast'
 import { useT } from '@/lib/i18n/client'
 
 /**
@@ -33,40 +32,52 @@ export function TotpChallengeClient() {
   const t = useT()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { toast } = useToast()
 
   const callbackURL = getSafeCallbackURL(searchParams.get('callbackURL'))
 
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault()
     if (code.length !== 6 || loading) return
     setLoading(true)
+    setError(null)
     try {
       const res = await fetch('/api/auth/two-factor/verify-totp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        // Prevent silent redirect-following: if Better Auth returns a 302,
+        // we want res.status = 0 (opaqueredirect) not a silently-followed 200.
+        redirect: 'manual',
         body: JSON.stringify({ code }),
       })
-      if (!res.ok) {
-        toast({
-          variant: 'destructive',
-          title: t('auth.totp_invalid'),
-          description: t('settings.totp_code_invalid_desc'),
-        })
+
+      // opaqueredirect or status 0 → 2FA window expired, must restart login
+      if (res.type === 'opaqueredirect' || res.status === 0) {
+        router.replace(`/login?error=session_expired`)
+        return
+      }
+
+      if (res.status === 429) {
+        setError(t('auth.totp_rate_limit'))
         setCode('')
         return
       }
+
+      if (!res.ok) {
+        // Wrong code (401) or any other server error
+        setError(t('auth.totp_invalid'))
+        setCode('')
+        return
+      }
+
+      // Success — navigate to the intended page
       router.replace(callbackURL)
     } catch {
-      toast({
-        variant: 'destructive',
-        title: t('settings.totp_setup_error'),
-        description: t('settings.totp_network_error'),
-      })
+      setError(t('auth.totp_invalid'))
     } finally {
       setLoading(false)
     }
@@ -84,16 +95,28 @@ export function TotpChallengeClient() {
 
       <CardContent>
         <form onSubmit={handleVerify} className="space-y-4">
-          <Input
-            placeholder="000000"
-            maxLength={6}
-            value={code}
-            onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
-            autoComplete="one-time-code"
-            inputMode="numeric"
-            className="text-2xl tracking-[0.4em] font-mono text-center h-14"
-            autoFocus
-          />
+          <div className="space-y-1.5">
+            <Input
+              placeholder="000000"
+              maxLength={6}
+              value={code}
+              onChange={e => {
+                setCode(e.target.value.replace(/\D/g, ''))
+                if (error) setError(null)
+              }}
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              aria-invalid={error !== null}
+              aria-describedby={error ? 'totp-error' : undefined}
+              className="text-2xl tracking-[0.4em] font-mono text-center h-14"
+              autoFocus
+            />
+            {error && (
+              <p id="totp-error" role="alert" className="text-sm font-medium text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
           <Button className="w-full" type="submit" disabled={loading || code.length !== 6}>
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             {t('auth.totp_submit')}
@@ -103,7 +126,7 @@ export function TotpChallengeClient() {
             onClick={() => router.push('/login')}
             className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            {t('settings.totp_back')}
+            {t('auth.totp_back_to_login')}
           </button>
         </form>
       </CardContent>

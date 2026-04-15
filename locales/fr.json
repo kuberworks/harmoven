@@ -25,6 +25,8 @@
     "totp_prompt": "Entrez le code à 6 chiffres de votre application d'authentification",
     "totp_submit": "Vérifier",
     "totp_invalid": "Code invalide — réessayez",
+    "totp_rate_limit": "Trop de tentatives — attendez quelques secondes et réessayez",
+    "totp_back_to_login": "Retour à la connexion",
     "passkey_prompt": "Utilisez votre clé d'accès pour vous connecter",
     "session_expired": "Votre session a expiré — veuillez vous reconnecter",
     "unauthorized": "Vous n'avez pas la permission d'accéder à cette page"

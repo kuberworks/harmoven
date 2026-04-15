@@ -25,6 +25,8 @@
     "totp_prompt": "Enter the 6-digit code from your authenticator app",
     "totp_submit": "Verify",
     "totp_invalid": "Invalid code — try again",
+    "totp_rate_limit": "Too many attempts — wait a few seconds and try again",
+    "totp_back_to_login": "Back to sign in",
     "passkey_prompt": "Use your passkey to sign in",
     "session_expired": "Your session has expired — please sign in again",
     "unauthorized": "You don't have permission to access this page"
