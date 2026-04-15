@@ -957,8 +957,14 @@ async function seedMissingProfilesToDb(
     try {
       await db.llmProfile.upsert({
         where: { id },
-        // Only create if missing — never overwrite admin-customised rows.
-        update: {},
+        // Sync model_string and pricing from code on every startup so that
+        // built-in profiles stay current after a code update.
+        update: {
+          model_string:              built.model_string,
+          cost_per_1m_input_tokens:  built.cost_per_1m_input_tokens,
+          cost_per_1m_output_tokens: built.cost_per_1m_output_tokens,
+          context_window:            built.context_window,
+        },
         create: {
           id,
           provider:                 built.provider,

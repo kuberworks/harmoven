@@ -165,7 +165,7 @@ if [ "$HAS_LLM_KEY" = "false" ]; then
     echo "Harmoven needs at least one LLM provider to run pipelines."
     echo ""
     echo "  1) Anthropic (Claude) — https://console.anthropic.com"
-    echo "  2) OpenAI  (GPT-4)   — https://platform.openai.com/api-keys"
+    echo "  2) OpenAI  (GPT-5.4) — https://platform.openai.com/api-keys"
     echo "  3) Google  (Gemini)  — https://aistudio.google.com/app/apikey"
     echo "  4) Skip for now      (add a key later via Admin → Models)"
     echo ""
