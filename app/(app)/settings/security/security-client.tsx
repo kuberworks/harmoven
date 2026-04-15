@@ -416,7 +416,12 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
           never touches screen edges. sm:w-full restores normal width on desktop.
           max-h-[90dvh] + overflow-y-auto: prevent overflow on short/small screens.
         */}
-        <DialogContent className="w-[calc(100%-2rem)] sm:w-full max-h-[90dvh] overflow-y-auto">
+        <DialogContent
+          className="w-[calc(100%-2rem)] sm:w-full max-h-[90dvh] overflow-y-auto"
+          onInteractOutside={e => e.preventDefault()}
+          onPointerDownOutside={e => e.preventDefault()}
+          onFocusOutside={e => e.preventDefault()}
+        >
           {/* Progress bar — pr-10 clears the absolute close button (right-4 + icon width) */}
           <div className="flex gap-1.5 mb-4 pr-10" aria-hidden>
             {(['password', 'scan', 'codes', 'verify'] as const).map((s, i) => (
@@ -449,20 +454,22 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               className="space-y-1.5"
             >
               {/*
-                Apple Keychain requires a username/email field in the same form,
-                pre-populated with the current user's email, to match the stored
-                credential and offer autofill. Keep type="text" (type="hidden" is
-                ignored). opacity-0 hides it visually without clipping, which
-                some autofill engines skip. No aria-hidden — Safari autofill
-                checks the accessibility tree and skips aria-hidden fields.
+                Apple Keychain requires the username/email field to be VISIBLE
+                (opacity > 0, not display:none, not visibility:hidden). WebKit's
+                autofill heuristic calls isVisibleToAccessibility() — opacity:0
+                returns false and Keychain silently skips the entire form. Use a
+                visible read-only field (the pattern Apple uses on iCloud login).
               */}
-              <input
-                type="text"
+              <Label htmlFor="totp-account-input">{t('settings.totp_account_label')}</Label>
+              <Input
+                id="totp-account-input"
+                type="email"
                 name="username"
-                autoComplete="username email"
-                defaultValue={userEmail}
+                autoComplete="username"
+                value={userEmail}
+                readOnly
                 tabIndex={-1}
-                className="opacity-0 absolute w-px h-px pointer-events-none"
+                className="h-9 bg-muted/50 text-muted-foreground cursor-default select-none focus-visible:ring-0 focus-visible:ring-offset-0"
               />
               <Label htmlFor="totp-password-input">{t('settings.totp_password_label')}</Label>
               <Input
