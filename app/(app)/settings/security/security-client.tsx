@@ -432,19 +432,37 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
               <DialogTitle>{t('settings.totp_step_password_title')}</DialogTitle>
               <DialogDescription>{t('settings.totp_step_password_desc')}</DialogDescription>
             </DialogHeader>
-            <Input
-              type="password"
-              placeholder={t('settings.totp_password_placeholder')}
-              value={totpPassword}
-              onChange={e => setTotpPassword(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && totpPassword) handlePasswordNext() }}
-              autoComplete="current-password"
-              className="h-11"
-              autoFocus
-            />
+            {/*
+              Wrap in <form> so password managers (1Password, Bitwarden, etc.)
+              detect the field and can autofill. Without a <form>, most managers
+              don't inject the autofill button on the input.
+            */}
+            <form
+              id="totp-password-form"
+              onSubmit={e => { e.preventDefault(); if (totpPassword) handlePasswordNext() }}
+              className="space-y-1.5"
+            >
+              <Label htmlFor="totp-password-input">{t('settings.totp_password_label')}</Label>
+              <Input
+                id="totp-password-input"
+                name="password"
+                type="password"
+                placeholder={t('settings.totp_password_placeholder')}
+                value={totpPassword}
+                onChange={e => setTotpPassword(e.target.value)}
+                autoComplete="current-password"
+                className="h-11"
+                autoFocus
+              />
+            </form>
             <DialogFooter>
               <Button variant="ghost" size="sm" onClick={() => setTotpDialogOpen(false)}>{t('common.cancel')}</Button>
-              <Button size="sm" onClick={handlePasswordNext} disabled={totpLoading || !totpPassword}>
+              <Button
+                type="submit"
+                form="totp-password-form"
+                size="sm"
+                disabled={totpLoading || !totpPassword}
+              >
                 {totpLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                 {t('settings.totp_password_next')}
               </Button>

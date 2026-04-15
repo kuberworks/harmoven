@@ -302,6 +302,7 @@
     "totp_app_hint": "Vous aurez besoin d'une application gratuite sur votre téléphone\u00a0: Google Authenticator, Authy ou 1Password.",
     "totp_step_password_title": "Confirmez votre identité",
     "totp_step_password_desc": "Entrez votre mot de passe actuel pour démarrer la configuration.",
+    "totp_password_label": "Mot de passe actuel",
     "totp_password_next": "Suivant",
     "totp_open_qr": "Reprendre la configuration",
     "totp_dialog_title": "Associer votre application d'authentification",
