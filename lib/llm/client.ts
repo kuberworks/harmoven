@@ -385,7 +385,7 @@ function toOpenAIMessages(messages: ChatMessage[]): OpenAI.Chat.ChatCompletionMe
  */
 export async function runOpenAIToolLoop(
   client:   OpenAI,
-  profile:  { model_string: string; supports_tool_choice?: boolean },
+  profile:  { model_string: string; supports_tool_choice?: boolean; uses_max_completion_tokens?: boolean },
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   options:  ChatOptions,
   signal?:  AbortSignal,
@@ -415,11 +415,12 @@ export async function runOpenAIToolLoop(
   const canInjectTools = profile.supports_tool_choice !== false
 
   while (true) {
+    const maxTokKey = profile.uses_max_completion_tokens ? 'max_completion_tokens' : 'max_tokens'
     const resp = await client.chat.completions.create(
       {
-        model:      profile.model_string,
-        max_tokens: options.maxTokens ?? 4096,
-        messages:   currentMessages,
+        model:         profile.model_string,
+        [maxTokKey]:   options.maxTokens ?? 4096,
+        messages:      currentMessages,
         ...(oaiTools && canInjectTools ? { tools: oaiTools, tool_choice: 'auto' as const } : {}),
       },
       { signal },
@@ -443,9 +444,9 @@ export async function runOpenAIToolLoop(
         console.warn('[runOpenAIToolLoop] Empty response with tools — retrying without tools (provider may not support tool_choice)')
         const plainResp = await client.chat.completions.create(
           {
-            model:      profile.model_string,
-            max_tokens: options.maxTokens ?? 4096,
-            messages:   currentMessages,
+            model:        profile.model_string,
+            [maxTokKey]:  options.maxTokens ?? 4096,
+            messages:     currentMessages,
           },
           { signal },
         )
@@ -540,9 +541,11 @@ async function callOpenAI(
 
   const completion = await client.chat.completions.create(
     {
-      model:      profile.model_string,
-      max_tokens: options.maxTokens ?? 4096,
-      messages:   oaiMessages,
+      model:       profile.model_string,
+      ...(profile.uses_max_completion_tokens
+        ? { max_completion_tokens: options.maxTokens ?? 4096 }
+        : { max_tokens:            options.maxTokens ?? 4096 }),
+      messages:    oaiMessages,
     },
     { signal: options.signal },
   )
@@ -576,9 +579,11 @@ async function streamOpenAI(
   // Raw iteration bypasses finalizeChatCompletion() entirely.
   const stream = await client.chat.completions.create(
     {
-      model:      profile.model_string,
-      max_tokens: options.maxTokens ?? 4096,
-      messages:   toOpenAIMessages(messages),
+      model:       profile.model_string,
+      ...(profile.uses_max_completion_tokens
+        ? { max_completion_tokens: options.maxTokens ?? 4096 }
+        : { max_tokens:            options.maxTokens ?? 4096 }),
+      messages:    toOpenAIMessages(messages),
       stream:     true,
     },
     { signal: options.signal },

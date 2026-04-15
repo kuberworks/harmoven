@@ -55,6 +55,11 @@ export interface LlmProfileConfig {
    * is available for admin-configured custom/github profiles.
    */
   extra_headers?: Record<string, string>
+  /**
+   * When true, use `max_completion_tokens` instead of `max_tokens` in requests.
+   * Required for OpenAI o-series and GPT-5.x models which dropped `max_tokens`.
+   */
+  uses_max_completion_tokens?: boolean
 }
 
 // ─── Built-in catalog ──────────────────────────────────────────────────────────
@@ -159,6 +164,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     trust_tier:               1,
     task_type_affinity:       ['intent_classification', 'simple_coding_tasks'],
     api_key_env:              'OPENAI_API_KEY',
+    uses_max_completion_tokens: true,
   },
   {
     id:                       'gpt-4o',
@@ -172,6 +178,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     trust_tier:               1,
     task_type_affinity:       ['document_analysis', 'report_writing', 'marketing_content'],
     api_key_env:              'OPENAI_API_KEY',
+    uses_max_completion_tokens: true,
   },
   {
     id:                       'gpt-5-4',
@@ -185,6 +192,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     trust_tier:               1,
     task_type_affinity:       ['strategic_planning', 'complex_analysis'],
     api_key_env:              'OPENAI_API_KEY',
+    uses_max_completion_tokens: true,
   },
 
   // ── Google Gemini ──────────────────────────────────────────────────────────
@@ -334,6 +342,10 @@ export function dbRowToLlmProfileConfig(row: {
     extra_headers: typeof cfg['extra_headers'] === 'object' && cfg['extra_headers'] !== null
       ? cfg['extra_headers'] as Record<string, string>
       : undefined,
+    // Fall back to the built-in flag when the DB row was created before this field existed.
+    uses_max_completion_tokens: typeof cfg['uses_max_completion_tokens'] === 'boolean'
+      ? cfg['uses_max_completion_tokens']
+      : BUILT_IN_PROFILES.find(p => p.id === row.id)?.uses_max_completion_tokens,
   }
 }
 
