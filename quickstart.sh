@@ -204,18 +204,26 @@ echo ""
 info "Harmoven is healthy"
 
 # ── Setup token ───────────────────────────────────────────────────────────────
+SETUP_URL=$(docker compose logs app 2>/dev/null \
+  | grep -o 'http[s]*://[^ ]*setup?token=[^ ]*' \
+  | tail -1 || true)
+
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}${BOLD} Harmoven is running at ${URL}${NC}"
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "Next steps:"
-echo "  1. Retrieve the setup token:"
-echo "       docker compose logs app | grep -i 'setup token'"
+if [ -n "$SETUP_URL" ]; then
+  echo -e "First-run setup:"
+  echo -e "  ${GREEN}${BOLD}${SETUP_URL}${NC}"
+  echo ""
+  echo "  Open this URL to complete the wizard"
+  echo "  (admin account + organisation name + LLM profile)"
+else
+  echo "Setup already completed or token not yet available."
+  echo "  Check: docker compose logs app | grep -i 'Setup URL'"
+fi
 echo ""
-echo "  2. Open ${URL}/setup and complete the wizard"
-echo "       (admin account + organisation name + LLM profile)"
-echo ""
-echo "  3. To stop:   docker compose down"
-echo "     To update: git pull && docker compose up -d --build"
+echo "  To stop:   docker compose down"
+echo "  To update: git pull && bash quickstart.sh"
 echo ""
