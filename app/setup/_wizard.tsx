@@ -354,6 +354,7 @@ export function SetupWizard() {
                 <Input
                   id="admin-email"
                   type="email"
+                  autoComplete="email"
                   placeholder="marie@acme.com"
                   value={form.adminEmail}
                   onChange={e => update('adminEmail', e.target.value)}
@@ -366,6 +367,7 @@ export function SetupWizard() {
                 <Input
                   id="admin-password"
                   type="password"
+                  autoComplete="new-password"
                   placeholder="Min. 12 characters"
                   minLength={12}
                   value={form.adminPassword}
