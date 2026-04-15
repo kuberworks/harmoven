@@ -340,13 +340,42 @@ export function dbRowToLlmProfileConfig(row: {
 // ─── Loader ────────────────────────────────────────────────────────────────────
 
 /**
+ * Priority-ordered list of fallback profile ids.
+ * The first one whose api_key_env is defined in the environment is selected.
+ * Ollama (no key required) is the last resort.
+ */
+const FALLBACK_PRIORITY = [
+  'claude-haiku-4-5',   // ANTHROPIC_API_KEY
+  'gpt-4o-mini',        // OPENAI_API_KEY
+  'gemini-flash',       // GOOGLE_API_KEY
+  'cometapi-fast',      // COMETAPI_API_KEY
+  'ollama_local',       // no key required
+]
+
+/**
+ * Return the id of the first built-in profile whose api_key_env is present
+ * in the current environment. Falls back to 'ollama_local' if nothing is set.
+ */
+export function detectFallbackProfileId(): string {
+  for (const id of FALLBACK_PRIORITY) {
+    const profile = BUILT_IN_PROFILES.find(p => p.id === id)
+    if (!profile) continue
+    // Ollama has no api_key_env — always available as last resort
+    if (!profile.api_key_env) return id
+    if (process.env[profile.api_key_env]) return id
+  }
+  return 'ollama_local'
+}
+
+/**
  * Return the subset of BUILT_IN_PROFILES that are active per orchestrator.yaml.
  * Unknown IDs are warned and skipped.
- * If activeIds is empty, falls back to claude-haiku (minimum viable config).
+ * If activeIds is empty, auto-detects the first available provider via env vars.
  */
 export function loadActiveProfiles(activeIds: string[]): LlmProfileConfig[] {
   if (activeIds.length === 0) {
-    const fallback = BUILT_IN_PROFILES.find(p => p.id === 'claude-haiku-4-5')
+    const fallbackId = detectFallbackProfileId()
+    const fallback = BUILT_IN_PROFILES.find(p => p.id === fallbackId)
     return fallback ? [fallback] : []
   }
   const result: LlmProfileConfig[] = []
