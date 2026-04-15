@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 # quickstart.sh — Harmoven one-command setup
-# Usage: bash quickstart.sh
+# Usage: bash quickstart.sh [--no-llm]
 #
 # What this script does:
 #   1. Checks prerequisites (Docker, openssl)
 #   2. Generates .env with random secrets (if .env does not exist)
-#   3. Prompts for an LLM API key
+#   3. Prompts for an LLM API key (skipped with --no-llm or when non-interactive)
 #   4. Starts Harmoven with docker compose
+#
+# Flags:
+#   --no-llm   Skip LLM key setup (add keys later via Admin → Models)
 #
 # To restart without regenerating secrets:
 #   docker compose up -d
 
 set -euo pipefail
+
+# ── Flags ─────────────────────────────────────────────────────────────────────
+SKIP_LLM=false
+for arg in "$@"; do
+  case "$arg" in
+    --no-llm|--skip-llm) SKIP_LLM=true ;;
+  esac
+done
+# Also skip automatically when stdin is not a terminal (CI/pipe/non-interactive)
+[ -t 0 ] || SKIP_LLM=true
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; NC='\033[0m'
@@ -135,39 +148,40 @@ for key in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_AI_API_KEY MISTRAL_API_KEY; d
 done
 
 if [ "$HAS_LLM_KEY" = "false" ]; then
-  step "LLM provider setup"
-  echo "Harmoven needs at least one LLM provider to run pipelines."
-  echo ""
-  echo "  1) Anthropic (Claude) — https://console.anthropic.com"
-  echo "  2) OpenAI  (GPT-4)   — https://platform.openai.com/api-keys"
-  echo "  3) Google  (Gemini)  — https://aistudio.google.com/app/apikey"
-  echo "  4) Skip for now      (you can set a key in .env later)"
-  echo ""
-  read -rp "Choose [1-4]: " LLM_CHOICE
+  if [ "$SKIP_LLM" = "true" ]; then
+    warn "No LLM key configured — add one later via Admin → Models (Settings)."
+  else
+    step "LLM provider setup"
+    echo "Harmoven needs at least one LLM provider to run pipelines."
+    echo ""
+    echo "  1) Anthropic (Claude) — https://console.anthropic.com"
+    echo "  2) OpenAI  (GPT-4)   — https://platform.openai.com/api-keys"
+    echo "  3) Google  (Gemini)  — https://aistudio.google.com/app/apikey"
+    echo "  4) Skip for now      (add a key later via Admin → Models)"
+    echo ""
+    read -rp "Choose [1-4]: " LLM_CHOICE
 
-  case "$LLM_CHOICE" in
-    1)
-      read -rp "Anthropic API key (sk-ant-...): " API_KEY
-      sed -i.bak "s|ANTHROPIC_API_KEY=\"\"|ANTHROPIC_API_KEY=\"${API_KEY}\"|" .env && rm -f .env.bak
-      info "Anthropic key saved"
-      ;;
-    2)
-      read -rp "OpenAI API key (sk-...): " API_KEY
-      sed -i.bak "s|OPENAI_API_KEY=\"\"|OPENAI_API_KEY=\"${API_KEY}\"|" .env && rm -f .env.bak
-      info "OpenAI key saved"
-      ;;
-    3)
-      read -rp "Google AI API key: " API_KEY
-      sed -i.bak "s|GOOGLE_AI_API_KEY=\"\"|GOOGLE_AI_API_KEY=\"${API_KEY}\"|" .env && rm -f .env.bak
-      info "Google AI key saved"
-      ;;
-    4)
-      warn "No LLM key set. Harmoven will start but pipelines won't run until you add a key to .env."
-      ;;
-    *)
-      warn "Invalid choice — skipping. Add an LLM key to .env before running pipelines."
-      ;;
-  esac
+    case "$LLM_CHOICE" in
+      1)
+        read -rp "Anthropic API key (sk-ant-...): " API_KEY
+        sed -i.bak "s|ANTHROPIC_API_KEY=\"\"|ANTHROPIC_API_KEY=\"${API_KEY}\"|" .env && rm -f .env.bak
+        info "Anthropic key saved"
+        ;;
+      2)
+        read -rp "OpenAI API key (sk-...): " API_KEY
+        sed -i.bak "s|OPENAI_API_KEY=\"\"|OPENAI_API_KEY=\"${API_KEY}\"|" .env && rm -f .env.bak
+        info "OpenAI key saved"
+        ;;
+      3)
+        read -rp "Google AI API key: " API_KEY
+        sed -i.bak "s|GOOGLE_AI_API_KEY=\"\"|GOOGLE_AI_API_KEY=\"${API_KEY}\"|" .env && rm -f .env.bak
+        info "Google AI key saved"
+        ;;
+      4|*)
+        warn "No LLM key set — add one later via Admin → Models."
+        ;;
+    esac
+  fi
 fi
 
 # ── Start ─────────────────────────────────────────────────────────────────────
