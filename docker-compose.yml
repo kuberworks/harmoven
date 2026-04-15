@@ -25,6 +25,11 @@ services:
       # LiteLLM gateway — app talks to sidecar, NEVER to provider APIs directly (Am.91).
       # Only relevant when litellm.enabled=true in orchestrator.yaml.
       - LITELLM_GATEWAY_URL=${LITELLM_GATEWAY_URL:-http://litellm:4000}
+      # ── MFA operator escape hatch (forwarded from shell / secret manager) ──
+      # Set both vars in your shell (or secret manager) to disable admin MFA.
+      # When unset, MFA enforcement falls back to the DB setting (default: on).
+      - HARMOVEN_ENFORCE_ADMIN_MFA=${HARMOVEN_ENFORCE_ADMIN_MFA:-}
+      - HARMOVEN_MFA_DISABLE_ACKNOWLEDGED=${HARMOVEN_MFA_DISABLE_ACKNOWLEDGED:-}
     networks:
       - app_net          # reaches db + docker-proxy + internet (LLM direct calls)
       - litellm_net      # reaches litellm sidecar (opt-in)
