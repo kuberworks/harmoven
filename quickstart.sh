@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # quickstart.sh — Harmoven one-command setup
-# Usage: bash quickstart.sh [--no-llm]
+# Usage: bash quickstart.sh [--llm]
 #
 # What this script does:
 #   1. Checks prerequisites (Docker, openssl)
 #   2. Generates .env with random secrets (if .env does not exist)
-#   3. Prompts for an LLM API key (skipped with --no-llm or when non-interactive)
-#   4. Starts Harmoven with docker compose
+#   3. Starts Harmoven with docker compose
+#   4. Prints the first-run setup URL  → complete via the web wizard
 #
 # Flags:
-#   --no-llm   Skip LLM key setup (add keys later via Admin → Models)
+#   --llm   Prompt for an LLM API key now (write it to .env).
+#           Omit this flag to skip — configure keys later via Admin → Models.
 #
 # To restart without regenerating secrets:
 #   docker compose up -d
@@ -17,13 +18,14 @@
 set -euo pipefail
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
-SKIP_LLM=false
+# LLM key prompt is OFF by default — configure keys via Admin → Models instead.
+SKIP_LLM=true
 for arg in "$@"; do
   case "$arg" in
-    --no-llm|--skip-llm) SKIP_LLM=true ;;
+    --llm) SKIP_LLM=false ;;
   esac
 done
-# Also skip automatically when stdin is not a terminal (CI/pipe/non-interactive)
+# Always skip when stdin is not a terminal (CI/pipe/non-interactive)
 [ -t 0 ] || SKIP_LLM=true
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -150,7 +152,7 @@ done
 
 if [ "$HAS_LLM_KEY" = "false" ]; then
   if [ "$SKIP_LLM" = "true" ]; then
-    warn "No LLM key configured — add one later via Admin → Models (Settings)."
+    warn "No LLM key in .env — configure a provider after setup via Admin → Models."
   else
     step "LLM provider setup"
     echo "Harmoven needs at least one LLM provider to run pipelines."
@@ -233,7 +235,7 @@ if [ -n "$SETUP_URL" ]; then
   echo -e "  ${GREEN}${BOLD}${SETUP_URL}${NC}"
   echo ""
   echo "  Open this URL to complete the wizard"
-  echo "  (admin account + organisation name + LLM profile)"
+  echo "  (admin account + organisation name — add an LLM provider via Admin → Models)"
 else
   echo "Setup already completed or token not yet available."
   echo "  Check: docker compose logs app | grep -i 'Setup URL'"
