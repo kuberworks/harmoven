@@ -126,18 +126,25 @@ export async function POST(req: NextRequest, { params }: Params) {
   // ── 4. (reserved — was timestamp check, now merged into step 3 above) ───────────
 
   // ── 5. Idempotency — reject duplicate deliveries ─────────────────────────────
+  // dedupKey is the X-Webhook-Delivery ID when supplied by the sender (preferred).
+  // When the header is absent we derive a key from the HMAC signature itself:
+  //   sig:<triggerId>:<sha256-hex>
+  // The signature = HMAC-SHA256(secret, timestamp.body), which is deterministic for
+  // a given (secret, timestamp, body) triple — so replaying the identical request
+  // within the timestamp window produces the same dedupKey and is rejected with 409.
   const deliveryId = req.headers.get('x-webhook-delivery')
-  if (deliveryId) {
-    const existing = await db.webhookDelivery.findUnique({
-      where: { delivery_id: deliveryId },
-      select: { id: true },
-    })
-    if (existing) {
-      return NextResponse.json(
-        { message: 'Delivery already processed', run_id: null },
-        { status: 409 },
-      )
-    }
+  const sigHash    = signatureHeader!.slice('sha256='.length)  // 64 hex chars
+  const dedupKey   = deliveryId ?? `sig:${triggerId}:${sigHash}`
+
+  const existingDelivery = await db.webhookDelivery.findUnique({
+    where: { delivery_id: dedupKey },
+    select: { id: true },
+  })
+  if (existingDelivery) {
+    return NextResponse.json(
+      { message: 'Delivery already processed', run_id: null },
+      { status: 409 },
+    )
   }
 
   // ── 6. Instance-wide safety gate (daily limits) ──────────────────────────────
@@ -267,14 +274,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     },
   })
 
-  // ── 9. Record delivery ID for idempotency ─────────────────────────────────────
-  if (deliveryId) {
+  // ── 9. Record dedupKey for idempotency (always — not only when deliveryId present) ──
+  // Ignore P2002 (duplicate) — unlikely but harmless: the run is already created above.
+  try {
     await db.webhookDelivery.create({
       data: {
-        delivery_id: deliveryId,
+        delivery_id: dedupKey,
         trigger_id:  triggerId,
       },
     })
+  } catch (err: unknown) {
+    const e = err as { code?: string }
+    if (e?.code !== 'P2002') throw err  // re-raise unexpected errors
   }
 
   // ── 10. Update trigger stats ──────────────────────────────────────────────────

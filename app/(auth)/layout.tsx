@@ -1,11 +1,19 @@
 // app/(auth)/layout.tsx
 // Auth shell — centered card layout, dark mesh background, no nav.
-// Used by: /login, /register, /login/check-email
+// Used by: /login, /register, /login/check-email, /login/two-factor
 // Note: no shared metadata here — each child page defines its own title.
 
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+import { cookies } from 'next/headers'
+import { LOCALE_COOKIE } from '@/lib/i18n/types'
+import { TranslationProvider } from '@/lib/i18n/client'
+
+export default async function AuthLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies()
+  const locale = cookieStore.get(LOCALE_COOKIE)?.value === 'fr' ? 'fr' : 'en'
+
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-surface-base">
+    <TranslationProvider locale={locale}>
+      <div className="relative flex min-h-screen flex-col items-center justify-center bg-surface-base">
       {/* Subtle warm gradient mesh — DESIGN_SYSTEM.md "depth in hero surfaces" */}
       <div
         aria-hidden="true"
@@ -32,5 +40,6 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         &copy; {new Date().getFullYear()} Harmoven
       </p>
     </div>
+    </TranslationProvider>
   )
 }
