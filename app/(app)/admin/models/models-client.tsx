@@ -682,8 +682,6 @@ export function ModelsAdminClient({ initialModels }: ModelsAdminClientProps) {
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
                       <span>{m.provider}</span>
                       <span>·</span>
-                      <span className="font-mono text-muted-foreground/60">{m.id}</span>
-                      <span>·</span>
                       <span>{(m.context_window / 1000).toFixed(0)}k ctx</span>
                       <span>·</span>
                       <span>Trust: {TRUST_LABEL[m.trust_tier] ?? m.trust_tier}</span>
