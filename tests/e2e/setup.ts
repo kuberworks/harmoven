@@ -25,7 +25,7 @@ setup('authenticate', async ({ page }) => {
   // Fill email + password
   await page.getByLabel('Email').fill(EMAIL)
   await page.getByLabel('Password').fill(PASSWORD)
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
   // Wait for redirect to dashboard after successful login
   await page.waitForURL('**/dashboard', { timeout: 15_000 })
