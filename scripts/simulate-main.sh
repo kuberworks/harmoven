@@ -71,14 +71,43 @@ fi
 step "Unit tests (mock — sanity check)"
 HARMOVEN_LLM_TIER=mock npm run test:unit
 
-# ── 6. Docker build (local — no push) ─────────────────────────────────────────
-step "Docker build (local, no push)"
+# ── 6. Docker build + push + Fly.io staging deploy ───────────────────────────
+step "Docker build"
 docker build -t harmoven-app:sim-main-local . 2>&1 | tail -5
 echo "Image built: harmoven-app:sim-main-local"
-warn "Docker push skipped (needs DOCKER_TOKEN secret in real CI)"
+if [[ -n "${DOCKER_TOKEN:-}" ]]; then
+  step "Docker push (sha tag)"
+  DOCKER_USERNAME="${DOCKER_USERNAME:-harmoven}"
+  echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
+  docker tag harmoven-app:sim-main-local "harmoven/app:${GITHUB_SHA:-sim-main-local}"
+  docker push "harmoven/app:${GITHUB_SHA:-sim-main-local}"
+  echo "Pushed: harmoven/app:${GITHUB_SHA:-sim-main-local}"
+
+  if [[ -n "${FLY_API_TOKEN:-}" ]]; then
+    step "Fly.io staging deploy (harmoven-staging)"
+    if ! command -v flyctl >/dev/null 2>&1; then
+      warn "flyctl not found — install with: brew install flyctl"
+    else
+      FLY_API_TOKEN="$FLY_API_TOKEN" flyctl deploy \
+        --app harmoven-staging \
+        --image "harmoven/app:${GITHUB_SHA:-sim-main-local}" \
+        --strategy rolling --wait-timeout 120
+      echo "Staging smoke test..."
+      for i in $(seq 1 10); do
+        curl -sf https://harmoven-staging.fly.dev/api/health && echo ' OK' && break
+        sleep 5
+      done
+    fi
+  else
+    warn "Fly.io deploy skipped — set FLY_API_TOKEN to deploy to harmoven-staging"
+  fi
+else
+  warn "Docker push skipped — set DOCKER_TOKEN (+ DOCKER_USERNAME, default: harmoven)"
+  warn "Fly.io deploy skipped — requires Docker push first"
+fi
 
 # ── 7. Summary ────────────────────────────────────────────────────────────────
 echo -e "\n${GREEN}✓ main.yml simulation complete${NC}"
-echo "  • Staging deploy and smoke tests skipped (need live staging)"
-echo "  • Docker push skipped (need DOCKER_TOKEN secret)"
+[[ -z "${DOCKER_TOKEN:-}" ]] && echo "  • Docker push: skipped (set DOCKER_TOKEN + DOCKER_USERNAME to push)"
+[[ -z "${FLY_API_TOKEN:-}" ]] && echo "  • Fly.io staging: skipped (set FLY_API_TOKEN to deploy)"
 echo "  • Set ANTHROPIC_API_KEY to run live integration tests"

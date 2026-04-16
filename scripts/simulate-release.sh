@@ -79,12 +79,25 @@ fi
 step "Cleanup E2E PostgreSQL container"
 docker rm -f hv_sim_pg_e2e
 
-# ── 6. Docker build (local, no push) ─────────────────────────────────────────
-step "Docker build (local, no push)"
+# ── 6. Docker build + push ───────────────────────────────────────────────────
+step "Docker build"
 VERSION_SHORT="${VERSION#v}"
 docker build -t "harmoven-app:${VERSION_SHORT}" . 2>&1 | tail -5
 echo "Image built: harmoven-app:${VERSION_SHORT}"
-warn "Docker push skipped (needs DOCKER_TOKEN secret)"
+if [[ -n "${DOCKER_TOKEN:-}" ]]; then
+  step "Docker push release image"
+  DOCKER_USERNAME="${DOCKER_USERNAME:-harmoven}"
+  echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
+  docker tag "harmoven-app:${VERSION_SHORT}" "harmoven/app:${VERSION_SHORT}"
+  docker tag "harmoven-app:${VERSION_SHORT}" "harmoven/app:latest"
+  docker tag "harmoven-app:${VERSION_SHORT}" "harmoven/app:${GITHUB_SHA}"
+  docker push "harmoven/app:${VERSION_SHORT}"
+  docker push "harmoven/app:latest"
+  docker push "harmoven/app:${GITHUB_SHA}"
+  echo "Pushed: harmoven/app:${VERSION_SHORT}, harmoven/app:latest, harmoven/app:${GITHUB_SHA}"
+else
+  warn "Docker push skipped — set DOCKER_TOKEN (+ DOCKER_USERNAME, default: harmoven)"
+fi
 
 # ── 7. Electron build (Linux only — macOS/Windows require CI runners + certs) ──
 step "Electron build — Linux AppImage"
@@ -109,7 +122,7 @@ fi
 # ── 9. Summary ────────────────────────────────────────────────────────────────
 echo -e "\n${GREEN}✓ release.yml simulation complete for $VERSION${NC}"
 echo "  • macOS + Windows Electron builds: skipped (need GitHub CI + certs)"
-echo "  • Docker push: skipped (need DOCKER_TOKEN)"
+[[ -z "${DOCKER_TOKEN:-}" ]] && echo "  • Docker push: skipped (set DOCKER_TOKEN + DOCKER_USERNAME to push)"
 echo "  • GitHub Release creation: skipped (need GITHUB_TOKEN)"
 echo "  • Release pins write: skipped (need config.git access)"
 echo "  • Set ANTHROPIC_API_KEY to run Playwright E2E tests"
