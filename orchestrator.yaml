@@ -101,6 +101,9 @@ experimental:
 app_scaffolding:
   preview:
     mode: auto
+    port_range_start: 3100
+    port_range_end: 3199
+    smoke_test_timeout_s: 30
 
 # ─── Self-Improvement (Amendment 92) ─────────────────────────────────────────
 # Local instance-health analysis. Docker-only. No data sent externally.
@@ -115,6 +118,3 @@ self_improvement:
   threshold_rejection_rate: 0.40
   threshold_budget_overshoot: 0.50
   threshold_gate_frequency: 0.30
-    port_range_start: 3100
-    port_range_end: 3199
-    smoke_test_timeout_s: 30
