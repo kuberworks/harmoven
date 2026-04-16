@@ -29,13 +29,17 @@ const MAX_PACKAGES        = 20
 // Safe PyPI package name: alphanumeric, dots, hyphens, underscores; optional ==X.Y.Z specifier.
 const PKG_NAME_RE         = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(==?[0-9][a-zA-Z0-9._*-]*)?$/
 
-// Resolve paths once at module load time (not per-invocation).
 // WORKER_PATH uses process.cwd() (= project root) rather than __dirname.
 // In Next.js, server-side code is compiled into .next/server/chunks/, so
 // __dirname resolves to .next/server/ — not lib/agents/ — causing a
 // "Cannot find module" error at Worker spawn time.
-const PYODIDE_PATH  = require.resolve('pyodide')
-const WORKER_PATH   = resolve(process.cwd(), 'lib/agents/python-executor.worker.cjs')
+//
+// NOTE: do NOT use require.resolve('pyodide') here. During the Next.js/webpack
+// build, require.resolve() is intercepted and replaced with a numeric internal
+// module ID (e.g. 54902). The worker receives that number and Node.js throws
+// "The id argument must be of type string". The worker .cjs resolves pyodide
+// via its own require('pyodide') call — no path needed from the parent.
+const WORKER_PATH = resolve(process.cwd(), 'lib/agents/python-executor.worker.cjs')
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -201,7 +205,7 @@ export async function executePython(
     const code = fixLeadingZeroIntegers(input.code)
 
     const worker = new Worker(WORKER_PATH, {
-      workerData: { code, pyodidePath: PYODIDE_PATH, packages: input.packages ?? [] },
+      workerData: { code, packages: input.packages ?? [] },
       resourceLimits: {
         maxOldGenerationSizeMb: MEMORY_LIMIT_MB,
         maxYoungGenerationSizeMb: 32,
