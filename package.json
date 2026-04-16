@@ -20,7 +20,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "demo:rbac": "tsx scripts/rbac-demo.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
