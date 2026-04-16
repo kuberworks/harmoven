@@ -96,7 +96,7 @@ export function SecurityClient({ sessions: initialSessions, passkeys: initialPas
     if (!disablePassword) return
     setDisableLoading(true)
     try {
-      const { error } = await (authClient as Record<string, unknown> & {
+      const { error } = await (authClient as unknown as Record<string, unknown> & {
         twoFactor: { disable: (data: { password: string }) => Promise<{ error: { status?: number } | null }> }
       }).twoFactor.disable({ password: disablePassword })
       if (error) {
