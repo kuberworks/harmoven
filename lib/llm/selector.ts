@@ -191,6 +191,38 @@ export function selectByTier(
 }
 
 /**
+ * Return the best-tier-proximity candidate pool for the requested tier.
+ * Used when no exact-tier profiles exist, to constrain selectLlm() to the
+ * nearest available tier rather than the entire pool.
+ *
+ * Order:
+ *   powerful → balanced profiles (if any), else fast profiles
+ *   balanced → fast profiles
+ *   fast     → all (nothing cheaper)
+ *
+ * This prevents the cost scorer from picking a lower tier than necessary
+ * (e.g. nano over mini for a high-complexity node) when the requested tier
+ * has no profiles configured.
+ */
+export function tierProximityCandidates(
+  tier:     string,
+  profiles: LlmProfileConfig[],
+): LlmProfileConfig[] {
+  const exact = profiles.filter(p => p.tier === tier)
+  if (exact.length > 0) return exact
+
+  if (tier === 'powerful') {
+    const balanced = profiles.filter(p => p.tier === 'balanced')
+    if (balanced.length > 0) return balanced
+    return profiles.filter(p => p.tier === 'fast')
+  }
+  if (tier === 'balanced') {
+    return profiles.filter(p => p.tier === 'fast')
+  }
+  return profiles
+}
+
+/**
  * Full multi-criteria selection — used by the DAG executor for production routing.
  * Applies hard constraints then scores the eligible candidates.
  * Returns null if no eligible model is available (hard block → escalate to human).

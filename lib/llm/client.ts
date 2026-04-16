@@ -31,7 +31,7 @@ import {
 import type { ILLMClient, ChatMessage, ChatOptions, ChatResult, ToolCall, ToolResult, ToolCallIteration } from '@/lib/llm/interface'
 import type { LlmProfile, Prisma as PrismaTypes }            from '@prisma/client'
 import { BUILT_IN_PROFILES, loadActiveProfiles, detectFallbackProfileId, dbRowToLlmProfileConfig } from './profiles'
-import { selectByTier, selectLlm } from './selector'
+import { selectByTier, selectLlm, tierProximityCandidates } from './selector'
 import type { SelectLlmInput } from './selector'
 import type { LlmProfileConfig } from './profiles'
 import { validateLLMBaseUrl, assertLocalHost } from '@/lib/security/ssrf-protection'
@@ -840,9 +840,12 @@ export class DirectLLMClient implements ILLMClient {
           preferredLlmId:   ctx.preferredLlmId,
           budgetRemaining:  ctx.budgetRemaining,
           // Use tier-filtered candidates to enforce tier discipline.
-          // Fall back to the full pool only if no same-tier profiles exist
-          // (e.g. admin removed all 'fast' profiles from orchestrator.yaml).
-          candidates: tierCandidates.length > 0 ? tierCandidates : this.profiles,
+          // When no exact-tier profiles exist, use the nearest tier (e.g. balanced
+          // instead of powerful) rather than the full pool — prevents the cost scorer
+          // from picking a lower tier than necessary (nano over mini for powerful).
+          candidates: ctx.preferredLlmId
+            ? this.profiles
+            : (tierCandidates.length > 0 ? tierCandidates : tierProximityCandidates(tier, this.profiles)),
         }
         const selected = selectLlm(input)
         if (selected) return selected
