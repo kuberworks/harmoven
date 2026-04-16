@@ -176,8 +176,16 @@ PATTERN A — FILE GENERATION (task = "create / produce a downloadable file, no 
 - NEVER output a text/JSON description of what a file should contain; the file must be created
   by Python code. A WRITER saying "here is the Excel content" with no PYTHON_EXECUTOR is WRONG.
 - WRITER nodes produce ONLY raw Python source code (no prose, no Markdown fences);
-  PYTHON_EXECUTOR runs all that code in a sandboxed Pyodide environment;
+  PYTHON_EXECUTOR runs all that code in a sandboxed Pyodide (Python 3.11 WASM) environment;
   files saved to disk are automatically collected and made downloadable.
+  AVAILABLE packages in Pyodide (use these; anything else must be pure-Python on PyPI):
+    numpy, pandas, scipy, statsmodels, scikit-learn, lightgbm, xgboost, opencv-python,
+    matplotlib, seaborn, plotly, bokeh, altair, pillow, imageio, wordcloud,
+    openpyxl, xlrd, python-calamine, reportlab, pymupdf, lxml, beautifulsoup4,
+    requests, httpx, pyyaml, jsonschema, sqlalchemy, pydantic, cryptography,
+    regex, networkx, igraph, nltk, geopandas, shapely, astropy, biopython, sympy
+  NEVER use: torch, tensorflow, keras, jax, pydub, moviepy, psycopg2, asyncpg,
+    grpcio, tkinter, PyQt5, multiprocessing.Pool, subprocess
 - Python code MUST write files with workbook.save('name.xlsx'), df.to_csv('name.csv'),
   plt.savefig('name.png'), or open('name.ext', 'wb').write(...).
   File names: alphanumeric + dots/hyphens. For project files, use the natural filename
