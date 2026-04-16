@@ -63,6 +63,13 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
         run: npx prisma migrate deploy
+      - name: Seed database (admin user + setup.wizard_complete)
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+          HARMOVEN_ADMIN_EMAIL: admin@harmoven.local
+          HARMOVEN_ADMIN_PASSWORD: Admin1234!
+          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
+        run: npx prisma db seed
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Build app for E2E
