@@ -191,8 +191,16 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  const engine = await getExecutionEngine()
-  void engine.executeRun(run.id)
+  try {
+    const engine = await getExecutionEngine()
+    void engine.executeRun(run.id)
+  } catch (err) {
+    console.error('[POST /api/v1/runs] Engine init failed — run created but not enqueued:', err)
+    return NextResponse.json(
+      { run, warning: 'Run created but could not be enqueued. The executor will retry on next startup.' },
+      { status: 202 },
+    )
+  }
 
   return NextResponse.json({ run }, { status: 201 })
 }

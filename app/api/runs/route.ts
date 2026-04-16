@@ -60,7 +60,14 @@ const CreateRunBody = z.object({
   // Run chaining: IDs of completed runs whose outputs feed into this run.
   // Max 5 parents; each must be COMPLETED and belong to the same project.
   parent_run_ids:    z.array(z.string().uuid()).max(5).optional(),
-  enable_web_search: z.boolean().optional().default(false),
+  enable_web_search:   z.boolean().optional().default(false),
+  // User-selected output format (form selector). Stored in run_config and forwarded
+  // to the PLANNER as C2 rule: overrides any desired_outputs from the CLASSIFIER.
+  output_file_format: z.enum([
+    'txt', 'csv', 'json', 'yaml', 'html', 'md',
+    'py', 'ts', 'js', 'sh',
+    'docx', 'pdf',
+  ]).optional(),
   llm_overrides:     LlmOverridesSchema.optional(),
 }).strict()
 
@@ -265,8 +272,9 @@ export async function POST(req: NextRequest) {
       dag:              initialDag,
       run_config:       {
         providers: [],
-        ...(body.enable_web_search ? { enable_web_search: true } : {}),
-        ...(body.llm_overrides    ? { llm_overrides: body.llm_overrides } : {}),
+        ...(body.enable_web_search   ? { enable_web_search: true } : {}),
+        ...(body.output_file_format  ? { output_file_format: body.output_file_format } : {}),
+        ...(body.llm_overrides       ? { llm_overrides: body.llm_overrides } : {}),
       },
       transparency_mode: body.transparency_mode ?? false,
       // Section 18: use the higher of the caller-supplied level and the local classifier result.
@@ -355,8 +363,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Enqueue asynchronously — route returns 201 immediately.
-  const engine = await getExecutionEngine()
-  void engine.executeRun(run.id)
+  try {
+    const engine = await getExecutionEngine()
+    void engine.executeRun(run.id)
+  } catch (err) {
+    // Engine initialisation failed (e.g. DB unavailable, LLM profile load error).
+    // The run record is already committed — return 202 so the client knows the run
+    // was created and can retry or poll. Do not return 500 (which would produce
+    // non-JSON from Next.js and cause the client's res.json() to throw).
+    console.error('[POST /api/runs] Engine init failed — run created but not enqueued:', err)
+    return NextResponse.json(
+      { run, warning: 'Run created but could not be enqueued. The executor will retry on next startup.' },
+      { status: 202 },
+    )
+  }
 
   return NextResponse.json({ run }, { status: 201 })
 }
