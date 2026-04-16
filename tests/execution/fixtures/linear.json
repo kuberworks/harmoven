@@ -1,0 +1,14 @@
+{
+  "description": "Linear DAG: n1 → n2 → n3. Each node depends on the previous.",
+  "dag": {
+    "nodes": [
+      { "id": "n1", "agent_type": "CLASSIFIER" },
+      { "id": "n2", "agent_type": "PLANNER" },
+      { "id": "n3", "agent_type": "REVIEWER" }
+    ],
+    "edges": [
+      { "from": "n1", "to": "n2" },
+      { "from": "n2", "to": "n3" }
+    ]
+  }
+}

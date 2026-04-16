@@ -1,0 +1,153 @@
+# .github/workflows/main.yml
+# Amendment 88.3 — Level 2: Main branch pipeline
+# Runs on every merge to main. Builds Docker image, integration tests, staging smoke.
+
+name: Main Branch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+
+  integration-tests:
+    name: Integration tests (Haiku)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: harmoven_test
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - run: npm run generate:types
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+        run: npx prisma migrate deploy
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
+          HARMOVEN_LLM_TIER: haiku
+        run: npm run test:integration
+        # ~$0.05 per run, 3-4 minutes
+
+  build-docker:
+    name: Build + push Docker image
+    needs: integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+      - name: Log in to Docker Hub
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1 # v3.0.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/app:edge
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  staging-smoke:
+    name: Deploy to staging (Fly.io) + smoke tests
+    needs: build-docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy to staging
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy --app harmoven \
+            --image ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }} \
+            --strategy rolling \
+            --wait-timeout 120
+        # Replaces SSH-based deploy. Requires:
+        #   1. fly.toml at repo root (app = "harmoven-staging")
+        #   2. FLY_API_TOKEN secret in GitHub repo settings
+        #      (create at: fly.io → Account → Access Tokens)
+        #   3. App + secrets bootstrapped once:
+        #      fly apps create harmoven-staging --org personal
+        #      fly secrets set DATABASE_URL=... BETTER_AUTH_SECRET=... \
+        #        --app harmoven-staging
+      - name: Wait for staging health check
+        run: |
+          for i in $(seq 1 12); do
+            curl -sf ${{ secrets.STAGING_URL }}/api/health && break
+            echo "Waiting... ($i/12)"
+            sleep 5
+          done
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run smoke tests against staging
+        run: npx playwright test --grep "@smoke" --project=chromium
+        env:
+          BASE_URL: ${{ secrets.STAGING_URL }}
+        # 5 critical paths: login, create run, view gate, analytics, admin
+
+  openapi-types:
+    name: OpenAPI → TypeScript (generate + validate)
+    # types/api.ts is NOT committed (spec-first / Pattern A).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - name: Generate types/api.ts from openapi/v1.yaml
+        run: npm run generate:types
+
+  openapi-spec:
+    name: Generate + commit OpenAPI spec
+    needs: integration-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - run: npm run generate:openapi
+      - name: Commit updated spec
+        uses: stefanzweifel/git-auto-commit-action@8621da0631a0a7c1dbb3b516a5ce2a6a2a95a174 # v5.0.1
+        with:
+          commit_message: "chore: update OpenAPI spec [skip ci]"
+          file_pattern: "docs/openapi.yaml"

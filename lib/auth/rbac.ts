@@ -1,0 +1,225 @@
+// lib/auth/rbac.ts
+// Permission resolution — Amendment 78.3 / 28.3
+//
+// resolvePermissions() is the single gate for all authorization checks.
+// It is called once per request and the result cached via AsyncLocalStorage (T1.8).
+//
+// Caller types:
+//   - session: browser session from Better Auth (user.role = Better Auth admin plugin value)
+//   - api_key: ProjectApiKey row (hv1_ format, Am.78)
+
+import { db } from '@/lib/db/client'
+import type { Permission } from './permissions'
+import { BUILT_IN_ROLES } from './built-in-roles'
+import type { BuiltInRoleName } from './built-in-roles'
+import { ALL_PERMISSIONS } from './permissions'
+
+// ─── Permission cache ─────────────────────────────────────────────────────────
+// Short-lived cache keyed by "<callerId>:<projectId>" so repeated calls within
+// the same request (or across calls in the same 60-second window) skip the DB.
+// instance_admin is never cached — it returns early before this cache is checked.
+// TTL = 60 s (DoD §T2B.1) — balances DB load with revocation promptness.
+//
+// Cache bounds (P0-B):
+//   MAX_CACHE_ENTRIES limits memory growth on long-lived instances. When the cap
+//   is reached, the oldest entry (by insertion order — Map preserves it) is evicted
+//   before inserting the new one. This is O(1) thanks to Map's iterator.
+//
+// Multi-replica note: this cache is in-process. Invalidations (invalidatePermCache /
+// invalidateProjectPermCache) are LOCAL only. In a multi-replica deployment, a role
+// change on replica A does not purge the cache on replica B — the stale entry will
+// expire naturally within PERM_CACHE_TTL_MS (60 s). Operators running >1 replica
+// should set REDIS_URL so rate-limiting uses the same Redis; for permission
+// revocation latency beyond 60 s they should use a Redis pub/sub invalidation layer
+// (planned for a future release). The TTL is the authoritative upper bound.
+
+interface PermCacheEntry { perms: Set<Permission>; expiresAt: number }
+const _permCache = new Map<string, PermCacheEntry>()
+const PERM_CACHE_TTL_MS = 60_000
+/** Hard cap on cache entries to prevent unbounded memory growth on long-lived instances. */
+const PERM_CACHE_MAX_ENTRIES = 10_000
+
+/** Periodic GC: purge expired entries every 5 minutes. */
+const _permCacheGcInterval = setInterval(() => {
+  const now = Date.now()
+  for (const [key, entry] of _permCache.entries()) {
+    if (now > entry.expiresAt) _permCache.delete(key)
+  }
+}, 5 * 60 * 1000)
+// Allow the process to exit even if this interval is still registered.
+if (_permCacheGcInterval.unref) _permCacheGcInterval.unref()
+
+function cacheKey(caller: Caller, projectId: string): string {
+  return caller.type === 'session'
+    ? `session:${caller.userId}:${projectId}`
+    : `apikey:${caller.keyId}:${projectId}`
+}
+
+function getCached(caller: Caller, projectId: string): Set<Permission> | null {
+  const entry = _permCache.get(cacheKey(caller, projectId))
+  if (!entry || Date.now() > entry.expiresAt) {
+    _permCache.delete(cacheKey(caller, projectId))
+    return null
+  }
+  return entry.perms
+}
+
+function setCached(caller: Caller, projectId: string, perms: Set<Permission>): void {
+  // Evict oldest entry when the cap is reached (Map preserves insertion order).
+  if (_permCache.size >= PERM_CACHE_MAX_ENTRIES) {
+    const oldestKey = _permCache.keys().next().value
+    if (oldestKey !== undefined) _permCache.delete(oldestKey)
+  }
+  _permCache.set(cacheKey(caller, projectId), { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS })
+}
+
+/** Invalidate cached permissions for a specific caller / project pair. */
+export function invalidatePermCache(caller: Caller, projectId: string): void {
+  _permCache.delete(cacheKey(caller, projectId))
+}
+
+/**
+ * Invalidate all cached permission entries for a project.
+ * Call this when a role *definition* changes (not just a member's role assignment)
+ * since a single role change can affect every member who held that role.
+ */
+export function invalidateProjectPermCache(projectId: string): void {
+  const suffix = `:${projectId}`
+  for (const key of _permCache.keys()) {
+    if (key.endsWith(suffix)) _permCache.delete(key)
+  }
+}
+
+export class ForbiddenError extends Error {
+  readonly status = 403
+  constructor(message = 'Forbidden') {
+    super(message)
+    this.name = 'ForbiddenError'
+  }
+}
+
+export class UnauthorizedError extends Error {
+  readonly status = 401
+  constructor(message = 'Unauthorized') {
+    super(message)
+    this.name = 'UnauthorizedError'
+  }
+}
+
+export type SessionCaller = {
+  type: 'session'
+  userId: string
+  instanceRole: string | null  // Better Auth admin plugin role field ('instance_admin' | null)
+}
+
+export type ApiKeyCaller = {
+  type: 'api_key'
+  keyId: string
+}
+
+export type Caller = SessionCaller | ApiKeyCaller
+
+/**
+ * Resolve the full set of permissions for a caller in a given project.
+ *
+ * instance_admin bypasses project membership — they have all permissions.
+ * For regular users and API keys, the ProjectMember/ProjectApiKey row is used
+ * to find the associated ProjectRole, which may extend a built-in role.
+ *
+ * Throws ForbiddenError if the caller has no membership in the project.
+ */
+export async function resolvePermissions(
+  caller: Caller,
+  projectId: string,
+): Promise<Set<Permission>> {
+  // instance_admin gets full permission set — not cached (in-memory bypass is fast enough).
+  if (
+    caller.type === 'session' &&
+    caller.instanceRole === 'instance_admin'
+  ) {
+    return new Set(BUILT_IN_ROLES.instance_admin)
+  }
+
+  // Cache hit
+  const cached = getCached(caller, projectId)
+  if (cached) return cached
+
+  let roleExtendsName: string | null = null
+  let permissionsList: string[] = []
+
+  if (caller.type === 'api_key') {
+    const key = await db.projectApiKey.findUnique({
+      where: { id: caller.keyId },
+      select: { role: { select: { extends: true, permissions: true } } },
+    })
+    if (!key?.role) throw new ForbiddenError()
+    roleExtendsName = key.role.extends ?? null
+    permissionsList = key.role.permissions
+  } else {
+    const member = await db.projectMember.findUnique({
+      where: {
+        project_id_user_id: {
+          project_id: projectId,
+          user_id: caller.userId,
+        },
+      },
+      select: { role: { select: { extends: true, permissions: true } } },
+    })
+    if (!member?.role) throw new ForbiddenError()
+    roleExtendsName = member.role.extends ?? null
+    permissionsList = member.role.permissions
+  }
+
+  // Start with the base permissions from the extended built-in role
+  const result = new Set<Permission>()
+
+  if (roleExtendsName && roleExtendsName in BUILT_IN_ROLES) {
+    for (const p of BUILT_IN_ROLES[roleExtendsName as BuiltInRoleName]) {
+      result.add(p)
+    }
+  }
+
+  // Add explicit permissions declared on the role (additive).
+  // Validate each entry against the canonical permission set before adding —
+  // rejects any corrupt or injected string that is not a known permission.
+  const permissionSet = new Set<string>(ALL_PERMISSIONS)
+  for (const p of permissionsList) {
+    if (permissionSet.has(p)) {
+      result.add(p as Permission)
+    }
+  }
+
+  setCached(caller, projectId, result)
+  return result
+}
+
+/**
+ * Assert that the caller has all of the required permissions.
+ * Throws ForbiddenError if any permission is missing.
+ * The error message is intentionally generic — never leaks permission names to the caller.
+ */
+export function assertPermissions(
+  perms: Set<Permission>,
+  required: Permission[],
+): void {
+  for (const p of required) {
+    if (!perms.has(p)) throw new ForbiddenError()
+  }
+}
+
+/**
+ * Assert the caller is an instance_admin session.
+ * Use this for all instance-level routes (/api/admin/*) to replace inline
+ * `caller.instanceRole === 'instance_admin'` checks.
+ *
+ * After this call TypeScript narrows `caller` to `SessionCaller`.
+ * Throws ForbiddenError (403). API keys are rejected — they cannot hold instance-level scope.
+ */
+export function assertInstanceAdmin(caller: Caller): asserts caller is SessionCaller {
+  if (caller.type !== 'session') {
+    throw new ForbiddenError('API keys cannot access instance-admin routes')
+  }
+  if (caller.instanceRole !== 'instance_admin') {
+    throw new ForbiddenError()
+  }
+}

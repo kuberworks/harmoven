@@ -1,0 +1,246 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${HARMOVEN_PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false   # prod: omit .env and inject vars from your secret manager
+    environment:
+      - NODE_ENV=production
+      # ── Required secrets ────────────────────────────────────────────────────
+      # These vars are forwarded from the shell environment when no .env is used
+      # (production / secret-manager deployments). When .env is present (--dev or
+      # developer setup), env_file above takes precedence only if the shell var is
+      # not already set; listing them here ensures Docker Compose always forwards
+      # them regardless of source.
+      - DATABASE_URL=${DATABASE_URL}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - INTERNAL_CRON_SECRET=${INTERNAL_CRON_SECRET}
+      # ── Optional / defaulted ────────────────────────────────────────────────
+      - AUTH_URL=${AUTH_URL:-http://localhost:3000}
+      # LiteLLM gateway — app talks to sidecar, NEVER to provider APIs directly (Am.91).
+      # Only relevant when litellm.enabled=true in orchestrator.yaml.
+      - LITELLM_GATEWAY_URL=${LITELLM_GATEWAY_URL:-http://litellm:4000}
+      # ── LLM provider API keys (forwarded from shell / secret manager) ────────
+      # Set the key for your chosen provider. Unused vars evaluate to empty and
+      # are ignored by the app. Only one provider key is needed at a time.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      # ── MFA operator escape hatch (forwarded from shell / secret manager) ──
+      # Set both vars in your shell (or secret manager) to disable admin MFA.
+      # When unset, MFA enforcement falls back to the DB setting (default: on).
+      - HARMOVEN_ENFORCE_ADMIN_MFA=${HARMOVEN_ENFORCE_ADMIN_MFA:-}
+      - HARMOVEN_MFA_DISABLE_ACKNOWLEDGED=${HARMOVEN_MFA_DISABLE_ACKNOWLEDGED:-}
+    networks:
+      - app_net          # reaches db + docker-proxy + internet (LLM direct calls)
+      - litellm_net      # reaches litellm sidecar (opt-in)
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - config_git_data:/data   # config-git mirror (lib/config-git/paths.ts default)
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  db:
+    image: postgres:16-alpine
+    # Enforce synchronous_commit=on (spec §34 crash safety requirement).
+    # PostgreSQL defaults to on, but we make it explicit so a future tuning
+    # pass cannot silently lower it without touching this file.
+    command: postgres -c synchronous_commit=on
+    ports:
+      # Bind to loopback only — DB must not be reachable from external hosts.
+      - "127.0.0.1:${HARMOVEN_DB_PORT:-5432}:5432"
+    networks:
+      - app_net          # only the app service is on this network
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-harmoven}
+      POSTGRES_USER: ${POSTGRES_USER:-harmoven}
+      # SECURITY: POSTGRES_PASSWORD must be set in .env — no default is provided.
+      # Use: POSTGRES_PASSWORD=$(openssl rand -base64 32)
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harmoven -d harmoven"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # LiteLLM sidecar — Amendment 91 (T3.8 supply chain security)
+  # Opt-in: set litellm.enabled: true in orchestrator.yaml to activate.
+  #
+  # Isolation requirements (Am.91):
+  #   - Image pinned by digest (NOT by tag — prevents tag-hijacking attacks)
+  #   - Runs on isolated internal network only (no direct host port exposure in prod)
+  #   - Receives ONLY LLM API provider keys, NOT DATABASE_URL, AUTH_SECRET, or LITELLM_MASTER_KEY
+  #   - App receives ONLY LITELLM_GATEWAY_URL — never the raw provider API keys
+  #
+  # F-03: LITELLM_DIGEST is OPTIONAL when the `litellm` profile is not active.
+  # Docker Compose resolves variables even for services in inactive profiles,
+  # so using :? (mandatory) would break `docker compose up` for devs not using LiteLLM.
+  # Use :- (optional with empty default) — the image line is syntactically valid even
+  # when blank; Docker will error at pull time only if the profile is actually activated
+  # without the variable set.
+  #
+  # To activate: LITELLM_DIGEST=sha256:<digest> docker compose --profile litellm up
+  # Find digest: docker pull ghcr.io/berriai/litellm:main-v1.82.6 && \
+  #   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/berriai/litellm:main-v1.82.6
+  litellm:
+    image: ghcr.io/berriai/litellm@${LITELLM_DIGEST:-sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    # No 'ports:' here — accessible only via internal Docker DNS: http://litellm:4000
+    # Expose to host ONLY for local development by adding: ports: ["127.0.0.1:4000:4000"]
+    # litellm_net is NOT internal — LiteLLM needs internet to reach provider APIs.
+    # LiteLLM is isolated from app_net (cannot reach the DB).
+    networks:
+      - litellm_net
+    environment:
+      # LiteLLM receives ONLY its own master key + LLM provider API keys.
+      # DATABASE_URL, AUTH_SECRET, and app secrets MUST NOT be in this block.
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set in .env}
+      # Add only the provider keys LiteLLM needs (omit keys for disabled providers):
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    profiles:
+      - litellm   # only started when: docker compose --profile litellm up
+
+  # Redis — optional, for distributed rate limiting across app replicas.
+  # Activate with: REDIS_URL=redis://redis:6379 docker compose --profile redis up
+  # When REDIS_URL is NOT set, the app falls back to in-memory rate limiting
+  # (safe for single-instance deployments).
+  #
+  # Redis data is ephemeral by design (rate limit counters don't need persistence).
+  # No password is set here — Redis is on an isolated internal network only.
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - app_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - redis   # only started when: docker compose --profile redis up
+
+  # Docker socket proxy (Tecnativa) — Amendment 92 H4.
+  # The Smoke Test Agent needs Docker to launch preview containers but must NOT
+  # have full Docker socket access. This proxy restricts it to the minimum needed.
+  #
+  # Opt-in: activate with: docker compose --profile smoke-agent up
+  # DOCKER_PROXY_DIGEST must be set in .env when this profile is active — use an immutable digest, not a tag.
+  # Find digest: docker pull ghcr.io/tecnativa/docker-socket-proxy:latest &&
+  #   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/tecnativa/docker-socket-proxy:latest
+  docker-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy@${DOCKER_PROXY_DIGEST:-sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    environment:
+      # ── Allow what the Smoke Test Agent needs ─────────────────────────────
+      CONTAINERS: 1    # list, inspect, start, stop containers
+      IMAGES:     1    # pull images for preview containers
+      NETWORKS:   1    # create/inspect preview networks
+      POST:       1    # allow POST operations (start/stop/create)
+      # ── Explicitly block dangerous capabilities ────────────────────────────
+      AUTH:       0    # no auth config access
+      BUILD:      0    # no docker build (prevents arbitrary code execution)
+      COMMIT:     0    # no docker commit (prevents image poisoning)
+      CONFIGS:    0    # no swarm configs
+      DISTRIBUTION: 0  # no registry access from proxy
+      EXEC:       0    # NO exec into containers — critical: prevents shell escape
+      INFO:       0    # no daemon info (hides host system details)
+      NODES:      0    # no swarm nodes
+      PING:       0    # no ping (reduce fingerprinting)
+      PLUGINS:    0    # no plugin management
+      SECRETS:    0    # no swarm secrets
+      SERVICES:   0    # no swarm services
+      SESSION:    0    # no session management
+      SWARM:      0    # no swarm operations
+      SYSTEM:     0    # no system-level access
+      TASKS:      0    # no swarm tasks
+      VERSION:    0    # no version endpoint
+      VOLUMES:    0    # no volume creation/deletion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # read-only mount — proxy enforces further restrictions
+    networks:
+      - app_net          # reachable from app only (no other service is on app_net)
+    restart: unless-stopped
+    profiles:
+      - smoke-agent   # only started when: docker compose --profile smoke-agent up
+    # No ports exposed — app connects via internal Docker network only
+
+  # Marketplace auto-update cron (B.5.1).
+  # Calls /api/internal/run-update-checks on a configurable interval.
+  # Activated with: docker compose --profile marketplace-cron up
+  #
+  # Required env vars:
+  #   INTERNAL_CRON_SECRET   — shared secret for the cron endpoint (constant-time compare)
+  #   CHECK_INTERVAL_SECONDS — polling interval (default: 86400 = 24 h)
+  #
+  # Security: only app_net; no DB access; no auth secret; no LLM keys.
+  marketplace-cron:
+    image: curlimages/curl:8.9.1
+    command: >-
+      sh -c '
+        echo "[cron] Waiting for app to be ready...";
+        sleep 10;
+        echo "[cron] Running initial update check...";
+        curl -sf -X POST
+             -H "X-Cron-Secret: $${INTERNAL_CRON_SECRET}"
+             http://app:3000/api/internal/run-update-checks || true;
+        while true; do
+          echo "[cron] Sleeping $${CHECK_INTERVAL_SECONDS:-86400}s...";
+          sleep $${CHECK_INTERVAL_SECONDS:-86400};
+          echo "[cron] Running scheduled update check...";
+          curl -sf -X POST
+               -H "X-Cron-Secret: $${INTERNAL_CRON_SECRET}"
+               http://app:3000/api/internal/run-update-checks || true;
+        done'
+    environment:
+      - INTERNAL_CRON_SECRET=${INTERNAL_CRON_SECRET:?INTERNAL_CRON_SECRET must be set in .env}
+      - CHECK_INTERVAL_SECONDS=${CHECK_INTERVAL_SECONDS:-86400}
+    networks:
+      - app_net
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - marketplace-cron   # docker compose --profile marketplace-cron up
+
+volumes:
+  postgres_data:
+  config_git_data:   # persists orchestrator.yaml config-git mirror across restarts
+
+networks:
+  app_net:
+    # Main application network: app ↔ db, app ↔ docker-proxy, app → internet.
+    # NOT internal — the app needs outbound internet for DirectLLMClient calls
+    # (Anthropic, OpenAI, Google, etc.) when LiteLLM sidecar is not active.
+    driver: bridge
+  litellm_net:
+    # Network between app and LiteLLM sidecar.
+    # NOT internal — LiteLLM needs outbound internet to reach provider APIs.
+    # LiteLLM is isolated from app_net: it CANNOT reach the DB.
+    driver: bridge

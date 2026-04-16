@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+.next/
+out/
+dist/
+
+# Environment files — NEVER commit these
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Prisma generated
+# (migrations/*.sql are intentionally tracked — removing them from git breaks
+# schema history auditability. Only the generated client is excluded below.)
+
+# Keep these tracked:
+# .env.example  ← document required vars, no real values
+# .env.test     ← CI-safe test values only
+# orchestrator.yaml ← instance config, no secrets
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# Electron build
+electron/dist/
+release/
+
+# Data directories (root-level only — does NOT affect app/api/**/data/ routes)
+/data/
+
+# LLM provider plugins — unofficial plugins are NOT shipped with Harmoven releases.
+# Install via POST /api/admin/llm-plugins/install (.hpkg archive).
+# See lib/llm/plugins/github-copilot/ for a reference implementation.
+lib/llm/plugins/
+
+# dev/ directory — specs and prompts, not for versioning
+dev/
+
+# Generated files — produced by `npm run generate:types` in CI (Pattern A: spec-first)
+# Never commit — always regenerated fresh from openapi/v1.yaml
+types/api.ts
+
+# Playwright
+playwright-report/
+test-results/
+tests/e2e/.auth/
+cosign.key

@@ -1,0 +1,28 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "plugins": ["@typescript-eslint"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["litellm", "litellm/*", "@litellm/*"],
+            "message": "Never import LiteLLM directly. The LiteLLM sidecar is an isolated process — use ILLMClient via HTTP gateway (lib/llm/client.ts). Direct LiteLLM imports break process isolation (Amendment 91)."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.name='exec']",
+        "message": "exec() is banned — use execFileAsync() from lib/utils/exec-safe.ts with a string[] argument array. exec() with any dynamic value is a command injection risk (Amendment 92 C1)."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='child_process'][callee.property.name='exec']",
+        "message": "child_process.exec() is banned — use execFileAsync() from lib/utils/exec-safe.ts. exec() is a command injection risk when used with dynamic values (Amendment 92 C1)."
+      }
+    ]
+  }
+}

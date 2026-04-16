@@ -1,0 +1,183 @@
+// app/api/projects/[id]/members/[userId]/route.ts
+// PATCH  /api/projects/:id/members/:userId  — Change a member's role
+// DELETE /api/projects/:id/members/:userId  — Remove a member from the project
+//
+// Auth: project:members permission required.
+// Safety: Prevents removing or role-changing the last admin of a project.
+
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { db } from '@/lib/db/client'
+import { resolveCaller } from '@/lib/auth/resolve-caller'
+import { assertProjectAccess } from '@/lib/auth/ownership'
+import {
+  resolvePermissions,
+  invalidatePermCache,
+} from '@/lib/auth/rbac'
+import type { Caller } from '@/lib/auth/rbac'
+import { uuidv7 } from '@/lib/utils/uuidv7'
+
+const PatchMemberBody = z.object({
+  role_id: z.string().uuid(),
+})
+
+type Params = { params: Promise<{ id: string; userId: string }> }
+
+type AuthGuardResult =
+  | { code: 'ok'; caller: Caller }
+  | { code: 'unauthorized' | 'forbidden' }
+
+async function authGuard(req: NextRequest, projectId: string): Promise<AuthGuardResult> {
+  const caller = await resolveCaller(req)
+  if (!caller) return { code: 'unauthorized' }
+  try {
+    await assertProjectAccess(caller, projectId)
+  } catch {
+    return { code: 'forbidden' }
+  }
+  const perms = await resolvePermissions(caller, projectId)
+  if (!perms.has('project:members')) return { code: 'forbidden' }
+  return { code: 'ok', caller }
+}
+
+export async function PATCH(req: NextRequest, { params }: Params) {
+  const { id: projectId, userId } = await params
+
+  if (
+    !z.string().uuid().safeParse(projectId).success ||
+    !z.string().uuid().safeParse(userId).success
+  ) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  }
+
+  const guard = await authGuard(req, projectId)
+  if (guard.code !== 'ok') {
+    if (guard.code === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const { caller } = guard
+
+  let rawBody: unknown
+  try {
+    rawBody = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const parsed = PatchMemberBody.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
+  }
+  const { role_id } = parsed.data
+
+  // Verify member exists
+  const existing = await db.projectMember.findUnique({
+    where: { project_id_user_id: { project_id: projectId, user_id: userId } },
+    select: { user_id: true, role: { select: { name: true } } },
+  })
+  if (!existing) return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+
+  // Validate new role
+  const newRole = await db.projectRole.findUnique({
+    where: { id: role_id },
+    select: { id: true, project_id: true, is_builtin: true, name: true },
+  })
+  if (!newRole) return NextResponse.json({ error: 'Role not found' }, { status: 404 })
+  if (!newRole.is_builtin && newRole.project_id !== projectId) {
+    return NextResponse.json({ error: 'Role does not belong to this project' }, { status: 400 })
+  }
+  // SECURITY (CVE-HARM-003): instance_admin is an instance-level role that must only be
+  // granted via the Better Auth admin plugin or direct DB tooling by a super-admin.
+  // Allowing it here would let any project:admin elevate any user to full instance control.
+  if (newRole.name === 'instance_admin') {
+    return NextResponse.json(
+      { error: 'Cannot assign instance_admin role via project API — use the instance admin panel' },
+      { status: 403 },
+    )
+  }
+
+  const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
+
+  const updated = await db.projectMember.update({
+    where: { project_id_user_id: { project_id: projectId, user_id: userId } },
+    data:  { role_id, added_by: actorId },
+    select: {
+      user_id: true,
+      role: { select: { id: true, name: true, display_name: true } },
+    },
+  })
+
+  // Invalidate permission cache for this user — their new role takes effect immediately.
+  invalidatePermCache({ type: 'session', userId, instanceRole: null }, projectId)
+
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       actorId,
+      action_type: 'project_member_role_changed',
+      payload:     { project_id: projectId, user_id: userId, new_role_id: role_id, previous_role: existing.role.name },
+    },
+  })
+
+  return NextResponse.json({ member: updated })
+}
+
+export async function DELETE(req: NextRequest, { params }: Params) {
+  const { id: projectId, userId } = await params
+
+  if (
+    !z.string().uuid().safeParse(projectId).success ||
+    !z.string().uuid().safeParse(userId).success
+  ) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  }
+
+  const guard = await authGuard(req, projectId)
+  if (guard.code !== 'ok') {
+    if (guard.code === 'unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  const { caller } = guard
+
+  const existing = await db.projectMember.findUnique({
+    where: { project_id_user_id: { project_id: projectId, user_id: userId } },
+    select: { user_id: true, role: { select: { name: true } } },
+  })
+  if (!existing) return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+
+  const actorId = caller.type === 'session' ? caller.userId : `apikey:${caller.keyId}`
+
+  // Prevent removing the last admin
+  if (existing.role.name === 'admin' || existing.role.name === 'instance_admin') {
+    const adminCount = await db.projectMember.count({
+      where: {
+        project_id: projectId,
+        role: { name: { in: ['admin', 'instance_admin'] } },
+      },
+    })
+    if (adminCount <= 1) {
+      return NextResponse.json(
+        { error: 'Cannot remove the last admin from the project' },
+        { status: 409 },
+      )
+    }
+  }
+
+  await db.projectMember.delete({
+    where: { project_id_user_id: { project_id: projectId, user_id: userId } },
+  })
+
+  // Invalidate permission cache for the removed user.
+  invalidatePermCache({ type: 'session', userId, instanceRole: null }, projectId)
+
+  await db.auditLog.create({
+    data: {
+      id:          uuidv7(),
+      actor:       actorId,
+      action_type: 'project_member_removed',
+      payload:     { project_id: projectId, user_id: userId, previous_role: existing.role.name },
+    },
+  })
+
+  return new NextResponse(null, { status: 204 })
+}

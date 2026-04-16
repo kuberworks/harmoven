@@ -1,0 +1,120 @@
+# orchestrator.yaml — Harmoven instance configuration
+# No secrets here — commit this file. Secrets go in .env (never committed).
+# Auto-synced to config.git on every change via the admin UI or startup sync.
+
+organization:
+  name: kuberworks
+  preset: small_business
+  deployment_mode: docker
+execution_engine:
+  provider: custom
+  max_concurrent_nodes: 20
+writer:
+  # Max output tokens per complexity tier. Defaults match provider maximums.
+  # Reduce these if you want to limit output length / cost.
+  max_tokens_low:    8192
+  max_tokens_medium: 32768
+  max_tokens_high:   65536
+llm:
+  default_provider: anthropic
+  profiles_active:
+    - claude-haiku-4-5
+    - claude-sonnet-4-6
+    - claude-opus-4-6
+  # LLM provider plugins are auto-discovered from lib/llm/plugins/ at startup.
+  # Install via: POST /api/admin/llm-plugins/install  (instance_admin, .hpkg file)
+  # No configuration needed here — discovery is fully automatic.
+confidentiality:
+  default_level: MEDIUM
+  local_classifier: true
+privacy:
+  presidio:
+    enabled: false
+secrets_backend:
+  provider: internal
+  key_rotation:
+    alert_after_days: 80
+security:
+  mfa_required_for_admin: true
+  mfa_required_for_user: false
+  mfa_methods:
+    - totp
+    - passkey
+  email_verification: true
+  session_timeout_minutes: 480
+  setup_token_required: true
+  rate_limit_provider: memory
+  allow_public_signup: false
+  supply_chain:
+    verify_image_digest: true
+    verify_pack_signatures: false
+    verify_mcp_skill_hashes: true
+    require_github_release: true
+    cosign_public_key: null
+    pinned_litellm_version: 1.82.6
+proactivity:
+  max_auto_runs_per_day: 20
+  max_cost_usd_per_day: 10
+  full_auto_enabled: false
+litellm:
+  enabled: false
+  pinned_version: 1.82.6
+memory:
+  enabled: true
+  scope: app_scaffolding
+  backend: sqlite
+updates:
+  auto_check: true
+  auto_download: true
+  auto_install: notify
+  check_interval_hours: 24
+  update_channel: stable
+  verify_digest: true
+  cosign_verify: false
+  cosign_public_key: null
+  require_github_release: true
+marketplace:
+  registry_url: https://registry.harmoven.com/v1
+  auto_check_updates: true
+  update_check_interval_hours: 24
+  default_update_policy: notify
+  security:
+    verify_content_hash: true
+    verify_gpg_signature: false
+    scan_content: true
+ui:
+  default_locale: en
+analytics:
+  enabled: true
+  hourly_rate_usd: 75
+  anonymize_exports: false
+  retention_days: 365
+regulatory:
+  contexts: []
+experimental:
+  actor_stats:
+    enabled: false
+  mcp_server:
+    enabled: false
+    transport: stdio
+    gate_strategy: suspend
+app_scaffolding:
+  preview:
+    mode: auto
+    port_range_start: 3100
+    port_range_end: 3199
+    smoke_test_timeout_s: 30
+
+# ─── Self-Improvement (Amendment 92) ─────────────────────────────────────────
+# Local instance-health analysis. Docker-only. No data sent externally.
+self_improvement:
+  enabled: true
+  analysis_interval_days: 7
+  lookback_days: 30
+  min_sample_size: 10
+  threshold_error_rate: 0.25
+  threshold_low_score: 2.5
+  threshold_retry_avg: 1.5
+  threshold_rejection_rate: 0.40
+  threshold_budget_overshoot: 0.50
+  threshold_gate_frequency: 0.30

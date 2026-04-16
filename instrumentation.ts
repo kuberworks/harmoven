@@ -1,0 +1,109 @@
+// instrumentation.ts
+// Next.js instrumentation hook — runs once at server startup (stable in Next.js 15).
+// Spec: BUG-003 — bootstrap functions were defined but never called.
+//
+// Calls are scoped to the Node.js runtime to avoid running in the Edge runtime
+// or during client-side rendering where these modules are not available.
+//
+// References:
+//   - lib/bootstrap/validate-argon2-memory.ts (Am.92 §8)
+//   - lib/bootstrap/verify-mcp-skills.ts
+//   - lib/bootstrap/sync-instance-config.ts
+
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { validateArgon2Memory }       = await import('@/lib/bootstrap/validate-argon2-memory')
+    const { validateAuthUrl }           = await import('@/lib/bootstrap/validate-auth-url')
+    const { verifyMCPSkillsFromConfig } = await import('@/lib/bootstrap/verify-mcp-skills')
+    const { syncInstanceConfig }        = await import('@/lib/bootstrap/sync-instance-config')
+
+    // Synchronous — throws if Argon2 memory configuration is dangerously low.
+    validateArgon2Memory()
+
+    // Synchronous — logs an error if AUTH_URL port does not match HARMOVEN_PORT.
+    validateAuthUrl()
+
+    // Non-blocking — a missing or broken MCP skill pack must not prevent startup.
+    await verifyMCPSkillsFromConfig().catch((err: unknown) =>
+      console.warn('[bootstrap] verifyMCPSkillsFromConfig failed (non-fatal):', err),
+    )
+
+    // Non-blocking — config sync failure must not block the server from starting.
+    await syncInstanceConfig().catch((err: unknown) =>
+      console.warn('[bootstrap] syncInstanceConfig failed (non-fatal):', err),
+    )
+
+    // B-02: sweep OPEN gates whose timeout_at is in the past (catches gates
+    // that expired while the server was down). Also starts the periodic sweep.
+    const { sweepExpiredGates, startGateSweep } = await import('@/lib/execution/gate-timeout')
+    await sweepExpiredGates().catch((err: unknown) =>
+      console.warn('[bootstrap] sweepExpiredGates failed (non-fatal):', err),
+    )
+    startGateSweep()
+
+    // Pre-initialise the execution engine singleton at server startup so that
+    // the db + LLM client are wired in the instrumentation context (stable module
+    // scope, no HMR interference). Without this, the engine is created lazily on
+    // the first POST /api/runs request where module timing can leave this.db undefined.
+    const { getExecutionEngine } = await import('@/lib/execution/engine.factory')
+    await getExecutionEngine().catch((err: unknown) =>
+      console.warn('[bootstrap] getExecutionEngine pre-init failed (non-fatal):', err),
+    )
+
+    // RGPD-03: purge expired sessions (contains IP + UA — personal data).
+    // RGPD-04: purge personal data content from expired runs (task_input, injections, Node LLM text).
+    // Crons always start; they check the live admin config (PATCH /api/admin/rgpd) at each sweep.
+    // Admin toggle: maintenance_enabled (DB via SystemSetting) — env var RGPD_MAINTENANCE_ENABLED=false overrides.
+    const { startSessionCleanupCron } = await import('@/lib/maintenance/session-cleanup')
+    const { startRunDataTtlCron }     = await import('@/lib/maintenance/run-data-ttl')
+    startSessionCleanupCron()
+    startRunDataTtlCron()
+
+    // Generate and log a one-time setup token when no admin exists yet.
+    // The operator copies this token from Docker logs and enters it in the wizard.
+    const { maybeGenerateSetupToken } = await import('@/lib/bootstrap/setup-token')
+    await maybeGenerateSetupToken().catch((err: unknown) =>
+      console.warn('[bootstrap] maybeGenerateSetupToken failed (non-fatal):', err),
+    )
+
+    // ENCRYPTION_KEY is required in production — credentials stored in the vault
+    // cannot be decrypted without it. Fail at startup rather than at the first
+    // credential operation: a silent warn would let the server start and appear
+    // healthy while every vault read/write silently fails at runtime.
+    // Operators who see this crash will get a single, actionable error message.
+    const encKey = process.env.ENCRYPTION_KEY ?? ''
+    if (!encKey) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          '[harmoven] FATAL: ENCRYPTION_KEY is not set.\n' +
+          '  Generate one with: openssl rand -base64 32\n' +
+          '  Then add it to your .env file as: ENCRYPTION_KEY=<value>',
+        )
+      }
+      console.warn('[bootstrap] ENCRYPTION_KEY is not set — credential vault operations will fail at runtime.')
+    } else {
+      try {
+        const decoded = Buffer.from(encKey, 'base64')
+        if (decoded.length < 32) {
+          if (process.env.NODE_ENV === 'production') {
+            throw new Error(
+              `[harmoven] FATAL: ENCRYPTION_KEY is too short (${decoded.length} bytes after base64 decode; 32 required).\n` +
+              '  Generate a valid key: openssl rand -base64 32',
+            )
+          }
+          console.warn(`[bootstrap] ENCRYPTION_KEY is too short (${decoded.length} bytes after base64 decode; 32 required).`)
+        }
+      } catch (e) {
+        if ((e as Error).message?.startsWith('[harmoven] FATAL')) throw e
+        console.warn('[bootstrap] ENCRYPTION_KEY does not appear to be valid base64.')
+      }
+    }
+
+    // Load LLM provider plugins listed in orchestrator.yaml llm.plugins.
+    // Non-blocking — a broken plugin must not prevent server startup.
+    const { loadLlmPlugins } = await import('@/lib/bootstrap/load-llm-plugins')
+    await loadLlmPlugins().catch((err: unknown) =>
+      console.warn('[bootstrap] loadLlmPlugins failed (non-fatal):', err),
+    )
+  }
+}

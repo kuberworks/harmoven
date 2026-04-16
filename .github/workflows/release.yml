@@ -1,0 +1,259 @@
+# .github/workflows/release.yml
+# Amendment 88.4 — Level 3: Release pipeline
+# Triggered by version tags (v1.2.3). Builds signed binaries, runs E2E tests, publishes.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v0.1.0-alpha)'
+        required: true
+        type: string
+
+jobs:
+
+  prepare:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.value }}
+      version_bare: ${{ steps.ver.outputs.bare }}
+    steps:
+      - id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME}"
+          fi
+          echo "value=${V}" >> $GITHUB_OUTPUT
+          echo "bare=${V#v}" >> $GITHUB_OUTPUT
+
+  integration-tests:
+    name: Integration tests (Haiku)
+    needs: prepare
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: harmoven_test
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - run: npm run generate:types
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+        run: npx prisma migrate deploy
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
+          HARMOVEN_LLM_TIER: haiku
+        run: npm run test:integration
+
+  # ─── E2E tests (Sonnet) — disabled: ~$2.50/run, re-enable when needed ──────
+  # e2e-tests:
+  #   name: E2E test suite (Sonnet)
+  #   needs: [prepare, integration-tests]
+  #   runs-on: ubuntu-latest
+  #   services:
+  #     postgres:
+  #       image: postgres:16
+  #       env:
+  #         POSTGRES_PASSWORD: test
+  #         POSTGRES_DB: harmoven_test
+  #         POSTGRES_USER: postgres
+  #       options: >-
+  #         --health-cmd pg_isready
+  #         --health-interval 10s
+  #         --health-timeout 5s
+  #         --health-retries 5
+  #       ports:
+  #         - 5432:5432
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+  #       with:
+  #         node-version: '22'
+  #         cache: 'npm'
+  #     - run: npm ci --legacy-peer-deps
+  #     - run: npm run generate:types
+  #     - name: Run migrations
+  #       env:
+  #         DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+  #       run: npx prisma migrate deploy
+  #     - name: Seed database (admin user + setup.wizard_complete)
+  #       env:
+  #         DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+  #         HARMOVEN_ADMIN_EMAIL: admin@harmoven.local
+  #         HARMOVEN_ADMIN_PASSWORD: Admin1234!
+  #         ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
+  #       run: npx prisma db seed
+  #     - name: Install Playwright browsers
+  #       run: npx playwright install --with-deps chromium
+  #     - name: Build app for E2E
+  #       env:
+  #         DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+  #         AUTH_SECRET: test-secret-do-not-use-in-production-32chars
+  #         AUTH_URL: http://localhost:3000
+  #         ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
+  #         DEPLOYMENT_MODE: docker
+  #         HARMOVEN_LLM_TIER: mock
+  #         CONFIG_GIT_DIR: /tmp/hv-cfg
+  #         NEXT_TELEMETRY_DISABLED: '1'
+  #       run: npm run build
+  #     - name: Run E2E test suite
+  #       env:
+  #         DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+  #         AUTH_SECRET: test-secret-do-not-use-in-production-32chars
+  #         AUTH_URL: http://localhost:3000
+  #         ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
+  #         DEPLOYMENT_MODE: docker
+  #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
+  #         HARMOVEN_LLM_TIER: sonnet
+  #         CONFIG_GIT_DIR: /tmp/hv-cfg
+  #         NEXT_TELEMETRY_DISABLED: '1'
+  #       run: npm run test:e2e
+  #       # 5 app_scaffolding scenarios — ~$2.50 per run, 15-20 minutes
+
+  # ─── Electron builds skipped until desktop release is validated ────────────
+  # Restore build-electron-mac / build-electron-win / build-electron-linux
+  # when Apple codesign + EV certs are ready and electron/main.ts has been
+  # tested end-to-end. Secrets required: APPLE_CERTIFICATE_BASE64,
+  # APPLE_CERTIFICATE_PASSWORD, APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD,
+  # WIN_EV_CERTIFICATE_BASE64, WIN_EV_CERTIFICATE_PASSWORD.
+  build-electron-placeholder:
+    name: Electron builds (skipped — not yet validated)
+    needs: integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Electron builds are disabled until desktop signing is set up.'
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-electron-placeholder, prepare]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # required to create GitHub Releases
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0   # full history for CHANGELOG generation
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - name: Generate CHANGELOG section
+        run: |
+          # Conventional commits → CHANGELOG section for this release
+          npx conventional-changelog-cli -p angular \
+            -o CHANGELOG_SECTION.md -r 1 --tag-prefix v
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+        with:
+          tag_name: ${{ needs.prepare.outputs.version }}
+          body_path: CHANGELOG_SECTION.md
+          # Electron artifacts will be attached once desktop builds are re-enabled
+
+  docker-release:
+    name: Tag + publish release Docker image
+    needs: [integration-tests, prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+      - name: Log in to Docker Hub
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1 # v3.0.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+      - name: Build and push release image
+        uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56 # v5.1.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/app:${{ needs.prepare.outputs.version_bare }}
+            ${{ secrets.DOCKER_USERNAME }}/app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Amendment 93: publish-release-pins ─────────────────────────────────────
+  # Writes image digest + commit SHA + Cosign bundle to release-pins.yaml
+  # in config.git. Detects tag rewrites (3-layer immutability verification).
+  publish-release-pins:
+    name: Publish release pins (Am.93)
+    needs: [docker-release, prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout config.git
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: kuberworks/harmoven-instance-config
+          token: ${{ secrets.CONFIG_GIT_TOKEN }}
+          path: config-repo
+
+      - name: Get commit SHA for this tag
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Get Docker image digest
+        id: digest
+        run: |
+          DIGEST=$(docker manifest inspect \
+            ${{ secrets.DOCKER_USERNAME }}/app:${{ needs.prepare.outputs.version }} \
+            --format '{{.config.digest}}')
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Sign image and generate Cosign bundle
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD:    ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign sign --key env://COSIGN_PRIVATE_KEY \
+            ${{ secrets.DOCKER_USERNAME }}/app@${{ steps.digest.outputs.digest }}
+          cosign verify --key cosign.pub \
+            ${{ secrets.DOCKER_USERNAME }}/app:${{ needs.prepare.outputs.version }} \
+            --output-file cosign-bundle.json
+
+      - name: Update release-pins.yaml
+        run: |
+          python3 scripts/update-release-pins.py \
+            --version "${{ needs.prepare.outputs.version_bare }}" \
+            --digest  "${{ steps.digest.outputs.digest }}" \
+            --commit  "${{ steps.commit.outputs.sha }}" \
+            --bundle  "$(base64 -w0 cosign-bundle.json)" \
+            --file    config-repo/instance/release-pins.yaml
+
+      - name: Commit and push release pins
+        run: |
+          cd config-repo
+          git config user.name  "harmoven-release-bot"
+          git config user.email "release-bot@harmoven.com"
+          git add instance/release-pins.yaml
+          git commit -m "release-pins: add ${{ needs.prepare.outputs.version }} [skip ci]"
+          git push
