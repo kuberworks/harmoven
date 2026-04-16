@@ -80,6 +80,7 @@ jobs:
           ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
           DEPLOYMENT_MODE: docker
           HARMOVEN_LLM_TIER: mock
+          CONFIG_GIT_DIR: /tmp/hv-cfg
           NEXT_TELEMETRY_DISABLED: '1'
         run: npm run build
       - name: Run E2E test suite
@@ -91,6 +92,7 @@ jobs:
           DEPLOYMENT_MODE: docker
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
           HARMOVEN_LLM_TIER: sonnet
+          CONFIG_GIT_DIR: /tmp/hv-cfg
           NEXT_TELEMETRY_DISABLED: '1'
         run: npm run test:e2e
         # 5 app_scaffolding scenarios from APP_SCAFFOLDING_SCENARIOS.md
