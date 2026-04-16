@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run generate:types
       - run: npx tsc --noEmit
 
@@ -32,7 +32,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run lint
 
   unit-tests:
@@ -46,7 +46,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run generate:types
       - run: npm run test:unit
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -109,7 +109,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - name: Apply all up migrations
         env:
           DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
@@ -149,7 +149,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - name: Generate types/api.ts from openapi/v1.yaml
         run: npm run generate:types
 
@@ -162,7 +162,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - name: Scan for prohibited licenses
         run: |
           npx license-checker --summary \
@@ -180,7 +180,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run build:test
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -199,7 +199,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - name: npm audit (no high/critical)
         # Blocks merge on high or critical severity CVEs in direct/transitive deps.
         # Use --omit=dev to only check production dependencies.
