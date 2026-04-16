@@ -48,7 +48,7 @@ export function TotpChallengeClient() {
       // Use the official Better Auth twoFactor client — it handles the session
       // cookie correctly via the SDK's own cookie management layer instead of
       // raw fetch which has unreliable Set-Cookie behaviour on redirect chains.
-      const { error: verifyError } = await (authClient as Record<string, unknown> & { twoFactor: { verifyTotp: (data: { code: string }, opts?: { onSuccess?: () => void }) => Promise<{ error: { status?: number } | null }> } }).twoFactor.verifyTotp(
+      const { error: verifyError } = await (authClient as unknown as Record<string, unknown> & { twoFactor: { verifyTotp: (data: { code: string }, opts?: { onSuccess?: () => void }) => Promise<{ error: { status?: number } | null }> } }).twoFactor.verifyTotp(
         { code },
         { onSuccess: () => { window.location.href = callbackURL } },
       )
