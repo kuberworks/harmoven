@@ -316,13 +316,11 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
     Do NOT mix both patterns: do not create a zip AND also write loose files.
 - File names must use only letters, digits, dots, hyphens, underscores, and forward slashes
   for subdirectory paths (e.g. 'src/main/java/App.java'). No spaces, no accents.
-- Supported file extensions (files with other extensions will be skipped):
-  Source:  .java .kt .scala .groovy .py .js .ts .jsx .tsx .go .rs .c .cpp .h .hpp .cs .rb .php .swift
-  Data:    .xlsx .xls .csv .json .xml .yaml .yml .toml .html .md .txt .sql .pdf .png .svg .css
-  Build:   .properties .gradle .kts .mod .sum .sh .bat .env .ini .conf .lock .mk .makefile .gitignore
-  Note: .dockerfile is also supported. Use the actual filename "Dockerfile" with no extension
-  alongside a separate open('Dockerfile', 'w') call — the collector matches by extension so
-  name it "dockerfile" (lowercase) if you want it auto-collected, or use a .sh wrapper instead.
+- A built-in frozenset \`SUPPORTED_EXTENSIONS\` lists the exact file extensions collected for
+  this node (dot-less, e.g. 'csv', 'json', 'py'). Files with other extensions are silently
+  dropped. Print \`sorted(SUPPORTED_EXTENSIONS)\` early in your script if you need to verify.
+  The default set covers common source, data, and build formats (csv, json, py, java, go,
+  ts, md, yaml, sh, gradle, mod, lock …). The node operator may restrict or extend this list.
 - The code runs in Pyodide (Python 3.11 WASM). All standard library modules are available.
 - AVAILABLE packages (pre-compiled Pyodide wheels — use these freely):
     Data / numerics:  numpy, pandas, scipy, statsmodels, sympy, mpmath, xarray,
