@@ -515,7 +515,15 @@ export class Writer {
 
     const p = parsed as Record<string, unknown>
     const output = p['output'] as Record<string, unknown> | undefined
-    if (!output || typeof output['confidence'] !== 'number') {
+
+    // Some models (e.g. GPT-5.4) return confidence as a string despite being
+    // instructed to output an integer. Coerce to number before validation.
+    if (output && typeof output['confidence'] === 'string') {
+      const coerced = Number(output['confidence'])
+      if (!isNaN(coerced)) output['confidence'] = coerced
+    }
+
+    if (!output || typeof output['confidence'] !== 'number' || isNaN(output['confidence'] as number)) {
       throw new AgentCostError(
         `Writer(${node.node_id}): missing or invalid "output.confidence" in LLM response`,
         costUsd, tokensIn, tokensOut,
