@@ -110,20 +110,6 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     task_type_affinity:       ['strategic_planning', 'legal_reasoning', 'ambiguity_resolution', 'complex_analysis'],
     api_key_env:              'ANTHROPIC_API_KEY',
   },
-  // ── Anthropic (legacy Claude 3.x — kept for backward compatibility) ────────
-  {
-    id:                       'claude-3-5-haiku-20241022',
-    provider:                 'anthropic',
-    model_string:             'claude-3-5-haiku-20241022',
-    tier:                     'fast',
-    context_window:           200_000,
-    cost_per_1m_input_tokens:  0.80,
-    cost_per_1m_output_tokens: 4.00,
-    jurisdiction:             'us',
-    trust_tier:               1,
-    task_type_affinity:       ['intent_classification', 'context_distillation'],
-    api_key_env:              'ANTHROPIC_API_KEY',
-  },
   {
     id:                       'claude-3-7-sonnet-20250219',
     provider:                 'anthropic',
