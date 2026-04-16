@@ -174,6 +174,15 @@ jobs:
   accessibility:
     name: Accessibility checks (axe)
     runs-on: ubuntu-latest
+    # next build forces NODE_ENV=production and requires these vars to be set.
+    # Values mirror .env.test — no real secrets, safe to inline.
+    env:
+      AUTH_SECRET: test-secret-do-not-use-in-production-32chars
+      AUTH_URL: http://localhost:3000
+      DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+      ENCRYPTION_KEY: test-encryption-key-do-not-use-in-prod
+      DEPLOYMENT_MODE: docker
+      HARMOVEN_LLM_TIER: mock
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
