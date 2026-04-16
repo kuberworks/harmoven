@@ -27,7 +27,7 @@ test.describe('Authentication', () => {
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     await expect(page.getByLabel('Email')).toBeVisible()
     await expect(page.getByLabel('Password')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: /passkey/i })).toBeVisible()
   })
 
@@ -36,7 +36,7 @@ test.describe('Authentication', () => {
 
     await page.getByLabel('Email').fill(EMAIL)
     await page.getByLabel('Password').fill(PASSWORD)
-    await page.getByRole('button', { name: 'Sign in' }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     await page.waitForURL('**/dashboard', { timeout: 15_000 })
     await expect(page).toHaveURL(/\/dashboard/)
@@ -50,7 +50,7 @@ test.describe('Authentication', () => {
 
     await page.getByLabel('Email').fill(EMAIL)
     await page.getByLabel('Password').fill('wrongpassword123')
-    await page.getByRole('button', { name: 'Sign in' }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Expect destructive toast
     await expect(
@@ -66,7 +66,7 @@ test.describe('Authentication', () => {
 
     await page.getByLabel('Email').fill(EMAIL)
     await page.getByLabel('Password').fill(PASSWORD)
-    await page.getByRole('button', { name: 'Sign in' }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Must land on /projects, not /dashboard
     await page.waitForURL('**/projects', { timeout: 15_000 })
@@ -78,7 +78,7 @@ test.describe('Authentication', () => {
     await page.goto('/login')
     await page.getByLabel('Email').fill(EMAIL)
     await page.getByLabel('Password').fill(PASSWORD)
-    await page.getByRole('button', { name: 'Sign in' }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
     await page.waitForURL('**/dashboard', { timeout: 15_000 })
 
     // Open user menu
