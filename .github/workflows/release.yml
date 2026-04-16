@@ -33,9 +33,47 @@ jobs:
           echo "value=${V}" >> $GITHUB_OUTPUT
           echo "bare=${V#v}" >> $GITHUB_OUTPUT
 
+  integration-tests:
+    name: Integration tests (Haiku)
+    needs: prepare
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: harmoven_test
+          POSTGRES_USER: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - run: npm run generate:types
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+        run: npx prisma migrate deploy
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
+          HARMOVEN_LLM_TIER: haiku
+        run: npm run test:integration
+        # ~$0.05 per run, 3-4 minutes — fast gate before expensive Sonnet E2E
+
   e2e-tests:
     name: E2E test suite (Sonnet)
-    needs: prepare
+    needs: [prepare, integration-tests]
     runs-on: ubuntu-latest
     services:
       postgres:
