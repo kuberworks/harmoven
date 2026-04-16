@@ -65,11 +65,26 @@ jobs:
         run: npx prisma migrate deploy
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+      - name: Build app for E2E
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+          AUTH_SECRET: test-secret-do-not-use-in-production-32chars
+          AUTH_URL: http://localhost:3000
+          ENCRYPTION_KEY: test-encryption-key-do-not-use-in-prod
+          DEPLOYMENT_MODE: docker
+          HARMOVEN_LLM_TIER: mock
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build
       - name: Run E2E test suite
         env:
           DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
+          AUTH_SECRET: test-secret-do-not-use-in-production-32chars
+          AUTH_URL: http://localhost:3000
+          ENCRYPTION_KEY: test-encryption-key-do-not-use-in-prod
+          DEPLOYMENT_MODE: docker
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
           HARMOVEN_LLM_TIER: sonnet
+          NEXT_TELEMETRY_DISABLED: '1'
         run: npm run test:e2e
         # 5 app_scaffolding scenarios from APP_SCAFFOLDING_SCENARIOS.md
         # ~$2.50 per run, 15-20 minutes

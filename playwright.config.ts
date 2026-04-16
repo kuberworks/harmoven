@@ -78,11 +78,12 @@ export default defineConfig({
     },
   ],
 
-  /* Dev server is expected to be running already.
-     Comment out webServer if you start it manually. */
-  // webServer: {
-  //   command: 'npm run dev',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  /* In CI, Playwright starts the built server automatically.
+     Locally, reuse an already-running dev or prod server. */
+  webServer: {
+    command: 'npm run start',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
 })
