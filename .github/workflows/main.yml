@@ -7,6 +7,7 @@ name: Main Branch
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
 
