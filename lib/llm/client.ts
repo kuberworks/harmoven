@@ -868,8 +868,12 @@ export class DirectLLMClient implements ILLMClient {
 
   async chat(messages: ChatMessage[], options: ChatOptions): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    const profile = this.resolveProfile(options.model, options.selectionContext)
-    const result  = await this.dispatchChat(profile, messages, options)
+    const profile     = this.resolveProfile(options.model, options.selectionContext)
+    // Universal clamp: ensure maxTokens never exceeds the profile's hard output limit.
+    // This is the last line of defence — individual provider functions also clamp,
+    // but they may not have max_output_tokens for all profiles (e.g. custom DB rows).
+    const safeOptions = this._clampTokens(profile, options)
+    const result      = await this.dispatchChat(profile, messages, safeOptions)
     return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
   }
 
@@ -880,7 +884,8 @@ export class DirectLLMClient implements ILLMClient {
     onModelResolved?: (model: string) => void,
   ): Promise<ChatResult> {
     if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    const profile = this.resolveProfile(options.model, options.selectionContext)
+    const profile     = this.resolveProfile(options.model, options.selectionContext)
+    const safeOptions = this._clampTokens(profile, options)
     onModelResolved?.(profile.model_string ?? profile.id)
 
     // §2.5 — "loop then stream": when tools are present, run the full agentic
@@ -888,13 +893,26 @@ export class DirectLLMClient implements ILLMClient {
     // a single chunk. The latency is dominated by tool execution (e.g. HTTP
     // search calls), not by token generation.
     if (options.tools?.length) {
-      const result = await this.dispatchChat(profile, messages, options)
+      const result = await this.dispatchChat(profile, messages, safeOptions)
       if (result.content) onChunk(result.content)
       return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
     }
 
-    const result  = await this.dispatchStream(profile, messages, options, onChunk)
+    const result  = await this.dispatchStream(profile, messages, safeOptions, onChunk)
     return { ...result, costUsd: computeCostUsd(profile, result.tokensIn, result.tokensOut) }
+  }
+
+  // ── Token clamp ─────────────────────────────────────────────────────────────
+
+  /**
+   * Return options with maxTokens clamped to the profile's max_output_tokens.
+   * Applies before dispatch so every provider function receives a safe value.
+   */
+  private _clampTokens(profile: LlmProfileConfig, options: ChatOptions): ChatOptions {
+    if (!options.maxTokens || !profile.max_output_tokens) return options
+    const clamped = Math.min(options.maxTokens, profile.max_output_tokens)
+    if (clamped === options.maxTokens) return options
+    return { ...options, maxTokens: clamped }
   }
 
   // ── Provider dispatch ────────────────────────────────────────────────────────
