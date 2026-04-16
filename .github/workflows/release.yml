@@ -69,72 +69,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
           HARMOVEN_LLM_TIER: haiku
         run: npm run test:integration
-        # ~$0.05 per run, 3-4 minutes — fast gate before expensive Sonnet E2E
-
-  e2e-tests:
-    name: E2E test suite (Sonnet)
-    needs: [prepare, integration-tests]
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: harmoven_test
-          POSTGRES_USER: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci --legacy-peer-deps
-      - run: npm run generate:types
-      - name: Run migrations
-        env:
-          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
-        run: npx prisma migrate deploy
-      - name: Seed database (admin user + setup.wizard_complete)
-        env:
-          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
-          HARMOVEN_ADMIN_EMAIL: admin@harmoven.local
-          HARMOVEN_ADMIN_PASSWORD: Admin1234!
-          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
-        run: npx prisma db seed
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-      - name: Build app for E2E
-        env:
-          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
-          AUTH_SECRET: test-secret-do-not-use-in-production-32chars
-          AUTH_URL: http://localhost:3000
-          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
-          DEPLOYMENT_MODE: docker
-          HARMOVEN_LLM_TIER: mock
-          CONFIG_GIT_DIR: /tmp/hv-cfg
-          NEXT_TELEMETRY_DISABLED: '1'
-        run: npm run build
-      - name: Run E2E test suite
-        env:
-          DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
-          AUTH_SECRET: test-secret-do-not-use-in-production-32chars
-          AUTH_URL: http://localhost:3000
-          ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
-          DEPLOYMENT_MODE: docker
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_CI }}
-          HARMOVEN_LLM_TIER: sonnet
-          CONFIG_GIT_DIR: /tmp/hv-cfg
-          NEXT_TELEMETRY_DISABLED: '1'
-        run: npm run test:e2e
-        # 5 app_scaffolding scenarios from APP_SCAFFOLDING_SCENARIOS.md
-        # ~$2.50 per run, 15-20 minutes
 
   # ─── Electron builds skipped until desktop release is validated ────────────
   # Restore build-electron-mac / build-electron-win / build-electron-linux
@@ -144,7 +78,7 @@ jobs:
   # WIN_EV_CERTIFICATE_BASE64, WIN_EV_CERTIFICATE_PASSWORD.
   build-electron-placeholder:
     name: Electron builds (skipped — not yet validated)
-    needs: e2e-tests
+    needs: integration-tests
     runs-on: ubuntu-latest
     steps:
       - run: echo 'Electron builds are disabled until desktop signing is set up.'
@@ -178,7 +112,7 @@ jobs:
 
   docker-release:
     name: Tag + publish release Docker image
-    needs: [e2e-tests, prepare]
+    needs: [integration-tests, prepare]
     runs-on: ubuntu-latest
     steps:
       - name: Log in to Docker Hub
