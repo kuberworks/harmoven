@@ -1,0 +1,44 @@
+# fly.toml — Harmoven staging on Fly.io
+# App: harmoven-staging
+# Deploy via: fly deploy --image harmoven/app:SHA
+# Docs: https://fly.io/docs/reference/configuration/
+
+app = "harmoven-staging"
+primary_region = "cdg"   # Paris — change to closest region
+
+[build]
+  # No build step — we deploy a pre-built Docker image from Docker Hub
+  image = "harmoven/app:edge"   # overridden by --image in CI
+
+[env]
+  NODE_ENV        = "production"
+  PORT            = "3000"
+  # All secrets (DATABASE_URL, BETTER_AUTH_SECRET, etc.) are set via:
+  #   fly secrets set KEY=value --app harmoven-staging
+  # Never put real secret values in this file.
+
+[http_service]
+  internal_port    = 3000
+  force_https      = true
+  auto_stop_machines  = true   # free tier: stop when idle
+  auto_start_machines = true
+  min_machines_running = 0     # 0 = spin up on first request (cold start ~5s)
+
+  [http_service.concurrency]
+    type       = "requests"
+    hard_limit = 50
+    soft_limit = 25
+
+[[vm]]
+  size   = "shared-cpu-1x"   # 256 MB RAM — sufficient for staging
+  memory = "512mb"
+
+[checks]
+  [checks.health]
+    grace_period = "10s"
+    interval     = "15s"
+    method       = "GET"
+    path         = "/api/health"
+    port         = 3000
+    timeout      = "5s"
+    type         = "http"
