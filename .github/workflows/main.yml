@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run generate:types
       - name: Run migrations
         env:
@@ -100,7 +100,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run smoke tests against staging
@@ -119,7 +119,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - name: Generate types/api.ts from openapi/v1.yaml
         run: npm run generate:types
 
@@ -135,7 +135,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run generate:openapi
       - name: Commit updated spec
         uses: stefanzweifel/git-auto-commit-action@8621da0631a0a7c1dbb3b516a5ce2a6a2a95a174 # v5.0.1
