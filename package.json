@@ -110,6 +110,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "overrides": {
-    "path-to-regexp": "8.4.0"
+    "path-to-regexp": "8.4.0",
+    "@xmldom/xmldom": "0.9.9"
   }
 }

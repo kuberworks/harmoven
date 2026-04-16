@@ -130,10 +130,13 @@ describe('searchBrave()', () => {
 
 describe('searchDuckDuckGo()', () => {
   it('parses at least 1 result from mocked HTML', async () => {
+    // HTML must use the real DDG class names that parseDdgHtml() targets:
+    //   result__a  for title anchors (href = encoded redirect URL or direct URL)
+    //   result__snippet  for snippet anchors
     const html = `
       <html><body>
-      <a class="result-link" href="https://example.com/ddg">DDG Result</a>
-      <td class="result-snippet">A useful snippet about the query.</td>
+      <a class="result__a" href="https://example.com/ddg">DDG Result</a>
+      <a class="result__snippet" href="#">A useful snippet about the query.</a>
       </body></html>
     `
     mockFetch.mockResolvedValueOnce({
@@ -146,9 +149,16 @@ describe('searchDuckDuckGo()', () => {
   })
 
   it('returns empty results when HTML has no result links', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true, status: 200, text: async () => '<html><body>no results</body></html>',
-    } as unknown as Response)
+    // Layer 1 (HTML) returns no result__a links → falls through to Layer 2 (IA API).
+    // Mock Layer 2 with an empty IA response so the function returns [].
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true, status: 200, text: async () => '<html><body>no results</body></html>',
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({ AbstractText: '', AbstractURL: '', Results: [], RelatedTopics: [] }),
+      } as unknown as Response)
     const result = await searchDuckDuckGo('empty test')
     expect(result.results).toHaveLength(0)
   })

@@ -1068,3 +1068,34 @@ model GitProviderToken {
 
   @@unique([host_pattern])
 }
+
+// ─── Self-Improvement Suggestions (Amendment 92) ─────────────────────────────
+// Generated locally by lib/self-improvement/runner.ts on a periodic cron.
+// Docker-only (deployment_mode: docker). No data is ever sent externally.
+// All analysis queries local Postgres only — metrics only, no user content.
+// instance_admin access required (admin:* permission).
+
+model ImprovementSuggestion {
+  id           String   @id @default(uuid())
+  type         String   // LLM_PROFILE_ERROR_RATE | LLM_PROFILE_LOW_SCORE | RETRY_STORM |
+                        // REVIEWER_REJECTION_RATE | BUDGET_OVERSHOOT | GATE_FREQUENCY | GATE_ABANDONMENT
+  severity     String   // critical | warning | info
+  title        String   // short human label (i18n key resolved at render time)
+  body         String   // markdown explanation (local)
+  evidence     Json     // structured metrics — see SuggestionEvidence in lib/self-improvement/types.ts
+  target_id    String?  // LlmProfile.id for LLM_PROFILE_* types; null otherwise
+  target_type  String?  // 'llm_profile' | 'project' | 'gate_config' | null
+  status       String   @default("open")  // open | applied | dismissed
+  applied_at   DateTime?
+  applied_by   String?  // user_id — String? without FK (same pattern as AuditLog.actor)
+  dismissed_at DateTime?
+  dismissed_by String?  // user_id — String? without FK
+  // Deterministic key — enables upsert-on-re-analysis without duplicates
+  cycle_key    String   @unique  // e.g. "LLM_PROFILE_ERROR_RATE:claude-haiku-4-5:30d"
+  generated_at DateTime @default(now())
+  expires_at   DateTime // = generated_at + 14d; purged by cron in runner.ts
+
+  @@index([status])
+  @@index([severity])
+  @@index([generated_at])
+}

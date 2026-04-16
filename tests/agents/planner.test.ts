@@ -2,6 +2,17 @@
 // Unit tests for Planner — 2 scenarios.
 // Uses MockLLMClient — zero network / LLM cost.
 
+// Mock the Prisma DB client so the Planner can run without a real DATABASE_URL.
+// planner.ts calls db.run.findUnique() once before the retry loop; returning null
+// is safe — the planner treats a missing run_config as an empty config object.
+jest.mock('@/lib/db/client', () => ({
+  db: {
+    run: {
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+  },
+}))
+
 import { Planner, PlannerExhaustionError } from '@/lib/agents/planner'
 import { MockLLMClient } from '@/lib/llm/mock-client'
 import type { PlannerHandoff } from '@/lib/agents/planner'
