@@ -74,92 +74,22 @@ jobs:
         # 5 app_scaffolding scenarios from APP_SCAFFOLDING_SCENARIOS.md
         # ~$2.50 per run, 15-20 minutes
 
-  build-electron-mac:
-    name: Build + sign macOS binary
-    needs: e2e-tests
-    runs-on: macos-latest   # must be macOS for signing + notarization
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci --legacy-peer-deps
-      - name: Import code signing certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          CERT_FILE=$(mktemp /tmp/certificate.XXXXXX.p12)
-          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_FILE"
-          security import "$CERT_FILE" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -k ~/Library/Keychains/login.keychain-db \
-            -T /usr/bin/codesign \
-            -T /usr/bin/productbuild
-          rm -f "$CERT_FILE"
-      - name: Build, sign, and notarize
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          CSC_KEYCHAIN: ~/Library/Keychains/login.keychain-db
-        run: npm run build:electron:mac
-        # electron-builder: sign + notarize + staple
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: Harmoven-mac
-          path: dist/*.dmg
-          retention-days: 30
-
-  build-electron-win:
-    name: Build + sign Windows binary
-    needs: e2e-tests
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci --legacy-peer-deps
-      - name: Build and sign with EV certificate
-        env:
-          WIN_CERTIFICATE: ${{ secrets.WIN_EV_CERTIFICATE_BASE64 }}
-          WIN_CERTIFICATE_PASSWORD: ${{ secrets.WIN_EV_CERTIFICATE_PASSWORD }}
-        run: npm run build:electron:win
-        # electron-builder: sign with EV cert (eliminates SmartScreen warning)
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: Harmoven-win
-          path: dist/*.exe
-          retention-days: 30
-
-  build-electron-linux:
-    name: Build Linux binary
+  # ─── Electron builds skipped until desktop release is validated ────────────
+  # Restore build-electron-mac / build-electron-win / build-electron-linux
+  # when Apple codesign + EV certs are ready and electron/main.ts has been
+  # tested end-to-end. Secrets required: APPLE_CERTIFICATE_BASE64,
+  # APPLE_CERTIFICATE_PASSWORD, APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD,
+  # WIN_EV_CERTIFICATE_BASE64, WIN_EV_CERTIFICATE_PASSWORD.
+  build-electron-placeholder:
+    name: Electron builds (skipped — not yet validated)
     needs: e2e-tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci --legacy-peer-deps
-      - run: npm run build:electron:linux
-        # AppImage + deb + rpm, no signing required
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: Harmoven-linux
-          path: |
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-          retention-days: 30
+      - run: echo 'Electron builds are disabled until desktop signing is set up.'
 
   publish-release:
     name: Publish GitHub Release
-    needs: [build-electron-mac, build-electron-win, build-electron-linux, prepare]
+    needs: [build-electron-placeholder, prepare]
     runs-on: ubuntu-latest
     permissions:
       contents: write    # required to create GitHub Releases
@@ -172,11 +102,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci --legacy-peer-deps
-      - name: Download all build artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444306a5e01e856e52cb416e # v4.1.8
-        with:
-          path: dist/
-          merge-multiple: true
       - name: Generate CHANGELOG section
         run: |
           # Conventional commits → CHANGELOG section for this release
@@ -187,12 +112,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.version }}
           body_path: CHANGELOG_SECTION.md
-          files: |
-            dist/*.dmg
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
+          # Electron artifacts will be attached once desktop builds are re-enabled
 
   docker-release:
     name: Tag + publish release Docker image
@@ -218,7 +138,7 @@ jobs:
   # in config.git. Detects tag rewrites (3-layer immutability verification).
   publish-release-pins:
     name: Publish release pins (Am.93)
-    needs: [docker-release, build-electron-mac, build-electron-win, build-electron-linux, prepare]
+    needs: [docker-release, prepare]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout config.git
