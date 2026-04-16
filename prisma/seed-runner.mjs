@@ -13,6 +13,7 @@
 
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { hashPassword as baHashPassword } from 'better-auth/crypto'
 
 // ─── Inline role definitions (mirrors lib/auth/built-in-roles.ts) ─────────────
 // Kept inline so this script has ZERO internal dependencies.
@@ -120,14 +121,8 @@ async function seedAdminUser() {
 
   let passwordHash = null
   if (password) {
-    // Use the same hash format as Better Auth: argon2id via the `argon2` package.
-    // Fall back to a placeholder if argon2 is not available (dev environments).
-    try {
-      const argon2 = await import('argon2')
-      passwordHash = await argon2.hash(password, { type: argon2.argon2id })
-    } catch {
-      console.warn('[seed] argon2 not available — password will not be set. Use setup wizard.')
-    }
+    // Use better-auth's own crypto layer (always available when better-auth is installed).
+    passwordHash = await baHashPassword(password)
   }
 
   const userId = crypto.randomUUID()
@@ -158,6 +153,14 @@ async function seedAdminUser() {
   }
 
   console.log(`[seed]   ✓ Admin user created: ${email} (role: instance_admin)`)
+
+  // Mark setup wizard complete — prevents middleware from redirecting to /setup
+  await db.systemSetting.upsert({
+    where:  { key: 'setup.wizard_complete' },
+    update: { value: 'true' },
+    create: { key: 'setup.wizard_complete', value: 'true', updated_by: null },
+  })
+  console.log('[seed]   ✓ setup.wizard_complete = true')
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
