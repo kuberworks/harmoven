@@ -66,3 +66,4 @@ types/api.ts
 playwright-report/
 test-results/
 tests/e2e/.auth/
+cosign.key
