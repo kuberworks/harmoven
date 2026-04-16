@@ -319,8 +319,11 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
 - A built-in frozenset \`SUPPORTED_EXTENSIONS\` lists the exact file extensions collected for
   this node (dot-less, e.g. 'csv', 'json', 'py'). Files with other extensions are silently
   dropped. Print \`sorted(SUPPORTED_EXTENSIONS)\` early in your script if you need to verify.
-  The default set covers common source, data, and build formats (csv, json, py, java, go,
-  ts, md, yaml, sh, gradle, mod, lock …). The node operator may restrict or extend this list.
+  The default set covers source code (py, java, ts, go, rs, dart, vue, svelte, r, lua, hs …),
+  data (csv, tsv, json, jsonl, geojson, ipynb …), docs (md, rst, tex, html, docx …), images
+  (png, jpg, svg, webp …), fonts (ttf, woff2 …), schema/API (proto, graphql …), and build/
+  config (yaml, toml, tf, hcl, cmake, gradle, lock …). The node operator may restrict or
+  extend this list.
 - The code runs in Pyodide (Python 3.11 WASM). All standard library modules are available.
 - AVAILABLE packages (pre-compiled Pyodide wheels — use these freely):
     Data / numerics:  numpy, pandas, scipy, statsmodels, sympy, mpmath, xarray,

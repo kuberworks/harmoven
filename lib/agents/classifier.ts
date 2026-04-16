@@ -37,6 +37,7 @@ export type ProfileId =
   | 'document_drafting'
   | 'research_synthesis'
   | 'marketing_content'
+  | 'media_content'
   | 'hr_recruiting'
   | 'legal_compliance'
   | 'finance_modeling'
@@ -47,7 +48,7 @@ export type ProfileId =
 
 const VALID_PROFILES = new Set<ProfileId>([
   'data_reporting', 'app_scaffolding', 'document_drafting', 'research_synthesis',
-  'marketing_content', 'hr_recruiting', 'legal_compliance', 'finance_modeling',
+  'marketing_content', 'media_content', 'hr_recruiting', 'legal_compliance', 'finance_modeling',
   'customer_support', 'ecommerce_ops', 'training_content', 'generic',
 ])
 
@@ -109,6 +110,7 @@ Available profiles:
 - document_drafting  → document | ops   report, email, presentation, write
 - research_synthesis → document | ops   research, market study, competitive analysis
 - marketing_content  → document | marketing  post, campaign, SEO, newsletter
+- media_content      → document | marketing  video script, podcast, audio, photo editing, multimedia
 - hr_recruiting      → document | hr    job description, CV, onboarding
 - legal_compliance   → document | legal contract, GDPR, compliance
 - finance_modeling   → data | finance   business plan, forecast, budget, P&L
@@ -151,9 +153,13 @@ function validateClassifierResponse(raw: Record<string, unknown>): ClassifierRes
     throw new Error('IntentClassifier: missing or invalid "confidence" (must be 0–100)')
   }
 
-  const profile = raw['detected_profile'] as string
-  if (!VALID_PROFILES.has(profile as ProfileId)) {
-    throw new Error(`IntentClassifier: unknown detected_profile "${profile}" — falling back to generic`)
+  const _rawProfile = raw['detected_profile'] as string
+  let profile: ProfileId
+  if (VALID_PROFILES.has(_rawProfile as ProfileId)) {
+    profile = _rawProfile as ProfileId
+  } else {
+    console.warn(`[IntentClassifier] unknown detected_profile "${_rawProfile}" — falling back to generic`)
+    profile = 'generic'
   }
 
   const outputType = raw['output_type'] as string
