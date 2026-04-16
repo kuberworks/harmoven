@@ -782,7 +782,15 @@ export function makeAgentRunner(llm: ILLMClient): AgentRunnerFn {
           ? (meta['packages'] as unknown[]).filter((p): p is string => typeof p === 'string')
           : undefined
 
-        const result = await executePython({ code, timeout_ms: timeoutMs, packages }, signal)
+        const allowedExtensions = Array.isArray(meta['allowedExtensions'])
+          ? (meta['allowedExtensions'] as unknown[]).filter((e): e is string => typeof e === 'string')
+          : undefined
+
+        const blockedExtensions = Array.isArray(meta['blockedExtensions'])
+          ? (meta['blockedExtensions'] as unknown[]).filter((e): e is string => typeof e === 'string')
+          : undefined
+
+        const result = await executePython({ code, timeout_ms: timeoutMs, packages, allowedExtensions, blockedExtensions }, signal)
 
         // Persist generated files as RunArtifact rows — done before the exit_code
         // check so partial artifacts (files saved before a crash) are still accessible.

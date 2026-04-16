@@ -67,6 +67,19 @@ export interface PythonExecutorInput {
    * Max 20 entries. Names must match `^[a-zA-Z0-9][a-zA-Z0-9._-]*(==?X.Y.Z)?$`.
    */
   packages?: string[]
+  /**
+   * Whitelist override — if set, ONLY these extensions are collected as output
+   * artifacts (replaces the built-in default list entirely).
+   * Use dot-less names, e.g. `['csv', 'json', 'txt']`.
+   */
+  allowedExtensions?: string[]
+  /**
+   * Extensions to always block, even when they appear in the default list or in
+   * `allowedExtensions`. Useful to prevent collection of certain file types
+   * (e.g. `['html', 'sh']`) without replacing the whole whitelist.
+   * Use dot-less names, e.g. `['html', 'sh']`.
+   */
+  blockedExtensions?: string[]
 }
 
 export interface PythonExecutorOutput {
@@ -212,6 +225,16 @@ export async function executePython(
     }
   }
 
+  const EXT_RE = /^[a-zA-Z0-9]{1,20}$/
+  if (input.allowedExtensions !== undefined) {
+    if (!Array.isArray(input.allowedExtensions) || input.allowedExtensions.some(e => !EXT_RE.test(e)))
+      throw new TypeError('allowedExtensions must be an array of alphanumeric extension names (no dots)')
+  }
+  if (input.blockedExtensions !== undefined) {
+    if (!Array.isArray(input.blockedExtensions) || input.blockedExtensions.some(e => !EXT_RE.test(e)))
+      throw new TypeError('blockedExtensions must be an array of alphanumeric extension names (no dots)')
+  }
+
   const timeoutMs = Math.min(
     input.timeout_ms ?? DEFAULT_TIMEOUT_MS,
     MAX_TIMEOUT_MS,
@@ -225,7 +248,12 @@ export async function executePython(
     const code = fixLeadingZeroIntegers(input.code)
 
     const worker = new Worker(WORKER_PATH, {
-      workerData: { code, packages: input.packages ?? [] },
+      workerData: {
+        code,
+        packages:          input.packages          ?? [],
+        allowedExtensions: input.allowedExtensions ?? null,
+        blockedExtensions: input.blockedExtensions ?? [],
+      },
       resourceLimits: {
         maxOldGenerationSizeMb: MEMORY_LIMIT_MB,
         maxYoungGenerationSizeMb: 32,
