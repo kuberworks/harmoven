@@ -180,7 +180,7 @@ jobs:
       AUTH_SECRET: test-secret-do-not-use-in-production-32chars
       AUTH_URL: http://localhost:3000
       DATABASE_URL: postgresql://postgres:test@localhost:5432/harmoven_test
-      ENCRYPTION_KEY: test-encryption-key-do-not-use-in-prod
+      ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLXRlc3QtZW5jcnlwdGlvbiE=
       DEPLOYMENT_MODE: docker
       HARMOVEN_LLM_TIER: mock
     steps:
