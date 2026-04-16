@@ -164,6 +164,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     trust_tier:               1,
     task_type_affinity:       ['intent_classification', 'simple_coding_tasks'],
     api_key_env:              'OPENAI_API_KEY',
+    max_output_tokens:        128_000,   // OpenAI hard limit for completion tokens
     uses_max_completion_tokens: true,
   },
   {
@@ -178,6 +179,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     trust_tier:               1,
     task_type_affinity:       ['document_analysis', 'report_writing', 'marketing_content'],
     api_key_env:              'OPENAI_API_KEY',
+    max_output_tokens:        128_000,   // OpenAI hard limit for completion tokens
     uses_max_completion_tokens: true,
   },
   {
@@ -192,6 +194,7 @@ export const BUILT_IN_PROFILES: LlmProfileConfig[] = [
     trust_tier:               1,
     task_type_affinity:       ['strategic_planning', 'complex_analysis'],
     api_key_env:              'OPENAI_API_KEY',
+    max_output_tokens:        128_000,   // OpenAI hard limit for completion tokens
     uses_max_completion_tokens: true,
   },
 
