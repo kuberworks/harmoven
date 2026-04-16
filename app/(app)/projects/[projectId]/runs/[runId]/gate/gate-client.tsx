@@ -229,8 +229,8 @@ export function GateClient({
 
       {/* ── Request changes feedback panel ── */}
       {showFeedback && canDecide && (
-        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
-          <p className="text-sm font-medium text-amber-300">{feedbackPanelLabel}</p>
+        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-50 dark:bg-amber-500/5 p-4 space-y-3">
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-300">{feedbackPanelLabel}</p>
           <Textarea
             value={feedbackText}
             onChange={(e) => setFeedbackText(e.target.value)}
@@ -253,7 +253,7 @@ export function GateClient({
               size="sm"
               onClick={() => submitDecision('abort')}
               disabled={!!submitting}
-              className="border-red-500/40 text-red-400 hover:bg-red-900/20"
+              className="border-red-500/40 text-red-600 dark:text-red-400 hover:bg-red-100/80 dark:hover:bg-red-900/20"
             >
               {submitting === 'abort' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
               {t('gates.actions.abandon')}
@@ -277,7 +277,7 @@ export function GateClient({
 
       {/* ── Blocking warning banner ── */}
       {blockingWarn && (
-        <div className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg bg-red-950/40 border border-red-500/30 text-sm text-red-300">
+        <div className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg bg-red-100/80 dark:bg-red-950/40 border border-red-500/30 text-sm text-red-700 dark:text-red-300">
           <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
           <span className="flex-1">
             ⚠ {blockingCount} blocking issue{blockingCount > 1 ? 's' : ''} found. Review the Critical tab before approving.
@@ -286,7 +286,7 @@ export function GateClient({
             <Button
               variant="outline"
               size="sm"
-              className="border-red-500/40 text-red-300 hover:bg-red-900/30 shrink-0"
+              className="border-red-500/40 text-red-600 dark:text-red-300 hover:bg-red-100/80 dark:hover:bg-red-900/30 shrink-0"
               onClick={async () => {
                 setBlockingWarn(false)
                 await submitDecision('approve')
@@ -325,12 +325,12 @@ export function GateClient({
       {/* ── How-to instruction card — shown when gate is open, dismissible for the session ── */}
       {hasOpenGate && showHowTo && (
         <div className="flex items-start gap-3 mb-4 px-4 py-3 rounded-lg bg-blue-500/10 border border-blue-500/25">
-          <Info className="h-4 w-4 shrink-0 mt-0.5 text-blue-400" />
-          <p className="flex-1 text-sm text-blue-200/90 leading-relaxed">{howToText}</p>
+          <Info className="h-4 w-4 shrink-0 mt-0.5 text-blue-600 dark:text-blue-400" />
+          <p className="flex-1 text-sm text-blue-700 dark:text-blue-200/90 leading-relaxed">{howToText}</p>
           <button
             type="button"
             onClick={() => setShowHowTo(false)}
-            className="shrink-0 text-xs text-blue-400/60 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-500/20 transition-colors"
+            className="shrink-0 text-xs text-blue-600/80 dark:text-blue-400/60 hover:text-blue-700 dark:hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-100/80 dark:hover:bg-blue-500/20 transition-colors"
           >
             {t('gates.how_to_dismiss')}
           </button>
@@ -373,11 +373,11 @@ export function GateClient({
                 <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 space-y-3">
                   <div className="flex items-center gap-2">
                     <XCircle className="h-4 w-4 text-red-400 shrink-0" />
-                    <span className="text-sm font-semibold text-red-300">
+                    <span className="text-sm font-semibold text-red-600 dark:text-red-300">
                       Reviewer escalated — {reviewerEscalation.findings.length} issue{reviewerEscalation.findings.length > 1 ? 's' : ''} found
                     </span>
                     {reviewerEscalation.confidence !== null && (
-                      <span className="ml-auto text-xs text-red-400/70 font-mono">confidence {reviewerEscalation.confidence}%</span>
+                      <span className="ml-auto text-xs text-red-500/90 dark:text-red-400/70 font-mono">confidence {reviewerEscalation.confidence}%</span>
                     )}
                   </div>
                   <div className="space-y-2">
@@ -387,9 +387,9 @@ export function GateClient({
                           {f.severity && (
                             <span className={
                               'shrink-0 text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 mt-0.5 ' +
-                              (f.severity === 'blocking' ? 'bg-red-500/20 text-red-400' :
-                               f.severity === 'major'    ? 'bg-orange-500/20 text-orange-400' :
-                               'bg-yellow-500/20 text-yellow-400')
+                              (f.severity === 'blocking' ? 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400' :
+                               f.severity === 'major'    ? 'bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' :
+                               'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-400')
                             }>{f.severity}</span>
                           )}
                           <div className="flex-1 min-w-0">
@@ -450,12 +450,12 @@ export function GateClient({
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
-                  <span className="text-sm font-semibold text-amber-300">
+                  <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
                     Planner confidence: {plannerPlan.confidence !== null ? `${plannerPlan.confidence}%` : '—'}
                   </span>
                 </div>
                 {plannerPlan.confidence_rationale && (
-                  <p className="text-xs text-amber-400/80 mt-1">{plannerPlan.confidence_rationale}</p>
+                  <p className="text-xs text-amber-600/90 dark:text-amber-400/80 mt-1">{plannerPlan.confidence_rationale}</p>
                 )}
               </div>
 
@@ -514,10 +514,10 @@ export function GateClient({
               {/* Failure summary */}
               <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-5">
                 <div className="flex items-start gap-3 mb-3">
-                  <XCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                  <XCircle className="h-5 w-5 text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-semibold text-red-300">Execution plan could not be generated</p>
-                    <p className="text-xs text-red-400/70 mt-0.5">The planning agent failed after 3 consecutive attempts</p>
+                    <p className="text-sm font-semibold text-red-600 dark:text-red-300">Execution plan could not be generated</p>
+                    <p className="text-xs text-red-500/80 dark:text-red-400/70 mt-0.5">The planning agent failed after 3 consecutive attempts</p>
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground leading-relaxed">
@@ -534,11 +534,11 @@ export function GateClient({
               )}
 
               {/* Actionable next steps */}
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+              <div className="rounded-lg border border-amber-500/30 bg-amber-50 dark:bg-amber-500/5 p-4">
                 <p className="text-xs text-muted-foreground/60 font-mono mb-3">How to proceed</p>
                 <ul className="space-y-2.5 text-sm text-muted-foreground">
                   <li className="flex items-start gap-2.5">
-                    <span className="shrink-0 text-amber-400 font-bold mt-0.5">1</span>
+                    <span className="shrink-0 text-amber-600 dark:text-amber-400 font-bold mt-0.5">1</span>
                     <span>
                       <span className="text-foreground font-medium">Request changes</span>
                       {' '}— clarify the task, break it into smaller steps, or remove conflicting requirements, then resume. The planner will retry with your guidance.
