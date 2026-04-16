@@ -40,6 +40,9 @@ COPY orchestrator.yaml ./
 COPY --from=builder /app/prisma ./prisma
 # prisma.config.ts — Prisma 7 reads this file to resolve datasource.url at runtime
 COPY --from=builder /app/prisma.config.ts ./
+# LLM plugin subprocess worker — loaded at runtime by PluginSubprocessBridge.
+# Must be present alongside plugin.cjs bundles installed via /api/admin/llm-plugins/install.
+COPY --from=builder --chown=nextjs:nodejs /app/lib/llm/plugin-subprocess-worker.cjs ./lib/llm/
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 # Create /data for config-git storage (lib/config-git/paths.ts default).
