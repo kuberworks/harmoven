@@ -7,11 +7,35 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v0.1.0-alpha)'
+        required: true
+        type: string
 
 jobs:
 
+  prepare:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.value }}
+      version_bare: ${{ steps.ver.outputs.bare }}
+    steps:
+      - id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME}"
+          fi
+          echo "value=${V}" >> $GITHUB_OUTPUT
+          echo "bare=${V#v}" >> $GITHUB_OUTPUT
+
   e2e-tests:
     name: E2E test suite (Sonnet)
+    needs: prepare
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -135,7 +159,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: [build-electron-mac, build-electron-win, build-electron-linux]
+    needs: [build-electron-mac, build-electron-win, build-electron-linux, prepare]
     runs-on: ubuntu-latest
     permissions:
       contents: write    # required to create GitHub Releases
@@ -161,6 +185,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
         with:
+          tag_name: ${{ needs.prepare.outputs.version }}
           body_path: CHANGELOG_SECTION.md
           files: |
             dist/*.dmg
@@ -171,7 +196,7 @@ jobs:
 
   docker-release:
     name: Tag + publish release Docker image
-    needs: e2e-tests
+    needs: [e2e-tests, prepare]
     runs-on: ubuntu-latest
     steps:
       - name: Log in to Docker Hub
@@ -181,7 +206,7 @@ jobs:
           password: ${{ secrets.DOCKER_TOKEN }}
       - name: Tag and push release image
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          VERSION="${{ needs.prepare.outputs.version_bare }}"
           docker pull harmoven/app:${{ github.sha }}
           docker tag harmoven/app:${{ github.sha }} harmoven/app:${VERSION}
           docker tag harmoven/app:${{ github.sha }} harmoven/app:latest
@@ -193,7 +218,7 @@ jobs:
   # in config.git. Detects tag rewrites (3-layer immutability verification).
   publish-release-pins:
     name: Publish release pins (Am.93)
-    needs: [docker-release, build-electron-mac, build-electron-win, build-electron-linux]
+    needs: [docker-release, build-electron-mac, build-electron-win, build-electron-linux, prepare]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout config.git
@@ -211,7 +236,7 @@ jobs:
         id: digest
         run: |
           DIGEST=$(docker manifest inspect \
-            harmoven/app:${GITHUB_REF_NAME} \
+            harmoven/app:${{ needs.prepare.outputs.version }} \
             --format '{{.config.digest}}')
           echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
@@ -226,14 +251,13 @@ jobs:
           cosign sign --key env://COSIGN_PRIVATE_KEY \
             harmoven/app@${{ steps.digest.outputs.digest }}
           cosign verify --key cosign.pub \
-            harmoven/app:${GITHUB_REF_NAME} \
+            harmoven/app:${{ needs.prepare.outputs.version }} \
             --output-file cosign-bundle.json
 
       - name: Update release-pins.yaml
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
           python3 scripts/update-release-pins.py \
-            --version "$VERSION" \
+            --version "${{ needs.prepare.outputs.version_bare }}" \
             --digest  "${{ steps.digest.outputs.digest }}" \
             --commit  "${{ steps.commit.outputs.sha }}" \
             --bundle  "$(base64 -w0 cosign-bundle.json)" \
@@ -245,5 +269,5 @@ jobs:
           git config user.name  "harmoven-release-bot"
           git config user.email "release-bot@harmoven.com"
           git add instance/release-pins.yaml
-          git commit -m "release-pins: add ${GITHUB_REF_NAME} [skip ci]"
+          git commit -m "release-pins: add ${{ needs.prepare.outputs.version }} [skip ci]"
           git push
