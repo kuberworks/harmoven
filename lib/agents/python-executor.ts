@@ -147,30 +147,41 @@ function fixLeadingZeroIntegers(code: string): string {
 // ─── Extract clean error message from Pyodide's verbose traceback ────────────
 
 /**
- * Pyodide wraps Python exceptions in multi-line tracebacks.
+ * Pyodide wraps Python exceptions in multi-line tracebacks plus help text.
  * Extract the most useful single-line summary for logging / node error field.
+ *
+ * Pyodide micropip error example:
+ *   ValueError: Can't find a pure Python 3 wheel for 'xxx'. ...
+ *   You can use micropip.install(..., keep_going=True) ...
+ *   await micropip.install("micropip") in Python, or
+ *   await pyodide.loadPackage("micropip") in JavaScript
+ *   See https://pyodide.org/... for more details.
+ *
+ * Strategy: prefer lines that look like Python exception headers
+ * ("ExceptionType: message") which are the most informative. Fall back to the
+ * last line that is not traceback scaffolding or Pyodide help boilerplate.
  */
 function extractPyError(raw: string | null): string | null {
   if (!raw) return null
-  // Find the last "ExceptionType: message" line
-  const lines = raw.split('\n').filter(l => l.trim())
-  // Skip "Error in sys.excepthook:", traceback noise, and Pyodide help-URL trailers.
-  // The full Pyodide micropip error structure is:
-  //   ValueError: <actual error>
-  //   You can use micropip.install(..., keep_going=True) ...
-  //   await pyodide.loadPackage("micropip") in JavaScript
-  //   See https://pyodide.org/... for more details.
-  // All of lines 2-4 are help text — only line 1 is meaningful.
-  const useful = lines.filter(l =>
-    !l.startsWith('Error in sys.excepthook') &&
-    !l.startsWith('Traceback') &&
-    !l.trim().startsWith('File ') &&
-    !l.trim().startsWith('During handling') &&
-    !l.trim().startsWith('See https://') &&
-    !l.trim().startsWith('You can use') &&
-    !l.trim().startsWith('await pyodide.')
-  )
-  return useful.at(-1)?.trim() ?? raw.slice(0, 200)
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean)
+
+  // Positive pass: lines matching "ExceptionName: ..." — the actual Python error.
+  // This handles ValueError, ImportError, RuntimeError, SyntaxError, etc.
+  const exceptionLines = lines.filter(l => /^[A-Z][A-Za-z]*Error[A-Za-z]*\s*:/.test(l))
+  if (exceptionLines.length > 0) return exceptionLines.at(-1)!.slice(0, 500)
+
+  // Negative pass: strip well-known traceback scaffolding and Pyodide help text.
+  const noise = [
+    /^Traceback /,
+    /^File "/,
+    /^During handling /,
+    /^Error in sys\.excepthook/,
+    /^See https?:\/\//,
+    /^You can use /,
+    /^await (pyodide|micropip)\./,
+  ]
+  const useful = lines.filter(l => !noise.some(re => re.test(l)))
+  return useful.at(-1)?.slice(0, 500) ?? raw.slice(0, 200)
 }
 
 // ─── Main executor ────────────────────────────────────────────────────────────
