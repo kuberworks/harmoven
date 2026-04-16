@@ -122,6 +122,30 @@ const PROVIDER_KEY_LINK: Record<string, string> = {
   litellm:   '',
 }
 
+/** Models seeded for each provider — mirrors PROVIDER_PROFILES + BUILT_IN_PROFILES. */
+const PROVIDER_MODEL_TIERS: Record<string, { tier: 'fast' | 'balanced' | 'powerful'; model: string; purpose: string }[]> = {
+  anthropic: [
+    { tier: 'fast',     model: 'claude-haiku-4-5', purpose: 'Classifier, routing' },
+    { tier: 'balanced', model: 'claude-sonnet-4-6', purpose: 'Planner, Writer (default)' },
+    { tier: 'powerful', model: 'claude-opus-4-6',   purpose: 'Reviewer, complex tasks' },
+  ],
+  openai: [
+    { tier: 'fast',     model: 'gpt-5.4-nano', purpose: 'Classifier, routing' },
+    { tier: 'balanced', model: 'gpt-5.4-mini', purpose: 'Planner, Writer (default)' },
+    { tier: 'powerful', model: 'gpt-5.4',      purpose: 'Reviewer, complex tasks' },
+  ],
+  gemini: [
+    { tier: 'fast',     model: 'gemini-1.5-flash', purpose: 'Classifier, routing' },
+    { tier: 'balanced', model: 'gemini-1.5-pro',   purpose: 'Planner, Writer (default)' },
+  ],
+}
+
+const TIER_STYLE: Record<string, string> = {
+  fast:     'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  balanced: 'bg-[var(--accent-amber-3)] text-[var(--accent-amber-9)]',
+  powerful: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+}
+
 // ── Main wizard ───────────────────────────────────────────────────────────────
 
 interface SetupWizardProps {
@@ -492,6 +516,27 @@ export function SetupWizard({ detectedProviders }: SetupWizardProps) {
                     </label>
                   ))}
                 </div>
+
+                {/* Model tier info — shown for providers with fixed built-in profiles */}
+                {PROVIDER_MODEL_TIERS[form.llmProvider] && (
+                  <div className="rounded-lg border border-border bg-surface-hover p-3 space-y-2">
+                    <p className="text-xs font-medium text-foreground">Models that will be configured</p>
+                    <div className="space-y-1.5">
+                      {PROVIDER_MODEL_TIERS[form.llmProvider]!.map(({ tier, model, purpose }) => (
+                        <div key={tier} className="flex items-center gap-2">
+                          <span className={`shrink-0 rounded-badge px-1.5 py-0.5 text-[10px] font-semibold w-16 text-center ${TIER_STYLE[tier]}`}>
+                            {tier}
+                          </span>
+                          <code className="flex-1 font-mono text-xs text-foreground truncate">{model}</code>
+                          <span className="text-xs text-muted-foreground hidden sm:block">{purpose}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      You can add or swap models in <strong>Admin → Models</strong> after setup.
+                    </p>
+                  </div>
+                )}
 
                 {form.llmProvider === 'ollama' ? (
                   <div className="space-y-1.5">
