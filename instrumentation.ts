@@ -66,20 +66,44 @@ export async function register(): Promise<void> {
       console.warn('[bootstrap] maybeGenerateSetupToken failed (non-fatal):', err),
     )
 
-    // Warn at startup if ENCRYPTION_KEY is missing or too short (< 32 bytes after base64 decode).
-    // Credentials stored in the vault will fail to decrypt at runtime without it.
+    // ENCRYPTION_KEY is required in production — credentials stored in the vault
+    // cannot be decrypted without it. Fail at startup rather than at the first
+    // credential operation: a silent warn would let the server start and appear
+    // healthy while every vault read/write silently fails at runtime.
+    // Operators who see this crash will get a single, actionable error message.
     const encKey = process.env.ENCRYPTION_KEY ?? ''
     if (!encKey) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          '[harmoven] FATAL: ENCRYPTION_KEY is not set.\n' +
+          '  Generate one with: openssl rand -base64 32\n' +
+          '  Then add it to your .env file as: ENCRYPTION_KEY=<value>',
+        )
+      }
       console.warn('[bootstrap] ENCRYPTION_KEY is not set — credential vault operations will fail at runtime.')
     } else {
       try {
         const decoded = Buffer.from(encKey, 'base64')
         if (decoded.length < 32) {
+          if (process.env.NODE_ENV === 'production') {
+            throw new Error(
+              `[harmoven] FATAL: ENCRYPTION_KEY is too short (${decoded.length} bytes after base64 decode; 32 required).\n` +
+              '  Generate a valid key: openssl rand -base64 32',
+            )
+          }
           console.warn(`[bootstrap] ENCRYPTION_KEY is too short (${decoded.length} bytes after base64 decode; 32 required).`)
         }
-      } catch {
+      } catch (e) {
+        if ((e as Error).message?.startsWith('[harmoven] FATAL')) throw e
         console.warn('[bootstrap] ENCRYPTION_KEY does not appear to be valid base64.')
       }
     }
+
+    // Load LLM provider plugins listed in orchestrator.yaml llm.plugins.
+    // Non-blocking — a broken plugin must not prevent server startup.
+    const { loadLlmPlugins } = await import('@/lib/bootstrap/load-llm-plugins')
+    await loadLlmPlugins().catch((err: unknown) =>
+      console.warn('[bootstrap] loadLlmPlugins failed (non-fatal):', err),
+    )
   }
 }

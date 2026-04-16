@@ -50,11 +50,18 @@ export function compareApiKey(
  * Extract and validate an API key from an Authorization header value.
  * Expected format: "Bearer hv1_<32 hex chars>"
  *
- * Returns the raw key string if the format is valid, null otherwise.
+ * Returns the raw key string (normalised to lowercase) if the format is valid,
+ * null otherwise.
  * Does NOT hit the DB — that's done by validateApiKey().
+ *
+ * SEC: The key is normalised to lowercase so that clients sending mixed- or
+ * upper-case keys (e.g. "Bearer HV1_ABCDEF...") still match the SHA-256 hash
+ * stored in DB (which was computed from the lowercase canonical form at creation
+ * time). The `i` flag on the regex is retained for the prefix match; the
+ * `toLowerCase()` call on the captured group is the canonical normalisation.
  */
 export function extractBearerKey(authHeader: string | null): string | null {
   if (!authHeader) return null
   const match = authHeader.match(/^Bearer\s+(hv1_[0-9a-f]{32})$/i)
-  return match?.[1] ?? null
+  return match?.[1]?.toLowerCase() ?? null
 }
