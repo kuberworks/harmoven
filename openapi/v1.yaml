@@ -1932,6 +1932,58 @@ components:
           format: date-time
           description: "ISO 8601 timestamp at which this resource was created. Set by the server; read-only."
 
+    ConfigVersion:
+      description: |
+        A single commit in the project's configuration git history. Represents
+        one atomic change to one or more config files (`project.json`,
+        `AGENTS.md`, `orchestrator.yaml`, `roles/*.json`).
+        History is append-only — commits are never rebased or amended.
+      type: object
+      required: [hash, message, author, timestamp, changed]
+      properties:
+        hash:
+          type: string
+          minLength: 7
+          maxLength: 7
+          description: "Short (7-character) git commit hash. Stable identifier used in `diff` and `restore` calls. Guaranteed unique within a repository."
+          example: "a3f9c12"
+        message:
+          type: string
+          description: "Auto-generated commit message describing the change."
+          example: "set: AGENTS.md by usr_01HXY4ZQPB"
+        author:
+          type: string
+          description: "User ID of the actor who triggered the config change, or the string `system` for automated changes."
+          example: "usr_01HXY4ZQPB"
+        timestamp:
+          type: string
+          format: date-time
+          description: "ISO 8601 UTC timestamp of when the commit was created."
+          example: "2026-03-15T14:22:11.000Z"
+        changed:
+          type: array
+          description: "Relative paths of files modified by this commit."
+          items:
+            type: string
+          example: ["projects/c96e5d92-a5e3-41de-b7a2-309411ad4460/AGENTS.md"]
+
+    ConfigDiff:
+      description: |
+        Comparison between two config versions. Provides the full content before
+        and after the change, plus the standard unified diff patch.
+      type: object
+      required: [before, after, patch]
+      properties:
+        before:
+          type: string
+          description: "Full text content of the file(s) at the older commit. Empty string if the file did not exist at that revision."
+        after:
+          type: string
+          description: "Full text content of the file(s) at the newer commit. Empty string if the file was deleted."
+        patch:
+          type: string
+          description: "Raw unified diff output (GNU diff format). Empty string if the two hashes are identical."
+
   # ─── Reusable parameters ──────────────────────────────────────────────────
   parameters:
     ProjectId:
@@ -2007,6 +2059,16 @@ components:
 
   # ─── Reusable responses ───────────────────────────────────────────────────
   responses:
+    BadRequest:
+      description: The request body or query parameters failed schema validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: bad_request
+              message: "Invalid input. Check the request body or query parameters."
     Unauthorized:
       description: |
         The request carries no valid credential. Either the session cookie has expired
@@ -2153,61 +2215,6 @@ components:
             error:
               code: rate_limit_exceeded
               message: "Rate limit exceeded. Please retry after 60 seconds."
-
-# ─── Global security (overridden per route) ───────────────────────────────────
-
-    ConfigVersion:
-      description: |
-        A single commit in the project's configuration git history. Represents
-        one atomic change to one or more config files (`project.json`,
-        `AGENTS.md`, `orchestrator.yaml`, `roles/*.json`).  
-        History is append-only — commits are never rebased or amended.
-      type: object
-      required: [hash, message, author, timestamp, changed]
-      properties:
-        hash:
-          type: string
-          minLength: 7
-          maxLength: 7
-          description: "Short (7-character) git commit hash. Stable identifier used in `diff` and `restore` calls. Guaranteed unique within a repository."
-          example: "a3f9c12"
-        message:
-          type: string
-          description: "Auto-generated commit message describing the change. Format: `<action>: <key> by <actor>`. Example: `set: AGENTS.md by usr_01HXY…`."
-          example: "set: AGENTS.md by usr_01HXY4ZQPB"
-        author:
-          type: string
-          description: "User ID of the actor who triggered the config change, or the string `system` for automated changes (e.g. bootstrap, migrations)."
-          example: "usr_01HXY4ZQPB"
-        timestamp:
-          type: string
-          format: date-time
-          description: "ISO 8601 UTC timestamp of when the commit was created."
-          example: "2026-03-15T14:22:11.000Z"
-        changed:
-          type: array
-          description: "Relative paths (within the config repository) of files modified by this commit. Empty array means the commit was an intentional no-op (e.g. a restore to the current state)."
-          items:
-            type: string
-          example: ["projects/c96e5d92-a5e3-41de-b7a2-309411ad4460/AGENTS.md"]
-
-    ConfigDiff:
-      description: |
-        Comparison between two config versions. Provides the full content before
-        and after the change, plus the standard unified diff patch.
-        Used by the Config History panel to render side-by-side diffs.
-      type: object
-      required: [before, after, patch]
-      properties:
-        before:
-          type: string
-          description: "Full text content of the file(s) at the older commit (`from` hash). Empty string if the file did not exist at that revision."
-        after:
-          type: string
-          description: "Full text content of the file(s) at the newer commit (`to` hash). Empty string if the file was deleted."
-        patch:
-          type: string
-          description: "Raw unified diff output (GNU diff format). Suitable for display or programmatic application with `patch -p1`. Empty string if the two hashes are identical."
 
 security:
   - SessionCookie: []
@@ -2472,13 +2479,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ApiError'
         '409':
           description: "Setup already complete — a user already exists."
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ApiError'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
@@ -2569,13 +2576,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ApiError'
         '401':
           description: "Post-setup call without an instance_admin session."
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ApiError'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
@@ -3098,13 +3105,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ApiError'
         '422':
           description: "No REVIEWER node found in the run's DAG, or the supplied `node_id` does not exist."
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/RateLimit'
 
@@ -6178,7 +6185,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ApiError'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
         '429':

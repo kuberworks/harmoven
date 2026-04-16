@@ -1,0 +1,59 @@
+-- Down: 20260403135539_init
+-- Reverses the full initial schema.
+-- Tables from later migrations (PromptSummary, RunDependency, RunArtifact) will
+-- already have been dropped by their own down.sql before this one runs.
+-- CASCADE handles any residual FK dependencies safely.
+
+-- Drop application tables (reverse creation order)
+DROP TABLE IF EXISTS "GitProviderToken" CASCADE;
+DROP TABLE IF EXISTS "MarketplaceRegistry" CASCADE;
+DROP TABLE IF EXISTS "GitUrlWhitelistEntry" CASCADE;
+DROP TABLE IF EXISTS "GitHubImportPreview" CASCADE;
+DROP TABLE IF EXISTS "PipelineTemplateVersion" CASCADE;
+DROP TABLE IF EXISTS "PipelineTemplate" CASCADE;
+DROP TABLE IF EXISTS "SystemSetting" CASCADE;
+DROP TABLE IF EXISTS "LlmProviderKey" CASCADE;
+DROP TABLE IF EXISTS "CriticalFindingFix" CASCADE;
+DROP TABLE IF EXISTS "CriticalFindingIgnore" CASCADE;
+DROP TABLE IF EXISTS "CriticalReviewResult" CASCADE;
+DROP TABLE IF EXISTS "PreviewPort" CASCADE;
+DROP TABLE IF EXISTS "EvalResult" CASCADE;
+DROP TABLE IF EXISTS "RunActorStats" CASCADE;
+DROP TABLE IF EXISTS "EventPayload" CASCADE;
+DROP TABLE IF EXISTS "GitWorktree" CASCADE;
+DROP TABLE IF EXISTS "SourceTrustEvent" CASCADE;
+DROP TABLE IF EXISTS "InstalledPack" CASCADE;
+DROP TABLE IF EXISTS "UserPreference" CASCADE;
+DROP TABLE IF EXISTS "WebhookDelivery" CASCADE;
+DROP TABLE IF EXISTS "OAuthToken" CASCADE;
+DROP TABLE IF EXISTS "ProjectCredential" CASCADE;
+DROP TABLE IF EXISTS "ProjectApiKey" CASCADE;
+DROP TABLE IF EXISTS "ProjectMember" CASCADE;
+DROP TABLE IF EXISTS "ProjectRole" CASCADE;
+DROP TABLE IF EXISTS "MemoryResource" CASCADE;
+DROP TABLE IF EXISTS "McpSkill" CASCADE;
+DROP TABLE IF EXISTS "LlmProfile" CASCADE;
+DROP TABLE IF EXISTS "Trigger" CASCADE;
+DROP TABLE IF EXISTS "AuditLog" CASCADE;
+DROP TABLE IF EXISTS "HumanGate" CASCADE;
+DROP TABLE IF EXISTS "Handoff" CASCADE;
+DROP TABLE IF EXISTS "Node" CASCADE;
+DROP TABLE IF EXISTS "Run" CASCADE;
+DROP TABLE IF EXISTS "Project" CASCADE;
+DROP TABLE IF EXISTS "apikey" CASCADE;
+DROP TABLE IF EXISTS "passkey" CASCADE;
+DROP TABLE IF EXISTS "twoFactor" CASCADE;
+DROP TABLE IF EXISTS "verification" CASCADE;
+DROP TABLE IF EXISTS "account" CASCADE;
+DROP TABLE IF EXISTS "session" CASCADE;
+DROP TABLE IF EXISTS "user" CASCADE;
+
+-- Drop enums
+DROP TYPE IF EXISTS "CredentialType";
+DROP TYPE IF EXISTS "TriggerType";
+DROP TYPE IF EXISTS "WorktreeLayer";
+DROP TYPE IF EXISTS "HumanGateStatus";
+DROP TYPE IF EXISTS "NodeStatus";
+DROP TYPE IF EXISTS "RunStatus";
+DROP TYPE IF EXISTS "UiLevel";
+DROP TYPE IF EXISTS "Role";

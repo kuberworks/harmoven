@@ -50,6 +50,11 @@ release/
 # Data directories (root-level only — does NOT affect app/api/**/data/ routes)
 /data/
 
+# LLM provider plugins — unofficial plugins are NOT shipped with Harmoven releases.
+# Install via POST /api/admin/llm-plugins/install (.hpkg archive).
+# See lib/llm/plugins/github-copilot/ for a reference implementation.
+lib/llm/plugins/
+
 # dev/ directory — specs and prompts, not for versioning
 dev/
 
