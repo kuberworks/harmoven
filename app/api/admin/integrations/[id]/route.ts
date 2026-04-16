@@ -67,6 +67,7 @@ const PatchSkillBody = z.object({
 }).strict()
 
 import { validateMcpConfig } from '@/lib/mcp/validate-config'
+import { mcpSkillClient }   from '@/lib/mcp/client'
 
 export async function PATCH(
   req: NextRequest,
@@ -222,6 +223,13 @@ export async function PATCH(
     },
   }).catch(() => { /* non-fatal */ })
 
+  // SEC-MCP-01: immediately close the cached MCP connection when a skill is
+  // disabled or its config changes. This is the explicit fast-path; the TTL
+  // in mcpSkillClient.getClient() is the belt-and-suspenders fallback.
+  if (enabled === false || resolvedConfig !== undefined) {
+    await mcpSkillClient.disconnect(id).catch(() => undefined)
+  }
+
   return NextResponse.json({ skill: updated })
 }
 
@@ -248,6 +256,9 @@ export async function DELETE(
   }
 
   await db.mcpSkill.delete({ where: { id } })
+
+  // SEC-MCP-01: close cached connection immediately on delete.
+  await mcpSkillClient.disconnect(id).catch(() => undefined)
 
   await db.auditLog.create({
     data: {

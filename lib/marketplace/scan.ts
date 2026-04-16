@@ -32,7 +32,12 @@ export interface ScanResult {
 
 // External URL patterns that must not appear in pack definitions.
 // Packs may reference official harmoven docs (harmoven.com) or localhost.
-const FORBIDDEN_URL_PATTERN = /https?:\/\/(?!harmoven\.com|localhost|127\.0\.0\.1)/i
+//
+// SEC-SCAN-01: The pattern covers all URI schemes with an authority component
+// (http, https, ws, wss, ftp, file) to prevent packs from embedding non-HTTP
+// callbacks or local file references. The negative lookahead exempts the two
+// known-safe hosts; everything else is flagged.
+const FORBIDDEN_URL_PATTERN = /(?:https?|wss?|ftp|file):\/\/(?!harmoven\.com|localhost|127\.0\.0\.1)/i
 
 // Known prompt injection patterns sourced from OWASP LLM top-10 + internal research.
 const INJECTION_PATTERNS: RegExp[] = [

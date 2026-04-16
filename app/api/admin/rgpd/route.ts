@@ -57,11 +57,12 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   }
 
   let body: z.infer<typeof PatchSchema>
-  try {
-    body = PatchSchema.parse(await req.json())
-  } catch (e) {
-    return NextResponse.json({ error: 'Invalid request body', details: e }, { status: 400 })
+  const rawBody = await req.json().catch(() => null)
+  const parseResult = PatchSchema.safeParse(rawBody)
+  if (!parseResult.success) {
+    return NextResponse.json({ error: parseResult.error.flatten() }, { status: 400 })
   }
+  body = parseResult.data
 
   const actorId = caller.type === 'session' ? caller.userId : undefined
 

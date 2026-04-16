@@ -70,13 +70,19 @@ function checkRateLimit(projectId: string): void {
  * Wrap result content in trusted-source tags so the LLM knows this is
  * external, untrusted content (§7.2 — prompt injection protection).
  *
- * Security: angle brackets inside `content` are replaced with Unicode
- * lookalikes (U+FE64 / U+FE65) to prevent a malicious snippet from
- * embedding </WEB_SEARCH_RESULT> and breaking the trust boundary.
- * Using lookalikes (not HTML entities) preserves readability for the LLM.
+ * Security: angle brackets inside `content` are replaced with HTML entities
+ * (&lt; / &gt;) to prevent a malicious snippet from embedding a closing
+ * </WEB_SEARCH_RESULT> tag and breaking the trust boundary.
+ *
+ * HTML entities are used rather than Unicode lookalikes (U+FE64/U+FE65) because
+ * some LLMs normalise Small Form Variants back to ASCII angle brackets during
+ * tokenization or reasoning — defeating the protection. HTML entities are
+ * universally unambiguous: no tokenizer or reasoning step interprets &lt; as
+ * a tag delimiter. LLMs trained on HTML (i.e. all production models) correctly
+ * read &lt; as the less-than character, not as a tag start.
  */
 function wrapResultContent(content: string): string {
-  const safe = content.replace(/</g, '\uFE64').replace(/>/g, '\uFE65')
+  const safe = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return `<WEB_SEARCH_RESULT>\n${safe}\n</WEB_SEARCH_RESULT>`
 }
 
