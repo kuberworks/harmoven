@@ -147,7 +147,7 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npm run generate:openapi
       - name: Commit updated spec
-        uses: stefanzweifel/git-auto-commit-action@8621da0631a0a7c1dbb3b516a5ce2a6a2a95a174 # v5.0.1
+        uses: stefanzweifel/git-auto-commit-action@8621497c8c39c72f3e2a999a26b4ca1b5058a842 # v5.0.1
         with:
           commit_message: "chore: update OpenAPI spec [skip ci]"
           file_pattern: "docs/openapi.yaml"
