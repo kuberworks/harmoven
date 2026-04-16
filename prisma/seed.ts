@@ -132,6 +132,16 @@ async function seedAdminUser() {
   }
 
   console.log(`  ✓ Admin user created: ${email} (role: instance_admin)`)
+
+  // Mark setup wizard as complete so the middleware stops redirecting to /setup.
+  // The seed is only run when HARMOVEN_ADMIN_EMAIL is provided, which means the
+  // admin bootstrap has been done — wizard is effectively complete.
+  await db.systemSetting.upsert({
+    where:  { key: 'setup.wizard_complete' },
+    update: { value: 'true' },
+    create: { key: 'setup.wizard_complete', value: 'true', updated_by: null },
+  })
+  console.log('  ✓ setup.wizard_complete = true')
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
