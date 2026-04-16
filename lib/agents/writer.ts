@@ -317,13 +317,27 @@ CRITICAL — This is a python_code node that feeds a PYTHON_EXECUTOR:
 - File names must use only letters, digits, dots, hyphens, underscores, and forward slashes
   for subdirectory paths (e.g. 'src/main/java/App.java'). No spaces, no accents.
 - The code runs in Pyodide (Python 3.11 WASM). All standard library modules are available.
-  Popular packages (openpyxl, pandas, matplotlib, plotly, seaborn, reportlab, Pillow, scipy,
-  scikit-learn, networkx) are auto-installed on demand.
+- AVAILABLE packages (pre-compiled Pyodide wheels — use these freely):
+    Data / numerics:  numpy, pandas, scipy, statsmodels, sympy, mpmath, xarray,
+                      pyarrow, fastparquet, h5py, netcdf4, awkward-cpp
+    ML / AI:          scikit-learn, lightgbm, xgboost, opencv-python
+    Visualization:    matplotlib, seaborn, plotly, bokeh, altair, pillow, wordcloud,
+                      imageio, svgwrite, fonttools
+    Files / formats:  openpyxl, xlrd, python-calamine, reportlab, pymupdf, lxml,
+                      beautifulsoup4, pyyaml, toml, jsonschema, requests, httpx,
+                      python-dateutil, pytz, tzdata, sqlalchemy, pydantic,
+                      cryptography, regex, tqdm, rich, click
+    Geo / science:    geopandas, shapely, cartopy, rasterio, astropy, biopython,
+                      networkx, igraph, nltk
+  If a package you need is NOT in this list, check if it is pure-Python (no C ext).
+  Pure-Python packages can be installed via micropip at runtime. Packages with C
+  extensions that are NOT in this list will FAIL — choose an alternative from the
+  list above instead.
 - Do not include any top-level async code; use synchronous code only.
-- UNAVAILABLE in this runtime — NEVER generate code that uses these libraries:
+- UNAVAILABLE — NEVER use these (no WASM-compatible wheel exists):
     torch, tensorflow, keras, jax           — no CUDA/native binaries in WASM
     pydub, moviepy, ffmpeg-python           — require the ffmpeg binary (not present)
-    psycopg2, asyncpg                       — require native libpq
+    psycopg2, asyncpg, pymysql              — require native DB client libs
     grpcio                                  — requires native bindings + TCP
     tkinter, PyQt5, wx                      — GUI toolkits, no display
     multiprocessing.Pool, subprocess        — fork/exec not available in WASM
