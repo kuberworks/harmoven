@@ -581,8 +581,8 @@ async function streamOpenAI(
     {
       model:       profile.model_string,
       ...(profile.uses_max_completion_tokens
-        ? { max_completion_tokens: options.maxTokens ?? 4096 }
-        : { max_tokens:            options.maxTokens ?? 4096 }),
+        ? { max_completion_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity) }
+        : { max_tokens:            Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity) }),
       messages:    toOpenAIMessages(messages),
       stream:     true,
     },
