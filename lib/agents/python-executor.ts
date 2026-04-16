@@ -155,15 +155,20 @@ function extractPyError(raw: string | null): string | null {
   // Find the last "ExceptionType: message" line
   const lines = raw.split('\n').filter(l => l.trim())
   // Skip "Error in sys.excepthook:", traceback noise, and Pyodide help-URL trailers.
-  // The URL line ("See https://pyodide.org/...") always comes after the real exception
-  // message and is not useful as a standalone error summary.
+  // The full Pyodide micropip error structure is:
+  //   ValueError: <actual error>
+  //   You can use micropip.install(..., keep_going=True) ...
+  //   await pyodide.loadPackage("micropip") in JavaScript
+  //   See https://pyodide.org/... for more details.
+  // All of lines 2-4 are help text — only line 1 is meaningful.
   const useful = lines.filter(l =>
     !l.startsWith('Error in sys.excepthook') &&
     !l.startsWith('Traceback') &&
     !l.trim().startsWith('File ') &&
     !l.trim().startsWith('During handling') &&
     !l.trim().startsWith('See https://') &&
-    !l.trim().startsWith('You can use')
+    !l.trim().startsWith('You can use') &&
+    !l.trim().startsWith('await pyodide.')
   )
   return useful.at(-1)?.trim() ?? raw.slice(0, 200)
 }
