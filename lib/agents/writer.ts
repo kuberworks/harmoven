@@ -133,9 +133,9 @@ const CODE_PROFILES = new Set<ProfileId>([
 
 function maxTokensFor(complexity: Complexity, profile: ProfileId): number {
   const base = MAX_TOKENS[complexity]
-  // Code profiles get 2× headroom (capped at 131 072 — above current provider maximums,
-  // so the provider's own hard limit applies before ours).
-  return CODE_PROFILES.has(profile) ? Math.min(base * 2, 131_072) : base
+  // Code profiles get 2× headroom, capped at 128 000 — OpenAI GPT-5.x hard limit.
+  // Anthropic claude output is capped by profile.max_output_tokens (64k for claude-haiku-4-5).
+  return CODE_PROFILES.has(profile) ? Math.min(base * 2, 128_000) : base
 }
 
 // Tier ceilings anchored to DEFAULT_MAX_TOKENS:

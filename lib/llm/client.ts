@@ -385,7 +385,7 @@ function toOpenAIMessages(messages: ChatMessage[]): OpenAI.Chat.ChatCompletionMe
  */
 export async function runOpenAIToolLoop(
   client:   OpenAI,
-  profile:  { model_string: string; supports_tool_choice?: boolean; uses_max_completion_tokens?: boolean },
+  profile:  { model_string: string; supports_tool_choice?: boolean; uses_max_completion_tokens?: boolean; max_output_tokens?: number },
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   options:  ChatOptions,
   signal?:  AbortSignal,
@@ -419,7 +419,7 @@ export async function runOpenAIToolLoop(
     const resp = await client.chat.completions.create(
       {
         model:         profile.model_string,
-        [maxTokKey]:   options.maxTokens ?? 4096,
+        [maxTokKey]:   Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
         messages:      currentMessages,
         ...(oaiTools && canInjectTools ? { tools: oaiTools, tool_choice: 'auto' as const } : {}),
       },
@@ -445,7 +445,7 @@ export async function runOpenAIToolLoop(
         const plainResp = await client.chat.completions.create(
           {
             model:        profile.model_string,
-            [maxTokKey]:  options.maxTokens ?? 4096,
+            [maxTokKey]:  Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity),
             messages:     currentMessages,
           },
           { signal },
@@ -543,8 +543,8 @@ async function callOpenAI(
     {
       model:       profile.model_string,
       ...(profile.uses_max_completion_tokens
-        ? { max_completion_tokens: options.maxTokens ?? 4096 }
-        : { max_tokens:            options.maxTokens ?? 4096 }),
+        ? { max_completion_tokens: Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity) }
+        : { max_tokens:            Math.min(options.maxTokens ?? 4096, profile.max_output_tokens ?? Infinity) }),
       messages:    oaiMessages,
     },
     { signal: options.signal },
