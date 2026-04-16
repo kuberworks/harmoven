@@ -8,7 +8,7 @@
     "start": "next start",
     "test": "node_modules/.bin/jest",
     "test:unit": "HARMOVEN_LLM_TIER=mock jest --testPathIgnorePatterns='\\.integration\\.'",
-    "test:integration": "HARMOVEN_LLM_TIER=haiku jest --testPathPattern=tests/integration",
+    "test:integration": "jest --testPathPattern=integration",
     "test:e2e": "playwright test",
     "build:test": "next build",
     "generate:openapi": "echo 'OpenAPI generation not yet implemented (T3.10)'",
