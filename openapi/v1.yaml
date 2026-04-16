@@ -2136,6 +2136,24 @@ components:
               code: run_already_terminal
               message: "Run is already in a terminal state and cannot be modified."
 
+    TooManyRequests:
+      description: |
+        Rate limit exceeded. The `Retry-After` header indicates how many seconds
+        to wait before retrying.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before the next request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: rate_limit_exceeded
+              message: "Rate limit exceeded. Please retry after 60 seconds."
+
 # ─── Global security (overridden per route) ───────────────────────────────────
 
     ConfigVersion:
@@ -2694,6 +2712,10 @@ paths:
                   type: boolean
                   default: false
                   description: "When `true`, WRITER nodes can invoke the web search tool during generation. Requires BRAVE_SEARCH_API_KEY or TAVILY_API_KEY to be configured, or DuckDuckGo is used as fallback. Stored in `run_config.enable_web_search`."
+                output_file_format:
+                  type: string
+                  enum: [txt, csv, json, yaml, html, md, py, ts, js, sh, docx, pdf]
+                  description: "User-selected output format (form selector). When set, the PLANNER applies this as the C2 rule — overrides any `desired_outputs` from the CLASSIFIER for all WRITER nodes. Stored in `run_config.output_file_format`."
                 llm_overrides:
                   $ref: '#/components/schemas/LlmOverrides'
                   description: "Per-agent LLM profile overrides. Forces specific models for PLANNER/WRITER/REVIEWER stages. Validated against enabled profiles — unknown or disabled IDs return 422."
