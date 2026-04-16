@@ -9,6 +9,18 @@ COPY package.json package-lock.json* ./
 # This flag is scoped to this Docker build stage only and does not affect lockfile
 # integrity (npm ci still verifies checksums against package-lock.json).
 RUN npm ci --omit=dev --legacy-peer-deps
+# Pre-download critical Pyodide wheels into the package directory so that the
+# runtime container does not need CDN access and avoids EACCES caching failures
+# (node_modules is owned by root; the nextjs user cannot write new files there).
+# The build stage has network access; the runner stage does not need it.
+RUN set -e; \
+    PYODIDE_DIR=/app/node_modules/pyodide; \
+    VERSION=$(node -e "console.log(require('${PYODIDE_DIR}/package.json').version)"); \
+    BASE="https://cdn.jsdelivr.net/pyodide/v${VERSION}/full"; \
+    MICROPIP_FILE=$(node -e "console.log(require('${PYODIDE_DIR}/pyodide-lock.json').packages.micropip.file_name)"); \
+    PACKAGING_FILE=$(node -e "console.log(require('${PYODIDE_DIR}/pyodide-lock.json').packages.packaging.file_name)"); \
+    wget -q "${BASE}/${MICROPIP_FILE}" -O "${PYODIDE_DIR}/${MICROPIP_FILE}" && echo "Downloaded ${MICROPIP_FILE}"; \
+    wget -q "${BASE}/${PACKAGING_FILE}" -O "${PYODIDE_DIR}/${PACKAGING_FILE}" && echo "Downloaded ${PACKAGING_FILE}"
 
 FROM base AS builder
 COPY package.json package-lock.json* ./
