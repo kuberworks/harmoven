@@ -52,7 +52,7 @@ jobs:
     name: Provision Neon DB branch (~3s)
     runs-on: ubuntu-latest
     outputs:
-      db_url:    ${{ steps.provision.outputs.db_url }}
+      db_host:   ${{ steps.provision.outputs.db_host }}
       branch_id: ${{ steps.provision.outputs.branch_id }}
     steps:
       - name: Create Neon branch
@@ -65,20 +65,25 @@ jobs:
           NEON_DB_NAME:          ${{ secrets.NEON_DB_NAME }}
           NEON_PARENT_BRANCH_ID: ${{ secrets.NEON_PARENT_BRANCH_ID }}
         run: |
-          RESPONSE=$(curl -sf -X POST \
+          echo "NEON_PROJECT_ID length: ${#NEON_PROJECT_ID}"
+          echo "NEON_PARENT_BRANCH_ID length: ${#NEON_PARENT_BRANCH_ID}"
+          echo "NEON_API_KEY set: $([[ -n "${NEON_API_KEY}" ]] && echo yes || echo NO)"
+          HTTP_CODE=$(curl -s -o /tmp/neon_resp.json -w "%{http_code}" -X POST \
             "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
             -H "Authorization: Bearer ${NEON_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"branch\":{\"name\":\"ci-${GITHUB_SHA:0:8}\",\"parent_id\":\"${NEON_PARENT_BRANCH_ID}\"},\"endpoints\":[{\"type\":\"read_write\"}]}")
+          echo "Neon API HTTP status: ${HTTP_CODE}"
+          [[ "$HTTP_CODE" -ge 200 && "$HTTP_CODE" -lt 300 ]] || { echo "Neon API error:"; cat /tmp/neon_resp.json; exit 1; }
+          RESPONSE=$(cat /tmp/neon_resp.json)
 
           BRANCH_ID=$(echo "$RESPONSE" | jq -r '.branch.id')
           ENDPOINT_HOST=$(echo "$RESPONSE" | jq -r '.endpoints[0].host')
 
           echo "::add-mask::${NEON_DB_PASSWORD}"
-          DB_URL="postgresql://${NEON_DB_USER}:${NEON_DB_PASSWORD}@${ENDPOINT_HOST}/${NEON_DB_NAME}?sslmode=require"
 
           echo "branch_id=${BRANCH_ID}" >> "$GITHUB_OUTPUT"
-          echo "db_url=${DB_URL}"       >> "$GITHUB_OUTPUT"
+          echo "db_host=${ENDPOINT_HOST}" >> "$GITHUB_OUTPUT"
           echo "Neon branch ready — ${BRANCH_ID} @ ${ENDPOINT_HOST}"
 
   build-docker:
@@ -111,21 +116,48 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Mask DB URL
-        run: echo "::add-mask::${{ needs.provision-db.outputs.db_url }}"
+      - name: Mask DB credentials
+        run: |
+          echo "::add-mask::${{ secrets.NEON_DB_PASSWORD }}"
+          echo "::add-mask::${{ needs.provision-db.outputs.db_host }}"
       - name: Update DATABASE_URL + image on Render, then deploy
         env:
           RENDER_API_KEY:    ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-          DB_URL:            ${{ needs.provision-db.outputs.db_url }}
+          DB_HOST:           ${{ needs.provision-db.outputs.db_host }}
+          NEON_DB_USER:      ${{ secrets.NEON_DB_USER }}
+          NEON_DB_PASSWORD:  ${{ secrets.NEON_DB_PASSWORD }}
+          NEON_DB_NAME:      ${{ secrets.NEON_DB_NAME }}
+          AUTH_SECRET:       ${{ secrets.AUTH_SECRET }}
+          ENCRYPTION_KEY:    ${{ secrets.ENCRYPTION_KEY }}
+          NEXTAUTH_URL:      ${{ secrets.RENDER_STAGING_URL }}
           IMAGE:             ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }}
         run: |
-          # 1. Inject ephemeral DATABASE_URL
+          # 1. Inject ephemeral DATABASE_URL (reconstructed from parts to avoid GitHub secret masking)
+          # URL-encode the password to handle special characters (e.g. @, /, #)
+          DB_PASS_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${NEON_DB_PASSWORD}")
+          DB_URL="postgresql://${NEON_DB_USER}:${DB_PASS_ENC}@${DB_HOST}/${NEON_DB_NAME}?sslmode=require"
+
+          # PUT all required env vars explicitly (avoids fragile GET+merge;
+          # AUTH_SECRET and ENCRYPTION_KEY come from GitHub secrets)
+          ENV_JSON=$(jq -nc \
+            --arg db  "$DB_URL" \
+            --arg as  "$AUTH_SECRET" \
+            --arg ek  "$ENCRYPTION_KEY" \
+            --arg nu  "$NEXTAUTH_URL" \
+            '[
+              {"key":"DATABASE_URL",    "value":$db},
+              {"key":"AUTH_SECRET",     "value":$as},
+              {"key":"ENCRYPTION_KEY",  "value":$ek},
+              {"key":"DEPLOYMENT_MODE", "value":"docker"},
+              {"key":"CONFIG_GIT_DIR",  "value":"/data"},
+              {"key":"NEXTAUTH_URL",    "value":$nu}
+            ]')
           curl -sf -X PUT \
             "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "[{\"key\":\"DATABASE_URL\",\"value\":\"${DB_URL}\"}]"
+            -d "$ENV_JSON"
 
           # 2. Update Docker image tag
           curl -sf -X PATCH \
@@ -149,8 +181,10 @@ jobs:
               -H "Authorization: Bearer ${RENDER_API_KEY}" | jq -r '.status')
             echo "  [$i] status=${STATUS}"
             [ "$STATUS" = "live" ] && break
-            [ "$STATUS" = "deactivated" ] || [ "$STATUS" = "build_failed" ] && \
-              echo "Deploy failed: ${STATUS}" && exit 1
+            case "$STATUS" in
+              deactivated|build_failed|update_failed|canceled)
+                echo "Deploy failed: ${STATUS}" && exit 1 ;;
+            esac
             sleep 10
           done
         # Requires (one-time bootstrap in Render dashboard):
@@ -160,13 +194,14 @@ jobs:
         # GitHub secrets: RENDER_API_KEY, RENDER_SERVICE_ID,
         #   RENDER_STAGING_URL (https://YOUR-SERVICE.onrender.com)
       - name: Wait for staging health check
-        # Render free tier spins down on inactivity; cold start can take 50-90s.
-        # 24 × 10s = 4 min max — enough to survive the wake-up delay.
+        # Render free tier: cold start (50-90s) + Prisma migrate deploy (~30s)
+        # + seed (~10s) = up to ~3 min before first request is served.
+        # 36 × 10s = 6 min max.
         run: |
-          for i in $(seq 1 24); do
-            curl -sf --max-time 15 ${{ secrets.RENDER_STAGING_URL }}/api/health && break
-            echo "Waiting... ($i/24)"
-            [ "$i" -eq 24 ] && echo "Health check timed out" && exit 1
+          for i in $(seq 1 36); do
+            curl -sf --max-time 20 ${{ secrets.RENDER_STAGING_URL }}/api/health && echo " OK" && break
+            echo "Waiting... ($i/36)"
+            [ "$i" -eq 36 ] && echo "Health check timed out after 6 min" && exit 1
             sleep 10
           done
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
@@ -177,10 +212,9 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run smoke tests against staging
-        run: npx playwright test --grep "@smoke" --project=chromium
+        run: npx playwright test --project=smoke
         env:
           BASE_URL: ${{ secrets.RENDER_STAGING_URL }}
-        # 5 critical paths: login, create run, view gate, analytics, admin
 
   openapi-types:
     name: OpenAPI → TypeScript (generate + validate)
@@ -195,28 +229,6 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - name: Generate types/api.ts from openapi/v1.yaml
         run: npm run generate:types
-
-  openapi-spec:
-    name: Generate + commit OpenAPI spec
-    needs: integration-tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci --legacy-peer-deps
-      - run: npm run generate:openapi
-      - name: Commit updated spec
-        uses: stefanzweifel/git-auto-commit-action@8621497c8c39c72f3e2a999a26b4ca1b5058a842 # v5.0.1
-        with:
-          commit_message: "chore: update OpenAPI spec [skip ci]"
-          file_pattern: "docs/openapi.yaml"
 
   cleanup-db:
     name: Delete Neon DB branch
