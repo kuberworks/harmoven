@@ -203,28 +203,6 @@ jobs:
       - name: Generate types/api.ts from openapi/v1.yaml
         run: npm run generate:types
 
-  openapi-spec:
-    name: Generate + commit OpenAPI spec
-    needs: integration-tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci --legacy-peer-deps
-      - run: npm run generate:openapi
-      - name: Commit updated spec
-        uses: stefanzweifel/git-auto-commit-action@8621497c8c39c72f3e2a999a26b4ca1b5058a842 # v5.0.1
-        with:
-          commit_message: "chore: update OpenAPI spec [skip ci]"
-          file_pattern: "docs/openapi.yaml"
-
   cleanup-db:
     name: Delete Neon DB branch
     needs: [staging-smoke, provision-db]
