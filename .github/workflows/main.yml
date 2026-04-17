@@ -49,77 +49,34 @@ jobs:
         # ~$0.05 per run, 3-4 minutes
 
   provision-db:
-    name: Provision OVH staging DB (DB1-4)
+    name: Provision Neon DB branch (~3s)
     runs-on: ubuntu-latest
     outputs:
-      db_url: ${{ steps.provision.outputs.db_url }}
-      db_id:  ${{ steps.provision.outputs.db_id }}
+      db_url:    ${{ steps.provision.outputs.db_url }}
+      branch_id: ${{ steps.provision.outputs.branch_id }}
     steps:
-      - name: Install OVH Python SDK
-        run: pip install ovh
-      - name: Create DB and wait for READY
+      - name: Create Neon branch
         id: provision
         env:
-          OVH_APP_KEY:      ${{ secrets.OVH_APP_KEY }}
-          OVH_APP_SECRET:   ${{ secrets.OVH_APP_SECRET }}
-          OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
-          OVH_PROJECT_ID:   ${{ secrets.OVH_PROJECT_ID }}
-          OVH_REGION:       ${{ secrets.OVH_REGION }}
+          NEON_API_KEY:    ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_DB_PASSWORD: ${{ secrets.NEON_DB_PASSWORD }}
         run: |
-          python3 - <<'PYEOF'
-          import ovh, time, sys, os
+          RESPONSE=$(curl -sf -X POST \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
+            -H "Authorization: Bearer ${NEON_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"branch\":{\"name\":\"ci-${GITHUB_SHA:0:8}\"},\"endpoints\":[{\"type\":\"read_write\"}]}")
 
-          client = ovh.Client(
-              endpoint='ovh-eu',
-              application_key=os.environ['OVH_APP_KEY'],
-              application_secret=os.environ['OVH_APP_SECRET'],
-              consumer_key=os.environ['OVH_CONSUMER_KEY'],
-          )
-          project = os.environ['OVH_PROJECT_ID']
-          region  = os.environ.get('OVH_REGION') or 'GRA'
+          BRANCH_ID=$(echo "$RESPONSE" | jq -r '.branch.id')
+          ENDPOINT_HOST=$(echo "$RESPONSE" | jq -r '.endpoints[0].host')
 
-          print(f'Creating PostgreSQL DB1-4 in {region}...', flush=True)
-          result = client.post(
-              f'/cloud/project/{project}/database/postgresql',
-              description='harmoven-ci-staging',
-              flavor='db1-4',
-              plan='essential',
-              version='16',
-              nodesList=[{'flavor': 'db1-4', 'region': region}],
-              ipRestrictions=[{'description': 'ci', 'ip': '0.0.0.0/0'}],
-          )
-          db_id = result['id']
-          print(f'DB ID: {db_id}', flush=True)
+          echo "::add-mask::${NEON_DB_PASSWORD}"
+          DB_URL="postgresql://neondb_owner:${NEON_DB_PASSWORD}@${ENDPOINT_HOST}/neondb?sslmode=require"
 
-          # Poll up to 15 min for READY
-          for i in range(60):
-              db = client.get(f'/cloud/project/{project}/database/postgresql/{db_id}')
-              print(f'  [{i}] status={db["status"]}', flush=True)
-              if db['status'] == 'READY':
-                  break
-              time.sleep(15)
-          else:
-              print('TIMEOUT: DB not READY after 15 min', flush=True)
-              sys.exit(1)
-
-          users     = client.get(f'/cloud/project/{project}/database/postgresql/{db_id}/user')
-          admin     = users[0]
-          creds     = client.post(f'/cloud/project/{project}/database/postgresql/{db_id}/user/{admin["id"]}/credentials/reset')
-          endpoints = client.get(f'/cloud/project/{project}/database/postgresql/{db_id}/endpoint')
-          ep        = next(e for e in endpoints if e.get('ssl'))
-
-          # Mask the password before writing outputs
-          print(f'::add-mask::{creds["password"]}', flush=True)
-
-          db_url = (
-              f'postgresql://{creds["username"]}:{creds["password"]}'
-              f'@{ep["domain"]}:{ep["port"]}/defaultdb?sslmode=require'
-          )
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'db_url={db_url}\n')
-              f.write(f'db_id={db_id}\n')
-          print(f'DB ready — endpoint: {ep["domain"]}:{ep["port"]}', flush=True)
-          PYEOF
+          echo "branch_id=${BRANCH_ID}" >> "$GITHUB_OUTPUT"
+          echo "db_url=${DB_URL}"       >> "$GITHUB_OUTPUT"
+          echo "Neon branch ready — ${BRANCH_ID} @ ${ENDPOINT_HOST}"
 
   build-docker:
     name: Build + push Docker image
@@ -233,37 +190,22 @@ jobs:
           file_pattern: "docs/openapi.yaml"
 
   cleanup-db:
-    name: Destroy OVH staging DB
+    name: Delete Neon DB branch
     needs: [staging-smoke, provision-db]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Install OVH Python SDK
-        run: pip install ovh
-      - name: Delete DB
+      - name: Delete Neon branch
         env:
-          OVH_APP_KEY:      ${{ secrets.OVH_APP_KEY }}
-          OVH_APP_SECRET:   ${{ secrets.OVH_APP_SECRET }}
-          OVH_CONSUMER_KEY: ${{ secrets.OVH_CONSUMER_KEY }}
-          OVH_PROJECT_ID:   ${{ secrets.OVH_PROJECT_ID }}
-          DB_ID:            ${{ needs.provision-db.outputs.db_id }}
+          NEON_API_KEY:    ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          BRANCH_ID:       ${{ needs.provision-db.outputs.branch_id }}
         run: |
-          python3 - <<'PYEOF'
-          import ovh, os, sys
-
-          db_id = os.environ.get('DB_ID', '').strip()
-          if not db_id:
-              print('No DB_ID — nothing to delete')
-              sys.exit(0)
-
-          client = ovh.Client(
-              endpoint='ovh-eu',
-              application_key=os.environ['OVH_APP_KEY'],
-              application_secret=os.environ['OVH_APP_SECRET'],
-              consumer_key=os.environ['OVH_CONSUMER_KEY'],
-          )
-          project = os.environ['OVH_PROJECT_ID']
-          print(f'Deleting OVH DB {db_id}...', flush=True)
-          client.delete(f'/cloud/project/{project}/database/postgresql/{db_id}')
-          print('Done', flush=True)
-          PYEOF
+          if [ -z "$BRANCH_ID" ]; then
+            echo "No branch_id — nothing to delete"
+            exit 0
+          fi
+          curl -sf -X DELETE \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches/${BRANCH_ID}" \
+            -H "Authorization: Bearer ${NEON_API_KEY}"
+          echo "Neon branch ${BRANCH_ID} deleted"
