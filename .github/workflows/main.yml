@@ -125,12 +125,21 @@ jobs:
           IMAGE:             ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }}
         run: |
           # 1. Inject ephemeral DATABASE_URL (reconstructed from parts to avoid GitHub secret masking)
-          DB_URL="postgresql://${NEON_DB_USER}:${NEON_DB_PASSWORD}@${DB_HOST}/${NEON_DB_NAME}?sslmode=require"
+          # URL-encode the password to handle special characters (e.g. @, /, #)
+          DB_PASS_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${NEON_DB_PASSWORD}")
+          DB_URL="postgresql://${NEON_DB_USER}:${DB_PASS_ENC}@${DB_HOST}/${NEON_DB_NAME}?sslmode=require"
+
+          # GET current env vars, replace DATABASE_URL, PUT back (preserves AUTH_SECRET, ENCRYPTION_KEY, etc.)
+          CURRENT_ENVS=$(curl -sf \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}")
+          MERGED=$(echo "$CURRENT_ENVS" | jq --arg v "$DB_URL" \
+            '[(.[] | {key: .key, value: .value} | select(.key != "DATABASE_URL")), {"key":"DATABASE_URL","value":$v}]')
           curl -sf -X PUT \
             "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "[{\"key\":\"DATABASE_URL\",\"value\":\"${DB_URL}\"}]"
+            -d "$MERGED"
 
           # 2. Update Docker image tag
           curl -sf -X PATCH \
