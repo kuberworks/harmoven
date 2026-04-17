@@ -228,7 +228,7 @@ jobs:
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_TOKEN:    ${{ secrets.DOCKER_TOKEN }}
-          VERSION:         ${{ needs.prepare.outputs.version }}
+          VERSION:         ${{ needs.prepare.outputs.version_bare }}
         run: |
           echo "${DOCKER_TOKEN}" | regctl registry login docker.io \
             --user "${DOCKER_USERNAME}" --pass-stdin
