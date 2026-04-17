@@ -29,8 +29,8 @@ export default defineConfig({
   reporter: [['html', { open: 'never', outputFolder: 'playwright-report' }], ['list']],
 
   use: {
-    /* Base URL for all tests. */
-    baseURL: 'http://localhost:3000',
+    /* Base URL for all tests. Override with BASE_URL env var for remote staging. */
+    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
 
     /* Trace on first retry for easier debugging. */
     trace: 'on-first-retry',
@@ -78,12 +78,17 @@ export default defineConfig({
     },
   ],
 
-  /* In CI, Playwright starts the built server automatically.
-     Locally, reuse an already-running dev or prod server. */
-  webServer: {
-    command: 'node .next/standalone/server.js',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  /* In CI smoke tests against a remote URL (BASE_URL set), skip the local
+     webServer entirely. Locally (or in E2E with a local build), start the
+     standalone server. */
+  ...(process.env.BASE_URL
+    ? {}
+    : {
+        webServer: {
+          command: 'node .next/standalone/server.js',
+          url: 'http://localhost:3000',
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+        },
+      }),
 })
