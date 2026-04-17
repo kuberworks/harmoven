@@ -106,37 +106,59 @@ jobs:
           cache-to: type=gha,mode=max
 
   staging-smoke:
-    name: Deploy to staging (Fly.io) + smoke tests
+    name: Deploy to staging (Render) + smoke tests
     needs: [build-docker, provision-db]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Mask DB URL
         run: echo "::add-mask::${{ needs.provision-db.outputs.db_url }}"
-      - name: Install Koyeb CLI
-        run: curl -sf https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
-      - name: Set staging DATABASE_URL on Koyeb
+      - name: Update DATABASE_URL + image on Render, then deploy
         env:
-          KOYEB_API_KEY: ${{ secrets.KOYEB_API_KEY }}
-          DB_URL: ${{ needs.provision-db.outputs.db_url }}
+          RENDER_API_KEY:    ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DB_URL:            ${{ needs.provision-db.outputs.db_url }}
+          IMAGE:             ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }}
         run: |
-          koyeb service update harmoven/app \
-            --env DATABASE_URL="$DB_URL" \
-            --wait
-      - name: Deploy to staging
-        env:
-          KOYEB_API_KEY: ${{ secrets.KOYEB_API_KEY }}
-        run: |
-          koyeb service redeploy harmoven/app \
-            --override docker.image=${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }} \
-            --wait
-        # Requires:
-        #   1. KOYEB_API_KEY secret (app.koyeb.com → API → Create API key)
-        #   2. App + env bootstrapped once in Koyeb dashboard:
-        #      Service name: app, App name: harmoven
-        #      Docker image: DOCKER_USERNAME/app:latest
-        #      Env: AUTH_SECRET, ENCRYPTION_KEY, DEPLOYMENT_MODE=docker,
-        #           CONFIG_GIT_DIR=/data  (DATABASE_URL injected per-run)
+          # 1. Inject ephemeral DATABASE_URL
+          curl -sf -X PUT \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "[{\"key\":\"DATABASE_URL\",\"value\":\"${DB_URL}\"}]"
+
+          # 2. Update Docker image tag
+          curl -sf -X PATCH \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"image\":{\"imagePath\":\"${IMAGE}\"}}"
+
+          # 3. Trigger deploy and capture deploy ID
+          DEPLOY_ID=$(curl -sf -X POST \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}' | jq -r '.id')
+          echo "Deploy ID: ${DEPLOY_ID}"
+
+          # 4. Poll until live (up to 10 min)
+          for i in $(seq 1 60); do
+            STATUS=$(curl -sf \
+              "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys/${DEPLOY_ID}" \
+              -H "Authorization: Bearer ${RENDER_API_KEY}" | jq -r '.status')
+            echo "  [$i] status=${STATUS}"
+            [ "$STATUS" = "live" ] && break
+            [ "$STATUS" = "deactivated" ] || [ "$STATUS" = "build_failed" ] && \
+              echo "Deploy failed: ${STATUS}" && exit 1
+            sleep 10
+          done
+        # Requires (one-time bootstrap in Render dashboard):
+        #   - Web Service from Docker Hub image, port 3000
+        #   - Env: AUTH_SECRET, ENCRYPTION_KEY, DEPLOYMENT_MODE=docker,
+        #     CONFIG_GIT_DIR=/data  (DATABASE_URL injected per-run)
+        # GitHub secrets: RENDER_API_KEY, RENDER_SERVICE_ID,
+        #   STAGING_URL (https://YOUR-SERVICE.onrender.com)
       - name: Wait for staging health check
         run: |
           for i in $(seq 1 12); do
