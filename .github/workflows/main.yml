@@ -65,11 +65,17 @@ jobs:
           NEON_DB_NAME:          ${{ secrets.NEON_DB_NAME }}
           NEON_PARENT_BRANCH_ID: ${{ secrets.NEON_PARENT_BRANCH_ID }}
         run: |
-          RESPONSE=$(curl -sf -X POST \
+          echo "NEON_PROJECT_ID length: ${#NEON_PROJECT_ID}"
+          echo "NEON_PARENT_BRANCH_ID length: ${#NEON_PARENT_BRANCH_ID}"
+          echo "NEON_API_KEY set: $([[ -n "${NEON_API_KEY}" ]] && echo yes || echo NO)"
+          HTTP_CODE=$(curl -s -o /tmp/neon_resp.json -w "%{http_code}" -X POST \
             "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
             -H "Authorization: Bearer ${NEON_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"branch\":{\"name\":\"ci-${GITHUB_SHA:0:8}\",\"parent_id\":\"${NEON_PARENT_BRANCH_ID}\"},\"endpoints\":[{\"type\":\"read_write\"}]}")
+          echo "Neon API HTTP status: ${HTTP_CODE}"
+          [[ "$HTTP_CODE" -ge 200 && "$HTTP_CODE" -lt 300 ]] || { echo "Neon API error:"; cat /tmp/neon_resp.json; exit 1; }
+          RESPONSE=$(cat /tmp/neon_resp.json)
 
           BRANCH_ID=$(echo "$RESPONSE" | jq -r '.branch.id')
           ENDPOINT_HOST=$(echo "$RESPONSE" | jq -r '.endpoints[0].host')
