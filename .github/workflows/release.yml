@@ -218,13 +218,22 @@ jobs:
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
+      - name: Install regctl
+        run: |
+          curl -sSL https://github.com/regclient/regclient/releases/latest/download/regctl-linux-amd64 \
+            -o /usr/local/bin/regctl && chmod +x /usr/local/bin/regctl
+
       - name: Get Docker image digest
         id: digest
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_TOKEN:    ${{ secrets.DOCKER_TOKEN }}
+          VERSION:         ${{ needs.prepare.outputs.version }}
         run: |
-          DIGEST=$(docker manifest inspect \
-            ${{ secrets.DOCKER_USERNAME }}/app:${{ needs.prepare.outputs.version }} \
-            --format '{{.config.digest}}')
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "${DOCKER_TOKEN}" | regctl registry login docker.io \
+            --user "${DOCKER_USERNAME}" --pass-stdin
+          DIGEST=$(regctl image digest "${DOCKER_USERNAME}/app:${VERSION}")
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
