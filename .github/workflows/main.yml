@@ -113,29 +113,30 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Mask DB URL
         run: echo "::add-mask::${{ needs.provision-db.outputs.db_url }}"
-      - name: Install flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: Set staging DATABASE_URL on Fly
+      - name: Install Koyeb CLI
+        run: curl -sf https://raw.githubusercontent.com/koyeb/koyeb-cli/master/install.sh | sh
+      - name: Set staging DATABASE_URL on Koyeb
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          KOYEB_API_KEY: ${{ secrets.KOYEB_API_KEY }}
           DB_URL: ${{ needs.provision-db.outputs.db_url }}
-        run: flyctl secrets set DATABASE_URL="$DB_URL" --app harmoven
+        run: |
+          koyeb service update harmoven/app \
+            --env DATABASE_URL="$DB_URL" \
+            --wait
       - name: Deploy to staging
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          KOYEB_API_KEY: ${{ secrets.KOYEB_API_KEY }}
         run: |
-          flyctl deploy --app harmoven \
-            --image ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }} \
-            --strategy rolling \
-            --wait-timeout 300
-        # Replaces SSH-based deploy. Requires:
-        #   1. FLY_API_TOKEN secret in GitHub repo settings
-        #      (create at: fly.io → Account → Access Tokens)
-        #   2. App + secrets bootstrapped once:
-        #      fly apps create harmoven --org personal
-        #      fly secrets set DATABASE_URL=... AUTH_SECRET=... \
-        #        ENCRYPTION_KEY=... DEPLOYMENT_MODE=docker \
-        #        CONFIG_GIT_DIR=/data --app harmoven
+          koyeb service redeploy harmoven/app \
+            --override docker.image=${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }} \
+            --wait
+        # Requires:
+        #   1. KOYEB_API_KEY secret (app.koyeb.com → API → Create API key)
+        #   2. App + env bootstrapped once in Koyeb dashboard:
+        #      Service name: app, App name: harmoven
+        #      Docker image: DOCKER_USERNAME/app:latest
+        #      Env: AUTH_SECRET, ENCRYPTION_KEY, DEPLOYMENT_MODE=docker,
+        #           CONFIG_GIT_DIR=/data  (DATABASE_URL injected per-run)
       - name: Wait for staging health check
         run: |
           for i in $(seq 1 12); do
