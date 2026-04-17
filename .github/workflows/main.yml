@@ -52,7 +52,7 @@ jobs:
     name: Provision Neon DB branch (~3s)
     runs-on: ubuntu-latest
     outputs:
-      db_url:    ${{ steps.provision.outputs.db_url }}
+      db_host:   ${{ steps.provision.outputs.db_host }}
       branch_id: ${{ steps.provision.outputs.branch_id }}
     steps:
       - name: Create Neon branch
@@ -75,10 +75,9 @@ jobs:
           ENDPOINT_HOST=$(echo "$RESPONSE" | jq -r '.endpoints[0].host')
 
           echo "::add-mask::${NEON_DB_PASSWORD}"
-          DB_URL="postgresql://${NEON_DB_USER}:${NEON_DB_PASSWORD}@${ENDPOINT_HOST}/${NEON_DB_NAME}?sslmode=require"
 
           echo "branch_id=${BRANCH_ID}" >> "$GITHUB_OUTPUT"
-          echo "db_url=${DB_URL}"       >> "$GITHUB_OUTPUT"
+          echo "db_host=${ENDPOINT_HOST}" >> "$GITHUB_OUTPUT"
           echo "Neon branch ready — ${BRANCH_ID} @ ${ENDPOINT_HOST}"
 
   build-docker:
@@ -111,16 +110,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Mask DB URL
-        run: echo "::add-mask::${{ needs.provision-db.outputs.db_url }}"
+      - name: Mask DB credentials
+        run: |
+          echo "::add-mask::${{ secrets.NEON_DB_PASSWORD }}"
+          echo "::add-mask::${{ needs.provision-db.outputs.db_host }}"
       - name: Update DATABASE_URL + image on Render, then deploy
         env:
           RENDER_API_KEY:    ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-          DB_URL:            ${{ needs.provision-db.outputs.db_url }}
+          DB_HOST:           ${{ needs.provision-db.outputs.db_host }}
+          NEON_DB_USER:      ${{ secrets.NEON_DB_USER }}
+          NEON_DB_PASSWORD:  ${{ secrets.NEON_DB_PASSWORD }}
+          NEON_DB_NAME:      ${{ secrets.NEON_DB_NAME }}
           IMAGE:             ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }}
         run: |
-          # 1. Inject ephemeral DATABASE_URL
+          # 1. Inject ephemeral DATABASE_URL (reconstructed from parts to avoid GitHub secret masking)
+          DB_URL="postgresql://${NEON_DB_USER}:${NEON_DB_PASSWORD}@${DB_HOST}/${NEON_DB_NAME}?sslmode=require"
           curl -sf -X PUT \
             "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
@@ -149,8 +154,10 @@ jobs:
               -H "Authorization: Bearer ${RENDER_API_KEY}" | jq -r '.status')
             echo "  [$i] status=${STATUS}"
             [ "$STATUS" = "live" ] && break
-            [ "$STATUS" = "deactivated" ] || [ "$STATUS" = "build_failed" ] && \
-              echo "Deploy failed: ${STATUS}" && exit 1
+            case "$STATUS" in
+              deactivated|build_failed|update_failed|canceled)
+                echo "Deploy failed: ${STATUS}" && exit 1 ;;
+            esac
             sleep 10
           done
         # Requires (one-time bootstrap in Render dashboard):
