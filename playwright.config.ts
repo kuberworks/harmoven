@@ -76,6 +76,16 @@ export default defineConfig({
       },
       testMatch: '**/auth.spec.ts',
     },
+
+    /* ── Staging smoke tests — no auth, no local server required ── */
+    {
+      name: 'smoke',
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+      },
+      testMatch: '**/smoke.spec.ts',
+    },
   ],
 
   /* In CI smoke tests against a remote URL (BASE_URL set), skip the local

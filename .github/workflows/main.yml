@@ -212,10 +212,9 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run smoke tests against staging
-        run: npx playwright test --grep "@smoke" --project=chromium
+        run: npx playwright test --project=smoke
         env:
           BASE_URL: ${{ secrets.RENDER_STAGING_URL }}
-        # 5 critical paths: login, create run, view gate, analytics, admin
 
   openapi-types:
     name: OpenAPI → TypeScript (generate + validate)
