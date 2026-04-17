@@ -60,7 +60,9 @@ jobs:
         env:
           NEON_API_KEY:          ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID:       ${{ secrets.NEON_PROJECT_ID }}
+          NEON_DB_USER:          ${{ secrets.NEON_DB_USER }}
           NEON_DB_PASSWORD:      ${{ secrets.NEON_DB_PASSWORD }}
+          NEON_DB_NAME:          ${{ secrets.NEON_DB_NAME }}
           NEON_PARENT_BRANCH_ID: ${{ secrets.NEON_PARENT_BRANCH_ID }}
         run: |
           RESPONSE=$(curl -sf -X POST \
@@ -73,7 +75,7 @@ jobs:
           ENDPOINT_HOST=$(echo "$RESPONSE" | jq -r '.endpoints[0].host')
 
           echo "::add-mask::${NEON_DB_PASSWORD}"
-          DB_URL="postgresql://neondb_owner:${NEON_DB_PASSWORD}@${ENDPOINT_HOST}/neondb?sslmode=require"
+          DB_URL="postgresql://${NEON_DB_USER}:${NEON_DB_PASSWORD}@${ENDPOINT_HOST}/${NEON_DB_NAME}?sslmode=require"
 
           echo "branch_id=${BRANCH_ID}" >> "$GITHUB_OUTPUT"
           echo "db_url=${DB_URL}"       >> "$GITHUB_OUTPUT"
