@@ -25,8 +25,11 @@ test('@smoke unauthenticated root redirects to login', async ({ page }) => {
 })
 
 test('@smoke login page renders sign-in form', async ({ page }) => {
-  await page.goto('/login')
-  await expect(page.getByLabel('Email')).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByLabel('Password')).toBeVisible()
+  const resp = await page.goto('/login')
+  // Accept both 200 (direct) and any 2xx/3xx — just check the final page has the form
+  await page.waitForLoadState('networkidle', { timeout: 30_000 })
+  // Locate by id to avoid locale-dependent label text
+  await expect(page.locator('#email')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('#password')).toBeVisible()
   await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible()
 })
