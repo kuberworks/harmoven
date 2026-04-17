@@ -122,6 +122,9 @@ jobs:
           NEON_DB_USER:      ${{ secrets.NEON_DB_USER }}
           NEON_DB_PASSWORD:  ${{ secrets.NEON_DB_PASSWORD }}
           NEON_DB_NAME:      ${{ secrets.NEON_DB_NAME }}
+          AUTH_SECRET:       ${{ secrets.AUTH_SECRET }}
+          ENCRYPTION_KEY:    ${{ secrets.ENCRYPTION_KEY }}
+          NEXTAUTH_URL:      ${{ secrets.RENDER_STAGING_URL }}
           IMAGE:             ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }}
         run: |
           # 1. Inject ephemeral DATABASE_URL (reconstructed from parts to avoid GitHub secret masking)
@@ -129,17 +132,26 @@ jobs:
           DB_PASS_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${NEON_DB_PASSWORD}")
           DB_URL="postgresql://${NEON_DB_USER}:${DB_PASS_ENC}@${DB_HOST}/${NEON_DB_NAME}?sslmode=require"
 
-          # GET current env vars, replace DATABASE_URL, PUT back (preserves AUTH_SECRET, ENCRYPTION_KEY, etc.)
-          CURRENT_ENVS=$(curl -sf \
-            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
-            -H "Authorization: Bearer ${RENDER_API_KEY}")
-          MERGED=$(echo "$CURRENT_ENVS" | jq --arg v "$DB_URL" \
-            '[(.[] | {key: .key, value: .value} | select(.key != "DATABASE_URL")), {"key":"DATABASE_URL","value":$v}]')
+          # PUT all required env vars explicitly (avoids fragile GET+merge;
+          # AUTH_SECRET and ENCRYPTION_KEY come from GitHub secrets)
+          ENV_JSON=$(jq -nc \
+            --arg db  "$DB_URL" \
+            --arg as  "$AUTH_SECRET" \
+            --arg ek  "$ENCRYPTION_KEY" \
+            --arg nu  "$NEXTAUTH_URL" \
+            '[
+              {"key":"DATABASE_URL",    "value":$db},
+              {"key":"AUTH_SECRET",     "value":$as},
+              {"key":"ENCRYPTION_KEY",  "value":$ek},
+              {"key":"DEPLOYMENT_MODE", "value":"docker"},
+              {"key":"CONFIG_GIT_DIR",  "value":"/data"},
+              {"key":"NEXTAUTH_URL",    "value":$nu}
+            ]')
           curl -sf -X PUT \
             "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars" \
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "$MERGED"
+            -d "$ENV_JSON"
 
           # 2. Update Docker image tag
           curl -sf -X PATCH \
