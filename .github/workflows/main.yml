@@ -158,13 +158,13 @@ jobs:
         #   - Env: AUTH_SECRET, ENCRYPTION_KEY, DEPLOYMENT_MODE=docker,
         #     CONFIG_GIT_DIR=/data  (DATABASE_URL injected per-run)
         # GitHub secrets: RENDER_API_KEY, RENDER_SERVICE_ID,
-        #   STAGING_URL (https://YOUR-SERVICE.onrender.com)
+        #   RENDER_STAGING_URL (https://YOUR-SERVICE.onrender.com)
       - name: Wait for staging health check
         # Render free tier spins down on inactivity; cold start can take 50-90s.
         # 24 × 10s = 4 min max — enough to survive the wake-up delay.
         run: |
           for i in $(seq 1 24); do
-            curl -sf --max-time 15 ${{ secrets.STAGING_URL }}/api/health && break
+            curl -sf --max-time 15 ${{ secrets.RENDER_STAGING_URL }}/api/health && break
             echo "Waiting... ($i/24)"
             [ "$i" -eq 24 ] && echo "Health check timed out" && exit 1
             sleep 10
@@ -179,7 +179,7 @@ jobs:
       - name: Run smoke tests against staging
         run: npx playwright test --grep "@smoke" --project=chromium
         env:
-          BASE_URL: ${{ secrets.STAGING_URL }}
+          BASE_URL: ${{ secrets.RENDER_STAGING_URL }}
         # 5 critical paths: login, create run, view gate, analytics, admin
 
   openapi-types:
