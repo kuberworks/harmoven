@@ -167,13 +167,14 @@ jobs:
         # GitHub secrets: RENDER_API_KEY, RENDER_SERVICE_ID,
         #   RENDER_STAGING_URL (https://YOUR-SERVICE.onrender.com)
       - name: Wait for staging health check
-        # Render free tier spins down on inactivity; cold start can take 50-90s.
-        # 24 × 10s = 4 min max — enough to survive the wake-up delay.
+        # Render free tier: cold start (50-90s) + Prisma migrate deploy (~30s)
+        # + seed (~10s) = up to ~3 min before first request is served.
+        # 36 × 10s = 6 min max.
         run: |
-          for i in $(seq 1 24); do
-            curl -sf --max-time 15 ${{ secrets.RENDER_STAGING_URL }}/api/health && break
-            echo "Waiting... ($i/24)"
-            [ "$i" -eq 24 ] && echo "Health check timed out" && exit 1
+          for i in $(seq 1 36); do
+            curl -sf --max-time 20 ${{ secrets.RENDER_STAGING_URL }}/api/health && echo " OK" && break
+            echo "Waiting... ($i/36)"
+            [ "$i" -eq 36 ] && echo "Health check timed out after 6 min" && exit 1
             sleep 10
           done
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
