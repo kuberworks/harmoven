@@ -87,7 +87,7 @@ jobs:
           flyctl deploy --app harmoven \
             --image ${{ secrets.DOCKER_USERNAME }}/app:${{ github.sha }} \
             --strategy rolling \
-            --wait-timeout 120
+            --wait-timeout 300
         # Replaces SSH-based deploy. Requires:
         #   1. fly.toml at repo root (app = "harmoven-staging")
         #   2. FLY_API_TOKEN secret in GitHub repo settings
